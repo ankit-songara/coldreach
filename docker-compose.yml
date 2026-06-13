@@ -1,0 +1,66 @@
+version: "3.9"
+
+# ColdReach — full local stack
+#
+# Quick start:
+#   cp .env.example .env        # fill in values
+#   docker compose up -d
+#   docker exec coldreach-ollama ollama pull llama3.1   # one-time ~5GB
+#   open http://localhost:5173
+
+services:
+
+  # ── Local LLM (default, free, private) ────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: coldreach-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # Apple Silicon / GPU: uncomment below
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+
+  # ── Python FastAPI backend ─────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: coldreach-backend
+    env_file: .env
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app          # hot reload in dev
+      - db_data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  # ── Vite + React frontend ──────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: coldreach-frontend
+    environment:
+      VITE_API_URL: http://backend:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app         # hot reload in dev
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  db_data:

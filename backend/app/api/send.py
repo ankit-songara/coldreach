@@ -1,0 +1,259 @@
+"""
+Bulk email sending via Gmail SMTP.
+Uses the user's Gmail address + App Password (no OAuth needed).
+
+How to get an App Password:
+  1. Enable 2-Step Verification on your Google account
+  2. Go to myaccount.google.com/apppasswords
+  3. Create a new app password — use that 16-char string here
+"""
+
+import time
+import random
+import smtplib
+import logging
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+
+from app.db.database import get_db
+from app.db.crud import ContactRepository, DraftRepository, ScheduledEmailRepository, ConfigRepository
+from app.db.models import User
+from app.deps import get_current_user
+from app.schemas.contact import ContactUpdate
+from app.timeutil import to_naive_utc
+
+log = logging.getLogger(__name__)
+router = APIRouter(prefix="/send", tags=["send"])
+
+
+class BulkSendRequest(BaseModel):
+    contact_ids:        list[int] = []   # empty = all contacts that have drafts
+    gmail_address:      str
+    gmail_app_password: str
+
+
+class SendResult(BaseModel):
+    contact_id:   int
+    name:         str
+    email:        str
+    status:       str          # "sent" | "failed"
+    error:        str = ""
+
+
+class BulkSendResponse(BaseModel):
+    sent:     int
+    failed:   int
+    deferred: int = 0      # held back by the daily cap — try again later / schedule
+    results:  list[SendResult]
+
+
+@router.post("/bulk", response_model=BulkSendResponse)
+def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Send all drafted emails via Gmail SMTP in one shot."""
+    contact_repo = ContactRepository(db, user.id)
+    draft_repo   = DraftRepository(db, user.id)
+
+    # Resolve contacts to send
+    if req.contact_ids:
+        contacts = [contact_repo.get_by_id(cid) for cid in req.contact_ids]
+        contacts = [c for c in contacts if c]
+    else:
+        contacts = contact_repo.get_all()
+
+    # Build send queue: contacts with a draft that haven't been emailed yet.
+    # Skip addresses already known to be invalid or bounced — protects the
+    # sending account's reputation.
+    queue = []
+    skipped_bad = 0
+    for contact in contacts:
+        if contact.status == "emailed":
+            continue
+        if contact.bounced or contact.email_status == "invalid":
+            skipped_bad += 1
+            continue
+        drafts = draft_repo.get_for_contact(contact.id)
+        draft  = next((d for d in drafts if not d.is_followup), None)
+        if draft:
+            queue.append((contact, draft))
+
+    if skipped_bad:
+        log.info(f"Skipped {skipped_bad} invalid/bounced addresses")
+
+    if not queue:
+        raise HTTPException(400, "No contacts with drafts found.")
+
+    # ── Daily cap ────────────────────────────────────────────────────────────
+    # Gmail throttles/flags accounts that fire many cold emails. Cap per rolling
+    # 24h (configurable) and defer the overflow rather than risk a suspension.
+    cfg = ConfigRepository(db, user.id)
+    daily_cap = int(cfg.get("daily_send_cap", "50") or 50)
+    since_24h = datetime.utcnow() - timedelta(hours=24)
+    sent_last_24h = sum(
+        1 for c in contact_repo.get_all()
+        if c.last_emailed_at and c.last_emailed_at >= since_24h
+    )
+    budget = max(0, daily_cap - sent_last_24h)
+    deferred = 0
+    if len(queue) > budget:
+        deferred = len(queue) - budget
+        queue = queue[:budget]
+        log.info(f"Daily cap {daily_cap}: sending {len(queue)}, deferring {deferred}")
+    if not queue:
+        raise HTTPException(429,
+            f"Daily send cap reached ({daily_cap}/24h). {deferred} emails held back. "
+            f"Try again later or schedule them.")
+
+    # Verify credentials once before sending anything
+    try:
+        test_smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+        test_smtp.starttls()
+        test_smtp.login(req.gmail_address, req.gmail_app_password)
+        test_smtp.quit()
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(401,
+            "Gmail authentication failed. Check your address and App Password. "
+            "Make sure 2-Step Verification is on and you're using an App Password "
+            "(not your regular Gmail password)."
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Could not connect to Gmail SMTP: {e}")
+
+    def send_batch(batch) -> list[SendResult]:
+        """Open ONE authenticated SMTP connection and reuse it for the batch.
+
+        Re-logging in per message is slow and is itself a pattern Gmail flags;
+        one login per small batch keeps concurrency low and traffic human-like.
+        """
+        out: list[SendResult] = []
+        smtp = None
+        try:
+            smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=20)
+            smtp.starttls()
+            smtp.login(req.gmail_address, req.gmail_app_password)
+        except Exception as e:
+            # Whole batch fails if we can't establish the session
+            log.error(f"SMTP session failed for batch: {e}")
+            for contact, _ in batch:
+                out.append(SendResult(contact_id=contact.id, name=contact.name,
+                                      email=contact.email, status="failed", error=str(e)))
+            return out
+
+        try:
+            for contact, draft in batch:
+                try:
+                    time.sleep(random.uniform(0.2, 1.2))   # tiny human-like jitter
+                    msg = MIMEMultipart("alternative")
+                    msg["From"]    = req.gmail_address
+                    msg["To"]      = contact.email
+                    msg["Subject"] = draft.subject
+                    msg.attach(MIMEText(draft.body, "plain"))
+                    smtp.sendmail(req.gmail_address, contact.email, msg.as_string())
+                    log.info(f"Sent to {contact.email}")
+                    out.append(SendResult(contact_id=contact.id, name=contact.name,
+                                          email=contact.email, status="sent"))
+                except Exception as e:
+                    log.error(f"Failed {contact.email}: {e}")
+                    out.append(SendResult(contact_id=contact.id, name=contact.name,
+                                          email=contact.email, status="failed", error=str(e)))
+        finally:
+            try:
+                smtp.quit()
+            except Exception:
+                pass
+        return out
+
+    # Send in small batches with a randomized pause between them. Jitter makes
+    # the traffic look less machine-like (constant intervals are a spam signal)
+    # and keeps concurrency low so Gmail doesn't throttle.
+    results: list[SendResult] = []
+    batch_size = 3
+    batches = [queue[i:i+batch_size] for i in range(0, len(queue), batch_size)]
+
+    for batch_idx, batch in enumerate(batches):
+        if batch_idx > 0:
+            time.sleep(random.uniform(1.5, 4.0))   # jittered cooldown
+
+        batch_results = send_batch(batch)
+        for result in batch_results:
+            results.append(result)
+            if result.status == "sent":
+                contact_repo.update(result.contact_id, ContactUpdate(
+                    status="emailed", last_emailed_at=datetime.utcnow()))
+
+        log.info(f"Batch {batch_idx+1}/{len(batches)} done — {len(results)} total so far")
+
+    sent   = sum(1 for r in results if r.status == "sent")
+    failed = sum(1 for r in results if r.status == "failed")
+
+    return BulkSendResponse(sent=sent, failed=failed, deferred=deferred, results=results)
+
+
+class ScheduleSendRequest(BaseModel):
+    contact_ids: list[int] = []     # empty = all drafted, unsent contacts
+    send_at:     datetime           # ISO datetime (UTC) to deliver at
+
+
+class ScheduleSendResponse(BaseModel):
+    scheduled: int
+    skipped:   int
+
+
+@router.post("/schedule", response_model=ScheduleSendResponse)
+def schedule_send(req: ScheduleSendRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """
+    Queue first-touch emails for future delivery (e.g. tomorrow 9am).
+    Requires server-side Gmail creds (saved via /config/gmail) — the background
+    scheduler does the actual sending.
+    """
+    cfg = ConfigRepository(db, user.id)
+    addr, pw = cfg.get_gmail_creds()
+    if not (addr and pw):
+        raise HTTPException(400,
+            "Save Gmail credentials for automation (enable it in the Send tab) "
+            "before scheduling sends.")
+
+    contact_repo = ContactRepository(db, user.id)
+    draft_repo   = DraftRepository(db, user.id)
+    sched_repo   = ScheduledEmailRepository(db, user.id)
+
+    if req.contact_ids:
+        targets = [contact_repo.get_by_id(cid) for cid in req.contact_ids]
+        targets = [c for c in targets if c]
+    else:
+        targets = contact_repo.get_all()
+
+    scheduled, skipped = 0, 0
+    for contact in targets:
+        if contact.status == "emailed" or sched_repo.pending_for_contact(contact.id):
+            skipped += 1
+            continue
+        draft = next((d for d in draft_repo.get_for_contact(contact.id) if not d.is_followup), None)
+        if not draft:
+            skipped += 1
+            continue
+        sched_repo.create(contact.id, draft.subject, draft.body, to_naive_utc(req.send_at), is_followup=False)
+        scheduled += 1
+
+    return ScheduleSendResponse(scheduled=scheduled, skipped=skipped)
+
+
+@router.post("/test")
+def test_connection(req: BulkSendRequest, user: User = Depends(get_current_user)):
+    """Verify Gmail credentials without sending any email."""
+    try:
+        smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=10)
+        smtp.starttls()
+        smtp.login(req.gmail_address, req.gmail_app_password)
+        smtp.quit()
+        return {"ok": True, "message": "Gmail connection successful"}
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(401,
+            "Authentication failed. Use an App Password, not your Gmail password."
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Connection failed: {e}")

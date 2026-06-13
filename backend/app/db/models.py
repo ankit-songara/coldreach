@@ -1,0 +1,113 @@
+"""SQLAlchemy ORM models for ColdReach."""
+
+from datetime import datetime
+from sqlalchemy import String, Text, DateTime, Boolean, Float, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column
+from app.db.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id:            Mapped[int]      = mapped_column(primary_key=True, index=True)
+    email:         Mapped[str]      = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str]      = mapped_column(String(255))
+    # Bumped on logout / password change to invalidate previously-issued tokens.
+    token_version: Mapped[int]      = mapped_column(default=0)
+    created_at:    Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<User {self.email}>"
+
+
+class Contact(Base):
+    __tablename__ = "contacts"
+    # Email is unique per user (not globally) — prevents duplicate rows from
+    # concurrent hunts racing the app-level get_by_email check.
+    __table_args__ = (UniqueConstraint("user_id", "email", name="uq_contact_user_email"),)
+
+    id:          Mapped[int]      = mapped_column(primary_key=True, index=True)
+    user_id:     Mapped[int]      = mapped_column(index=True, default=1)
+    name:        Mapped[str]      = mapped_column(String(255))
+    # Unique per-user (enforced in the repository), not globally
+    email:       Mapped[str]      = mapped_column(String(255), index=True)
+    designation: Mapped[str]      = mapped_column(String(255), default="Hiring Manager")
+    company:     Mapped[str]      = mapped_column(String(255), default="Unknown")
+    source:      Mapped[str]      = mapped_column(String(255), default="")
+    # Genuine, non-fabricated provenance context captured at hunt time — e.g. the
+    # HN "Who is Hiring" post text, or the GitHub repos this person committed to.
+    # Fed to the LLM so it can anchor on real signal instead of inventing details.
+    context:     Mapped[str|None] = mapped_column(Text,        nullable=True)
+    status:      Mapped[str]      = mapped_column(String(50),  default="new")   # new|emailed|followed_up|replied|interview|rejected|bounced
+    notes:       Mapped[str|None] = mapped_column(Text,        nullable=True)
+
+    # ── Tracking (populated by send + inbox sync) ────────────────────────────
+    last_emailed_at: Mapped[datetime|None] = mapped_column(DateTime, nullable=True)
+    replied_at:      Mapped[datetime|None] = mapped_column(DateTime, nullable=True)
+    bounced:         Mapped[bool]          = mapped_column(Boolean, default=False)
+    followups_sent:  Mapped[int]           = mapped_column(default=0)
+    # Email-verification verdict: unknown | valid | risky | invalid
+    email_status:    Mapped[str]           = mapped_column(String(20), default="unknown")
+
+    created_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self) -> str:
+        return f"<Contact {self.email}>"
+
+
+class EmailDraft(Base):
+    __tablename__ = "email_drafts"
+
+    id:         Mapped[int]       = mapped_column(primary_key=True, index=True)
+    user_id:    Mapped[int]       = mapped_column(index=True, default=1)
+    contact_id: Mapped[int]       = mapped_column(index=True)
+    subject:    Mapped[str]       = mapped_column(Text)
+    body:       Mapped[str]       = mapped_column(Text)
+    is_followup: Mapped[bool]     = mapped_column(default=False)
+    created_at: Mapped[datetime]  = mapped_column(DateTime, server_default=func.now())
+
+
+class Resume(Base):
+    __tablename__ = "resumes"
+
+    id:         Mapped[int]      = mapped_column(primary_key=True, index=True)
+    user_id:    Mapped[int]      = mapped_column(index=True, default=1)
+    text:       Mapped[str]      = mapped_column(Text)
+    filename:   Mapped[str|None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AppConfig(Base):
+    """
+    Per-user key/value store for configuration the background scheduler needs —
+    chiefly the Gmail credentials used for automated follow-ups. The App Password
+    is stored encrypted (see app.security). Primary key is (user_id, key).
+    """
+    __tablename__ = "app_config"
+
+    user_id:    Mapped[int]      = mapped_column(primary_key=True, default=1)
+    key:        Mapped[str]      = mapped_column(String(64), primary_key=True)
+    value:      Mapped[str]      = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ScheduledEmail(Base):
+    """
+    A queued email — either a first-touch or a follow-up — to be delivered at
+    `send_at`. The scheduler worker picks up rows where status='pending' and
+    send_at <= now. Follow-ups are auto-cancelled when a reply is detected.
+    """
+    __tablename__ = "scheduled_emails"
+
+    id:          Mapped[int]      = mapped_column(primary_key=True, index=True)
+    user_id:     Mapped[int]      = mapped_column(index=True, default=1)
+    contact_id:  Mapped[int]      = mapped_column(index=True)
+    subject:     Mapped[str]      = mapped_column(Text)
+    body:        Mapped[str]      = mapped_column(Text)
+    is_followup: Mapped[bool]     = mapped_column(Boolean, default=False)
+    send_at:     Mapped[datetime] = mapped_column(DateTime, index=True)
+    status:      Mapped[str]      = mapped_column(String(20), default="pending")  # pending|sent|cancelled|failed
+    error:       Mapped[str|None] = mapped_column(Text, nullable=True)
+    created_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    sent_at:     Mapped[datetime|None] = mapped_column(DateTime, nullable=True)

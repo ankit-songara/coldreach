@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:        #06080f;
+  --surface-1: #0b0f1a;
+  --surface-2: #0f1929;
+  --border:    #1a2535;
+  --border-dim:#0d1829;
+  --accent:    #22d3ee;
+  --accent-dim:rgba(34,211,238,0.12);
+  --text:      #e2e8f0;
+  --text-muted:#64748b;
+  --text-dim:  #334155;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar        { width: 4px; }
+::-webkit-scrollbar-track  { background: var(--bg); }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 2px; }
+
+@layer components {
+  .card {
+    @apply rounded-xl border bg-surface-1 p-4;
+    border-color: var(--border);
+  }
+
+  .btn {
+    @apply rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 cursor-pointer border;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-surface border-accent;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+
+  .input {
+    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors;
+    background: var(--bg);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .input:focus { border-color: var(--accent); }
+  
+
+  .badge {
+    @apply inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold font-mono tracking-wide;
+  }
+}

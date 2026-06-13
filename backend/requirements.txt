@@ -1,0 +1,37 @@
+# ── API ──────────────────────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9      # file uploads
+
+# ── Database ─────────────────────────────────────────────────────────────────
+sqlalchemy>=2.0.0
+alembic>=1.13.0              # migrations (optional for SQLite, useful for Postgres)
+
+# ── Auth & secrets ───────────────────────────────────────────────────────────
+cryptography>=42.0.0        # at-rest encryption + session tokens (no JWT lib needed)
+
+# ── Email verification ───────────────────────────────────────────────────────
+dnspython>=2.6.0            # MX-record lookups for deliverability checks
+
+# ── HTTP client ──────────────────────────────────────────────────────────────
+httpx>=0.27.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# ── Scraping ─────────────────────────────────────────────────────────────────
+playwright>=1.44.0
+# After install: python -m playwright install chromium
+
+# ── Resume parsing (no LLM needed) ───────────────────────────────────────────
+pdfminer.six>=20221105     # PDF text extraction
+python-docx>=1.1.0         # DOCX text extraction
+
+# ── LLM orchestration ────────────────────────────────────────────────────────
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0   # Ollama
+
+# LLM providers — uncomment what you use
+langchain-groq>=0.1.7        # Groq (free tier) — default cloud option
+# langchain-openai>=0.1.0    # OpenAI / OpenRouter
+# langchain-anthropic>=0.1.0 # Anthropic Claude
