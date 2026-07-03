@@ -29,6 +29,7 @@ export default function Compose() {
   const { contacts, resume, drafts, setDrafts, setActiveTab } = useStore()
   const resumeReady = useContext(ResumeReadyCtx)
   const [showSent, setShowSent] = useState(false)
+  const [bulkGenerating, setBulkGenerating] = useState(false)
 
   // Restore drafts from backend on mount
   useEffect(() => {
@@ -62,6 +63,26 @@ export default function Compose() {
   })
 
   const pending = composeMutation.isPending || followupMutation.isPending
+
+  // Generate drafts for every ungenerated contact — ONE AT A TIME with a gap.
+  // Free LLM tiers (Groq) cap at ~30 requests/min; firing them in parallel (or
+  // in a tight burst) trips 429 rate limits, and the provider's auto-retries then
+  // amplify the storm. Sequential + a throttle gap keeps us safely under the cap.
+  const generateAll = async (targets: Contact[]) => {
+    setBulkGenerating(true)
+    try {
+      for (const c of targets) {
+        try {
+          await composeMutation.mutateAsync({ contact_id: c.id, resume })
+        } catch {
+          // onError already surfaces a toast; keep going with the rest.
+        }
+        await new Promise(r => setTimeout(r, 2000))
+      }
+    } finally {
+      setBulkGenerating(false)
+    }
+  }
 
   if (!resume.trim()) {
     if (!resumeReady) return (
@@ -111,16 +132,15 @@ export default function Compose() {
         </div>
         {ungenerated.length > 0 && (
           <button
-            onClick={() => {
-              ungenerated.forEach((c, i) =>
-                setTimeout(() => composeMutation.mutate({ contact_id: c.id, resume }), i * 500)
-              )
-            }}
-            disabled={pending}
+            onClick={() => generateAll(ungenerated)}
+            disabled={pending || bulkGenerating}
             className="btn btn-primary text-xs flex items-center gap-2"
           >
-            <Wand2 size={13} />
-            Generate all ({ungenerated.length})
+            {bulkGenerating ? (
+              <><RefreshCw size={13} className="animate-spin" /> Generating…</>
+            ) : (
+              <><Wand2 size={13} /> Generate all ({ungenerated.length})</>
+            )}
           </button>
         )}
       </div>
