@@ -29,6 +29,7 @@ from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
 from app.timeutil import to_naive_utc
+from app.mailer import normalize_app_password
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/send", tags=["send"])
@@ -113,11 +114,15 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
             f"Daily send cap reached ({daily_cap}/24h). {deferred} emails held back. "
             f"Try again later or schedule them.")
 
+    # Normalize once: Gmail App Passwords are often pasted with the display spaces.
+    gmail_address = req.gmail_address.strip()
+    gmail_app_password = normalize_app_password(req.gmail_app_password)
+
     # Verify credentials once before sending anything
     try:
         test_smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
         test_smtp.starttls()
-        test_smtp.login(req.gmail_address, req.gmail_app_password)
+        test_smtp.login(gmail_address, gmail_app_password)
         test_smtp.quit()
     except smtplib.SMTPAuthenticationError:
         raise HTTPException(401,
@@ -139,7 +144,7 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         try:
             smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=20)
             smtp.starttls()
-            smtp.login(req.gmail_address, req.gmail_app_password)
+            smtp.login(gmail_address, gmail_app_password)
         except Exception as e:
             # Whole batch fails if we can't establish the session
             log.error(f"SMTP session failed for batch: {e}")
@@ -153,11 +158,11 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
                 try:
                     time.sleep(random.uniform(0.2, 1.2))   # tiny human-like jitter
                     msg = MIMEMultipart("alternative")
-                    msg["From"]    = req.gmail_address
+                    msg["From"]    = gmail_address
                     msg["To"]      = contact.email
                     msg["Subject"] = draft.subject
                     msg.attach(MIMEText(draft.body, "plain"))
-                    smtp.sendmail(req.gmail_address, contact.email, msg.as_string())
+                    smtp.sendmail(gmail_address, contact.email, msg.as_string())
                     log.info(f"Sent to {contact.email}")
                     out.append(SendResult(contact_id=contact.id, name=contact.name,
                                           email=contact.email, status="sent"))
@@ -253,12 +258,15 @@ def test_connection(req: BulkSendRequest, user: User = Depends(get_current_user)
     try:
         smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=10)
         smtp.starttls()
-        smtp.login(req.gmail_address, req.gmail_app_password)
+        smtp.login(req.gmail_address.strip(), normalize_app_password(req.gmail_app_password))
         smtp.quit()
         return {"ok": True, "message": "Gmail connection successful"}
     except smtplib.SMTPAuthenticationError:
         raise HTTPException(401,
-            "Authentication failed. Use an App Password, not your Gmail password."
+            "Gmail rejected these credentials. Two things to check: "
+            "(1) enable 2-Step Verification on your Google account, then "
+            "(2) create an App Password at myaccount.google.com/apppasswords and "
+            "paste that 16-character code here — not your normal Gmail password."
         )
     except Exception as e:
-        raise HTTPException(502, f"Connection failed: {e}")
+        raise HTTPException(502, f"Could not reach Gmail SMTP: {e}")

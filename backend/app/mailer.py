@@ -14,12 +14,23 @@ SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 
 
+def normalize_app_password(app_password: str) -> str:
+    """Strip ALL whitespace from a Gmail App Password.
+
+    Google displays App Passwords grouped for readability ("abcd efgh ijkl mnop"),
+    and users routinely paste them with the spaces — but the real 16-char password
+    has none, so smtp.login rejects the spaced version. Removing every whitespace
+    char (spaces, tabs, stray newlines from copy-paste) makes both forms work.
+    """
+    return "".join((app_password or "").split())
+
+
 def verify_credentials(address: str, app_password: str) -> None:
     """Raise on bad credentials / connection; return None on success."""
     smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
     try:
         smtp.starttls()
-        smtp.login(address, app_password)
+        smtp.login(address.strip(), normalize_app_password(app_password))
     finally:
         try:
             smtp.quit()
@@ -41,7 +52,7 @@ def send_email(address: str, app_password: str, to: str, subject: str, body: str
     smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20)
     try:
         smtp.starttls()
-        smtp.login(address, app_password)
+        smtp.login(address.strip(), normalize_app_password(app_password))
         smtp.sendmail(address, to, _build_message(address, to, subject, body).as_string())
         log.info(f"Sent to {to}: {subject!r}")
     finally:
@@ -63,8 +74,8 @@ class GmailSMTP:
     """
 
     def __init__(self, address: str, app_password: str, timeout: int = 20):
-        self.address = address
-        self.app_password = app_password
+        self.address = address.strip()
+        self.app_password = normalize_app_password(app_password)
         self.timeout = timeout
         self._smtp: smtplib.SMTP | None = None
 

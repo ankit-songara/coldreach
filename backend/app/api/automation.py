@@ -59,14 +59,16 @@ class ProfileRequest(BaseModel):
 @router.post("/config/gmail", response_model=ConfigStatus)
 def save_gmail_config(req: GmailConfigRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Verify and persist Gmail credentials server-side for automated sending."""
+    address = req.gmail_address.strip()
+    app_password = mailer.normalize_app_password(req.gmail_app_password)
     try:
-        mailer.verify_credentials(req.gmail_address, req.gmail_app_password)
+        mailer.verify_credentials(address, app_password)
     except Exception as e:
         raise HTTPException(401, f"Gmail verification failed: {e}")
 
     cfg = ConfigRepository(db, user.id)
-    cfg.set("gmail_address", req.gmail_address)
-    cfg.set("gmail_app_password", req.gmail_app_password)
+    cfg.set("gmail_address", address)
+    cfg.set("gmail_app_password", app_password)
     return _status(db, user)
 
 
