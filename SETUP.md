@@ -179,6 +179,49 @@ GITHUB_TOKEN=your_token_here
 
 ---
 
+## Sign in with Google (optional)
+
+ColdReach supports "Continue with Google" alongside email/password. It's off by
+default — the button only appears once you supply an OAuth client ID. Email/
+password login keeps working whether or not you set this up.
+
+### Create a Google OAuth client ID (~3 minutes)
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com) and create
+   (or select) a project.
+2. **APIs & Services → OAuth consent screen**: choose **External**, fill in the
+   app name and your support email, and save. While testing, add your own Google
+   account under **Test users** (or publish the app when you go live).
+3. **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+   - Application type: **Web application**
+   - **Authorized JavaScript origins**: add `http://localhost:5173` (dev) and your
+     production URL, e.g. `https://app.yourdomain.com`. *(No redirect URI is
+     needed — the sign-in button uses Google Identity Services ID tokens.)*
+4. Copy the **Client ID** (ends in `.apps.googleusercontent.com`).
+
+### Wire it in
+
+Put the **same** client ID in both `.env` files:
+
+```env
+# backend .env
+GOOGLE_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
+```
+```env
+# frontend/.env   (copy from frontend/.env.example)
+VITE_GOOGLE_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
+```
+
+Restart both servers. The "Continue with Google" button now appears on the login
+screen. On sign-in, the backend verifies Google's ID token, then issues the same
+session token as email/password login. If a Google email matches an existing
+password account, the two are linked automatically.
+
+> **Note:** this is sign-in only. Sending outbound email still uses your Gmail
+> **App Password** (configured in-app under Setup) — a separate mechanism.
+
+---
+
 ## Makefile shortcuts
 
 ```bash

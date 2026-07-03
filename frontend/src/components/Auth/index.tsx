@@ -1,8 +1,13 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { LogIn, UserPlus, Send as SendIcon } from 'lucide-react'
+import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { useStore } from '../../store'
 import { authApi } from '../../api/auth'
+
+// Only show the Google button when a client ID is configured at build/dev time.
+// Without it the GoogleLogin widget can't render, so we fall back to email/password.
+const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
 
 export default function Auth() {
   const { setAuth } = useStore()
@@ -28,6 +33,20 @@ export default function Auth() {
     }
   }
 
+  const onGoogle = async (cred: CredentialResponse) => {
+    if (!cred.credential) { toast.error('Google sign-in failed'); return }
+    setBusy(true)
+    try {
+      const res = await authApi.google(cred.credential)
+      setAuth(res.token, res.email)
+      toast.success('Welcome')
+    } catch (err: any) {
+      toast.error(err.message ?? 'Google sign-in failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm">
@@ -47,6 +66,25 @@ export default function Auth() {
         </div>
 
         <form onSubmit={submit} className="card space-y-4">
+          {GOOGLE_ENABLED && (
+            <>
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={onGoogle}
+                  onError={() => toast.error('Google sign-in failed')}
+                  text="continue_with"
+                  shape="rectangular"
+                  width="304"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                <span className="text-xs font-medium" style={{ color: 'var(--text-dim)' }}>or</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              </div>
+            </>
+          )}
+
           <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--surface-2)' }}>
             {(['login', 'register'] as const).map(m => (
               <button

@@ -74,6 +74,7 @@ def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
     _fix_contact_email_index()
+    _ensure_google_sub_index()
 
 
 # ── Minimal SQLite migration ──────────────────────────────────────────────────
@@ -90,7 +91,8 @@ _NEW_COLUMNS = {
         ("user_id",         "INTEGER DEFAULT 1"),
         ("context",         "TEXT"),
     ],
-    "users":            [("token_version", "INTEGER DEFAULT 0")],
+    "users":            [("token_version", "INTEGER DEFAULT 0"),
+                         ("google_sub",    "VARCHAR(255)")],
     "email_drafts":     [("user_id", "INTEGER DEFAULT 1")],
     "resumes":          [("user_id", "INTEGER DEFAULT 1")],
     "scheduled_emails": [("user_id", "INTEGER DEFAULT 1")],
@@ -112,6 +114,27 @@ def _ensure_columns() -> None:
                 if name not in have:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
                     log.info(f"Migrated: added {table}.{name}")
+
+
+def _ensure_google_sub_index() -> None:
+    """
+    On a fresh DB create_all() builds the unique index for users.google_sub; on a
+    pre-existing DB the column was just added by _ensure_columns() without it. Add
+    it by hand. SQLite treats NULLs as distinct, so password-only accounts (NULL
+    google_sub) don't collide — only two accounts sharing a real sub would.
+    """
+    if not settings.database_url.startswith("sqlite"):
+        return
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    if "google_sub" not in {c["name"] for c in inspector.get_columns("users")}:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub "
+            "ON users (google_sub)"
+        ))
 
 
 def _fix_contact_email_index() -> None:

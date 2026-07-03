@@ -39,6 +39,9 @@ class UserRepository:
     def get_by_email(self, email: str) -> User | None:
         return self.db.query(User).filter(User.email == email.lower().strip()).first()
 
+    def get_by_google_sub(self, google_sub: str) -> User | None:
+        return self.db.query(User).filter(User.google_sub == google_sub).first()
+
     def count(self) -> int:
         return self.db.query(User).count()
 
@@ -48,6 +51,21 @@ class UserRepository:
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    def create_google_user(self, email: str, google_sub: str) -> User:
+        """Create a Google-only account. Empty password_hash → password login
+        is impossible for this account (verify_password rejects an empty hash)."""
+        user = User(email=email.lower().strip(), password_hash="", google_sub=google_sub)
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def link_google_sub(self, user: User, google_sub: str) -> None:
+        """Attach a Google identity to an existing (password) account so the same
+        person signing in either way lands on one account."""
+        user.google_sub = google_sub
+        self.db.commit()
 
     def bump_token_version(self, user_id: int) -> None:
         """Invalidate all existing sessions for a user (logout / password change)."""

@@ -11,7 +11,13 @@ class User(Base):
 
     id:            Mapped[int]      = mapped_column(primary_key=True, index=True)
     email:         Mapped[str]      = mapped_column(String(255), unique=True, index=True)
+    # Empty string for Google-only accounts (they never set a password). An empty
+    # hash can never authenticate via /auth/login — verify_password rejects it.
     password_hash: Mapped[str]      = mapped_column(String(255))
+    # Google account subject ("sub") claim — stable per-user id from Google.
+    # NULL for password-only accounts; unique when set. Enables account linking
+    # by matching a verified Google email to an existing password account.
+    google_sub:    Mapped[str|None] = mapped_column(String(255), unique=True, index=True, nullable=True)
     # Bumped on logout / password change to invalidate previously-issued tokens.
     token_version: Mapped[int]      = mapped_column(default=0)
     created_at:    Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

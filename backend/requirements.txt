@@ -9,6 +9,7 @@ alembic>=1.13.0              # migrations (optional for SQLite, useful for Postg
 
 # ── Auth & secrets ───────────────────────────────────────────────────────────
 cryptography>=42.0.0        # at-rest encryption + session tokens (no JWT lib needed)
+google-auth>=2.28.0         # verify "Sign in with Google" ID tokens (uses requests, already present)
 
 # ── Email verification ───────────────────────────────────────────────────────
 dnspython>=2.6.0            # MX-record lookups for deliverability checks

@@ -21,6 +21,7 @@ from app.db.crud import UserRepository
 from app.db.models import User
 from app.deps import get_current_user
 from app import security
+from app.config import settings
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,6 +54,10 @@ def _check_login_rate(ip: str) -> None:
 class Credentials(BaseModel):
     email:    str
     password: str
+
+
+class GoogleCredential(BaseModel):
+    credential: str   # the Google ID token (JWT) from the Sign-in button
 
 
 class AuthResponse(BaseModel):
@@ -92,6 +97,60 @@ def login(creds: Credentials, request: Request, db: Session = Depends(get_db)):
     user = UserRepository(db).get_by_email(creds.email)
     if not user or not security.verify_password(creds.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password.")
+    return AuthResponse(
+        token=security.create_token(user.id, user.token_version),
+        email=user.email, user_id=user.id,
+    )
+
+
+@router.post("/google", response_model=AuthResponse)
+def google_login(payload: GoogleCredential, db: Session = Depends(get_db)):
+    """
+    Verify a Google Sign-In ID token, then issue our own session token.
+
+    Flow: the frontend Google button returns a signed ID token (JWT). We verify
+    its signature against Google's public keys and that its audience is our client
+    ID, then map the account to a ColdReach user:
+      1. known google_sub          → log that user in
+      2. verified email matches an
+         existing password account  → link Google to it, log in
+      3. otherwise                  → create a new Google-only account
+    """
+    client_id = (settings.google_client_id or "").strip()
+    if not client_id:
+        raise HTTPException(503, "Google sign-in is not configured on this server.")
+
+    # Imported lazily so the app still boots if google-auth isn't installed yet.
+    from google.oauth2 import id_token as google_id_token
+    from google.auth.transport import requests as google_requests
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            payload.credential, google_requests.Request(), client_id
+        )
+    except ValueError:
+        # Bad signature, wrong audience, or expired token.
+        raise HTTPException(401, "Invalid or expired Google credential.")
+
+    email = (idinfo.get("email") or "").lower().strip()
+    sub   = idinfo.get("sub")
+    if not sub or not email:
+        raise HTTPException(401, "Google account is missing an email address.")
+    if not idinfo.get("email_verified", False):
+        raise HTTPException(401, "Your Google email address is not verified.")
+
+    repo = UserRepository(db)
+    user = repo.get_by_google_sub(sub)
+    if user is None:
+        existing = repo.get_by_email(email)
+        if existing:
+            repo.link_google_sub(existing, sub)
+            user = existing
+            log.info(f"Linked Google identity to existing account {user.email} (id={user.id})")
+        else:
+            user = repo.create_google_user(email, sub)
+            log.info(f"Registered user {user.email} via Google (id={user.id})")
+
     return AuthResponse(
         token=security.create_token(user.id, user.token_version),
         email=user.email, user_id=user.id,

@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     debug: bool         = False
     cors_origins: str   = "http://localhost:5173"   # Vite dev server
 
+    # ── Auth ─────────────────────────────────────────────────────────────────
+    # Google OAuth 2.0 Web client ID for "Sign in with Google". Empty → the
+    # Google endpoint returns 503 and the frontend hides the button; email/
+    # password login is unaffected. Create one at console.cloud.google.com.
+    google_client_id: str = ""
+
     # ── Database ─────────────────────────────────────────────────────────────
     # Lives under data/ alongside the encryption key (matches .env.example and
     # the Docker volume mount). The directory is auto-created on startup.
