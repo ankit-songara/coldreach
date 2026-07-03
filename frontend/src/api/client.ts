@@ -8,9 +8,11 @@ export const setToken = (t: string | null) => {
   else localStorage.removeItem(TOKEN_KEY)
 }
 
-// All requests proxy through Vite → FastAPI (see vite.config.ts)
+// Dev: requests proxy through Vite → FastAPI (see vite.config.ts).
+// Prod: VITE_API_URL points to the deployed backend, e.g.
+//   VITE_API_URL=https://coldreach-api.vercel.app/api
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_URL ?? '/api',
   headers: { 'Content-Type': 'application/json' },
 })
 

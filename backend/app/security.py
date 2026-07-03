@@ -27,21 +27,43 @@ _KEY_PATH = Path(__file__).resolve().parent.parent / "data" / ".secret_key"
 
 
 def _load_or_create_key() -> bytes:
-    _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if _KEY_PATH.exists():
-        return _KEY_PATH.read_bytes()
-    key = Fernet.generate_key()
-    _KEY_PATH.write_bytes(key)
+    # Env var takes priority — required for stateless hosts (Vercel, Railway,
+    # Render, etc.) where the filesystem is ephemeral or read-only.
+    # Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    env_key = os.environ.get("SECRET_KEY", "").strip()
+    if env_key:
+        try:
+            key = env_key.encode()
+            Fernet(key)   # validate — raises if not a proper Fernet key
+            return key
+        except Exception:
+            log.warning("SECRET_KEY env var is not a valid Fernet key — falling back to file-based key")
+
+    # Local development fallback: persist key in data/.secret_key
     try:
-        os.chmod(_KEY_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 600 — POSIX only
+        _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if _KEY_PATH.exists():
+            return _KEY_PATH.read_bytes()
+        key = Fernet.generate_key()
+        _KEY_PATH.write_bytes(key)
+        try:
+            os.chmod(_KEY_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 600 — POSIX only
+        except OSError:
+            log.warning(
+                "Could not restrict permissions on %s — on Windows, ensure only "
+                "your Windows account has access to the data/ directory.",
+                _KEY_PATH,
+            )
+        log.info("Generated new encryption key at data/.secret_key")
+        return key
     except OSError:
+        # Read-only filesystem (e.g. Vercel) with no SECRET_KEY set — generate
+        # an ephemeral key. Sessions survive the process lifetime only.
         log.warning(
-            "Could not restrict permissions on %s — on Windows, ensure only "
-            "your Windows account has access to the data/ directory.",
-            _KEY_PATH,
+            "Cannot write to data/.secret_key and SECRET_KEY is not set. "
+            "Generating an ephemeral key — set SECRET_KEY env var to persist sessions."
         )
-    log.info("Generated new encryption key at data/.secret_key")
-    return key
+        return Fernet.generate_key()
 
 
 _fernet = Fernet(_load_or_create_key())
