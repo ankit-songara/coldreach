@@ -6,8 +6,8 @@ Email verification API.
                      UI can warn before sending to invalid addresses.
 """
 
+import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -17,7 +17,8 @@ from app.db.crud import ContactRepository
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
-from app.verifier import verify_email
+from app.verifier import verify_email, verify_with_hunter
+from app.config import settings
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/verify", tags=["verify"])
@@ -41,17 +42,28 @@ class VerifyResponse(BaseModel):
 
 
 @router.post("", response_model=VerifyResponse)
-def verify_contacts(req: VerifyRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def verify_contacts(req: VerifyRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     repo = ContactRepository(db, user.id)
     if req.contact_ids:
         contacts = [c for c in (repo.get_by_id(i) for i in req.contact_ids) if c]
     else:
         contacts = [c for c in repo.get_all() if c.email_status == "unknown"]
 
-    # MX lookups are I/O-bound — run them in a small thread pool
-    emails = [c.email for c in contacts]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        verdicts = list(pool.map(verify_email, emails))
+    # When a Hunter key is configured, use its real deliverability check; otherwise
+    # fall back to the local heuristic (syntax + MX + disposable/role). Bounded
+    # concurrency keeps both Hunter's rate limit and DNS load in check.
+    hunter_key = (settings.hunter_api_key or "").strip()
+    sem = asyncio.Semaphore(5)
+
+    async def verdict_for(email: str) -> str:
+        async with sem:
+            if hunter_key:
+                v = await verify_with_hunter(email, hunter_key)
+                if v:
+                    return v
+            return await asyncio.to_thread(verify_email, email)
+
+    verdicts = await asyncio.gather(*(verdict_for(c.email) for c in contacts))
 
     results: list[VerifyResult] = []
     for contact, verdict in zip(contacts, verdicts):

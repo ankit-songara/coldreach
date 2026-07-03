@@ -27,12 +27,12 @@ export default function ContactCard({ contact: c }: Props) {
   const getDesigTier = (d: string) => {
     const dl = d.toLowerCase()
     if (['founder', 'co-founder', 'ceo', 'cto', 'chief', 'founding'].some(x => dl.includes(x)))
-      return { color: '#a78bfa', label: 'P1 · Founder/CxO' }
+      return { color: '#6f5ae0', label: 'P1 · Founder/CxO' }
     if (['hr', 'human resource', 'talent', 'recruiter', 'recruiting', 'people ops', 'people partner'].some(x => dl.includes(x)))
-      return { color: '#f59e0b', label: 'P2 · HR/TA' }
+      return { color: '#c47d1e', label: 'P2 · HR/TA' }
     if (['engineer', 'developer', 'swe', 'software', 'backend', 'frontend', 'fullstack', 'devops', 'data'].some(x => dl.includes(x)))
-      return { color: '#22d3ee', label: 'P3 · Engineer' }
-    return { color: '#64748b', label: '' }
+      return { color: '#0e9d88', label: 'P3 · Engineer' }
+    return { color: '#8a7f70', label: '' }
   }
 
   const initials = c.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -47,7 +47,7 @@ export default function ContactCard({ contact: c }: Props) {
           onClick={() => deleteMutation.mutate()}
           title="Remove"
           className="w-5 h-5 flex items-center justify-center rounded"
-          style={{ background: 'rgba(239,68,68,.08)', color: '#64748b' }}
+          style={{ background: 'rgba(210,72,58,.08)', color: '#8a7f70' }}
         >
           <X size={10} />
         </button>
@@ -92,14 +92,30 @@ export default function ContactCard({ contact: c }: Props) {
             style={{
               fontSize: '8px', fontWeight: 700,
               ...(c.email_status === 'valid'
-                ? { background: 'rgba(52,211,153,0.14)', color: '#34d399' }
+                ? { background: 'rgba(63,143,67,0.14)', color: '#3f8f43' }
                 : c.email_status === 'risky'
-                ? { background: 'rgba(245,158,11,0.14)', color: '#f59e0b' }
-                : { background: 'rgba(239,68,68,0.14)', color: '#ef4444' }),
+                ? { background: 'rgba(196,125,30,0.14)', color: '#c47d1e' }
+                : { background: 'rgba(210,72,58,0.14)', color: '#d2483a' }),
             }}
             title={`Email verification: ${c.email_status}`}
           >
             {c.email_status === 'valid' ? '✓' : c.email_status === 'risky' ? '~' : '✕'} {c.email_status}
+          </span>
+        )}
+        {(c.confidence ?? 0) > 0 && (
+          <span
+            className="badge flex-shrink-0"
+            title={`Email confidence: ${c.confidence}%`}
+            style={{
+              fontSize: '8px', fontWeight: 700,
+              ...((c.confidence ?? 0) >= 80
+                ? { background: 'rgba(63,143,67,0.14)', color: '#3f8f43' }
+                : (c.confidence ?? 0) >= 50
+                ? { background: 'rgba(196,125,30,0.14)', color: '#c47d1e' }
+                : { background: 'rgba(210,72,58,0.14)', color: '#d2483a' }),
+            }}
+          >
+            {c.confidence}%
           </span>
         )}
       </div>

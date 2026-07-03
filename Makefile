@@ -53,7 +53,8 @@ test:           ## Run test suite
 	cd backend && python -m pytest tests/ -v
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
-clean:          ## Remove build artefacts
+clean:          ## Remove build artefacts + local database (keeps .secret_key)
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
 	find . -name "*.pyc" -delete
-	rm -f backend/coldreach.db
+	rm -f backend/coldreach.db backend/coldreach.db-shm backend/coldreach.db-wal
+	rm -f backend/data/coldreach.db backend/data/coldreach.db-shm backend/data/coldreach.db-wal

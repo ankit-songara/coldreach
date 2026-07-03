@@ -39,6 +39,8 @@ class HuntRequest(BaseModel):
 
 
 class HuntResult(BaseModel):
-    contacts: list[dict]
-    total:    int
-    sources:  dict[str, int]   # {"HackerNews": 3, "GitHub": 2, ...}
+    contacts:   list[dict]
+    total:      int                # new contacts saved this hunt
+    sources:    dict[str, int]     # {"HackerNews": 3, "GitHub": 2, ...}
+    found:      int = 0            # leads discovered across sources (pre-resolution)
+    duplicates: int = 0            # resolved contacts already in the user's list

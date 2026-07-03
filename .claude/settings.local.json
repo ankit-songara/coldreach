@@ -2,7 +2,23 @@
   "permissions": {
     "allow": [
       "Bash(python -c ' *)",
-      "Bash(grep -E \"^\\\\.|\\\\.git$\")"
+      "Bash(grep -E \"^\\\\.|\\\\.git$\")",
+      "Bash(python -c \"import uvicorn\")",
+      "PowerShell(Start-Sleep -Seconds 3; Invoke-WebRequest -Uri \"http://localhost:8000/docs\" -UseBasicParsing -TimeoutSec 5 2>&1 | Select-Object StatusCode, StatusDescription)",
+      "PowerShell(Start-Sleep -Seconds 5; Invoke-WebRequest -Uri \"http://localhost:5173\" -UseBasicParsing -TimeoutSec 5 2>&1 | Select-Object StatusCode)",
+      "Bash(.venv/Scripts/pip.exe show *)",
+      "Bash(python -c \"from app.llm.prompts import get_designation_key; tests = [\\('Engineer','engineering_leader'\\),\\('Founder','founder'\\),\\('Recruiter','recruiter'\\),\\('CTO','engineering_leader'\\),\\('Product Manager','product'\\),\\('VP Sales','business_leader'\\),\\('Backend Developer','engineering_leader'\\)]; [print\\(f'  {d!r} -> {get_designation_key\\(d\\)!r}', '✓' if get_designation_key\\(d\\)==e else f'✗ expected {e}'\\) for d,e in tests]\")",
+      "Bash(python -c \"from app.llm.prompts import get_designation_key; tests = [\\('Engineer','engineering_leader'\\),\\('Founder','founder'\\),\\('Recruiter','recruiter'\\),\\('CTO','engineering_leader'\\),\\('Product Manager','product'\\),\\('VP Sales','business_leader'\\),\\('Backend Developer','engineering_leader'\\)]; [print\\(f'  {d!r} -> {get_designation_key\\(d\\)!r}', 'OK' if get_designation_key\\(d\\)==e else f'FAIL expected {e}'\\) for d,e in tests]\")",
+      "Bash(python -c \"from app.llm.generator import _source_hint; sources = ['GitHub/org','HackerNews','greenhouse/acme','lever/stripe','remoteok','remotive']; [print\\(f'  {s!r}: {_source_hint\\(s\\)[:60]}...'\\) for s in sources]\")",
+      "Bash(python -c \"from app.llm.generator import _source_hint; sources = ['GitHub/org','HackerNews','greenhouse/acme','lever/stripe','remoteok','remotive','unknown']; [print\\(s, '->', _source_hint\\(s\\)[:70]\\) for s in sources]\")",
+      "Bash(.\\\\.venv\\\\Scripts\\\\python.exe -c \"from app.llm.generator import _source_hint; sources = ['GitHub/org','HackerNews','greenhouse/acme','lever/stripe','remoteok','remotive','unknown']; [print\\(s, '->', _source_hint\\(s\\)[:70]\\) for s in sources]\")",
+      "Bash(./.venv/Scripts/python.exe *)",
+      "Bash(npx tsc *)",
+      "Bash(uvicorn app.main:app --reload --port 8000)",
+      "Bash(echo \"Backend PID: $!\")",
+      "Bash(npm run *)",
+      "Bash(echo \"Frontend PID: $!\")",
+      "PowerShell(where.exe uvicorn; where.exe python; python --version)"
     ]
   }
 }

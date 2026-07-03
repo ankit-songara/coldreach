@@ -1,267 +1,297 @@
+<div align="center">
+
 # ColdReach
 
-> Open-source cold outreach engine. Find hiring contacts, generate personalised emails. No vendor lock-in.
+### Cold-email your way into interviews.
+
+**Job applications vanish into ATS black holes. The people who actually decide — founders, eng leads, recruiters — are one good email away.** ColdReach finds them, writes emails worth replying to, sends from your own Gmail, and tracks every lead from *sent → reply → interview → offer*.
+
+Open-source · self-hosted · your Gmail, your LLM, your data — nothing leaves your machine.
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green?logo=fastapi)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](https://fastapi.tiangolo.com)
 [![React 18](https://img.shields.io/badge/React-18-61dafb?logo=react)](https://react.dev)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple)](LICENSE)
 
----
-
-## What it does
-
-1. **Hunt** — scrapes HackerNews "Who is Hiring", GitHub commit emails, and company contact pages (Hunter.io enrichment optional)
-2. **Verify** — syntax + MX + heuristic checks flag invalid/risky addresses before you send
-3. **Compose** — generates designation-aware cold emails using any LLM (Ollama, Groq, OpenAI, OpenRouter, Anthropic)
-4. **Send** — bulk-sends via Gmail SMTP with jitter and a daily cap, or schedules sends for later
-5. **Automate** — queues follow-ups, auto-syncs Gmail (IMAP) to detect replies/bounces and cancels follow-ups accordingly
-6. **Track** — CRM-style status per contact (new → emailed → followed_up → replied → interview → rejected/bounced)
-
-Multi-user with email/password accounts; Gmail App Passwords are encrypted at rest.
+</div>
 
 ---
 
-## Tech Stack
+## The whole job search, as one funnel
 
-| Layer      | Technology                        | Notes                                |
-|------------|-----------------------------------|--------------------------------------|
-| Backend    | Python 3.12 + FastAPI             | Async, auto OpenAPI docs             |
-| Scraping   | Playwright + httpx                | Same engine as Apify internally      |
-| LLM        | LangChain (any provider)          | Swap via one env var                 |
-| Database   | SQLite → PostgreSQL               | Zero-setup default, swap for prod    |
-| Frontend   | Vite + React 18 + TypeScript      | TailwindCSS, Zustand, TanStack Query |
-| Local LLM  | Ollama                            | Free, private, runs on M-chip        |
-| Cloud LLM  | Groq (free tier)                  | Fastest inference, no GPU needed     |
+ColdReach turns "apply and pray" into a measurable pipeline. Every contact moves through stages, and the dashboard shows where you convert and where you leak:
+
+```
+ Hunted     ████████████████████  142
+ Verified   ████████████████      118     deliverable addresses only
+ Drafted    █████████████          96     personalised by your résumé
+ Sent       ███████████            80     via your Gmail, paced + capped
+ Replied    ███                    18     23% reply rate
+ Interview  █                       6     33% of replies
+ Offer      ▏                       2     🎉
+```
+
+It also tells you **what's working** — reply rate by source — so you stop blasting low-yield channels and double down where you actually get answers:
+
+```
+ GitHub       ██████████████████  27%   8/30 sent     ← your best source
+ HackerNews   ███████████         19%   5/26 sent
+ ATS boards   ████                 9%   3/32 sent
+ Job boards   ██                   5%   1/19 sent
+```
+
+> **Who it's for:** early-career engineers reaching out to startups (esp. remote/US roles). That's where cold email actually lands — your sources are tuned for it.
 
 ---
 
-## Quick Start
+## Screenshots
+
+<!--
+  Add real screenshots to docs/screenshots/ and they'll render here:
+    today.png    – the Today dashboard (funnel + what's-working)
+    hunt.png     – Hunt results with confidence badges
+    compose.png  – a generated, personalised draft
+  Capture at ~1280px wide on the warm light theme.
+-->
+
+| Today — funnel & analytics | Hunt — find & verify contacts | Compose — personalised drafts |
+|---|---|---|
+| ![Today dashboard](docs/screenshots/today.png) | ![Hunt](docs/screenshots/hunt.png) | ![Compose](docs/screenshots/compose.png) |
+
+_(Screenshots live in `docs/screenshots/` — drop your own PNGs there.)_
+
+---
+
+## How it works
+
+```
+  Résumé ─┐
+          ▼
+   ┌─────────────┐   ┌──────────────┐   ┌──────────────┐   ┌────────────┐   ┌──────────────┐
+   │  1. HUNT    │──▶│  2. RESOLVE  │──▶│  3. COMPOSE  │──▶│  4. SEND   │──▶│  5. TRACK    │
+   │  10 sources │   │  + VERIFY    │   │   your LLM   │   │ your Gmail │   │  IMAP replies │
+   └─────────────┘   └──────────────┘   └──────────────┘   └────────────┘   └──────────────┘
+   who's hiring      real email +        designation-aware   paced, capped,   auto-detect
+   right now         confidence score    personalised email  reputation-safe  replies/bounces
+```
+
+1. **Hunt** — scrapes 17 live sources (below) for people at companies hiring *right now*.
+2. **Resolve & verify** — turns a name + company into a real address via pattern-learning + SMTP probing, scores confidence 0–100, and flags invalid/risky emails *before* you send (syntax + MX + Hunter.io if configured).
+3. **Compose** — generates a designation-aware cold email (founder vs. eng-lead vs. recruiter) grounded in your résumé and genuine context captured at hunt time — never fabricated facts.
+4. **Send** — bulk-sends through your own Gmail SMTP with human-like jitter, a daily cap, and a duplicate-send guard; or schedules sends for later.
+5. **Track & automate** — syncs your Gmail over IMAP to detect replies and bounces, auto-cancels follow-ups when someone replies, and queues timed nudges for everyone who didn't.
+
+You record outcomes (replied → interview → offer) in one tap, and the dashboard turns it into the funnel and source analytics above.
+
+---
+
+## Where it finds people (17 sources, ~170 company boards)
+
+| Source | What it pulls | Cost |
+|--------|---------------|------|
+| **HackerNews** "Who is Hiring" | The current monthly thread — real posts with contact emails | Free |
+| **HackerNews job posts** | "Acme (YC W24) Is Hiring" front-page stories — funded startups | Free |
+| **GitHub** | Commit-author emails + profiles from orgs actively shipping in your stack | Free |
+| **Greenhouse / Lever / Ashby** | Live job postings → company + recruiter leads | Free |
+| **SmartRecruiters / Recruitee / Workable / Breezy** | More ATS boards (live-verified company slugs) | Free |
+| **RemoteOK / Remotive / Arbeitnow** | Remote-job aggregators — proof a company is hiring | Free |
+| **Jobicy / Himalayas / The Muse / WeWorkRemotely** | More remote-job boards | Free |
+| **Hunter.io** *(optional)* | Verified emails + deliverability scores by domain | Free tier |
+
+Searching is **role-aware** (`"golang hiring"`, `"react engineer remote"`) or **company-aware** (`"Stripe"`). Every discovered address runs through the verifier before it reaches you.
+
+---
+
+## Quick start
 
 ### Option A — Docker (recommended)
 
 ```bash
-git clone https://github.com/yourname/coldreach
-cd coldreach
-
-cp .env.example .env          # edit if needed — all defaults work locally
-
+git clone https://github.com/ankit-songara/coldreach && cd coldreach
+cp .env.example .env                 # all defaults work locally
 docker compose up -d
-
-# First time: pull a local LLM (~5 GB, one-time)
-docker exec coldreach-ollama ollama pull llama3.1
+docker exec coldreach-ollama ollama pull llama3.1   # one-time local LLM (~5 GB)
 ```
 
-Open **http://localhost:5173** — done.
+Open **http://localhost:5173** → done.
 
-### Option B — Local dev (no Docker)
+### Option B — Local dev
 
-**Prerequisites:** Python 3.12+, Node 20+, [Ollama](https://ollama.com) or a Groq API key
+**Prereqs:** Python 3.11+, Node 18+, and either [Ollama](https://ollama.com) or a free [Groq](https://console.groq.com) key.
 
 ```bash
-# 1. Clone
-git clone https://github.com/yourname/coldreach && cd coldreach
+git clone https://github.com/ankit-songara/coldreach && cd coldreach
+cp .env.example .env
 
-# 2. Backend
+# backend
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m playwright install chromium
-cp ../.env.example ../.env
 
-# 3. Frontend
-cd ../frontend
-npm install
+# frontend
+cd ../frontend && npm install
 
-# 4. Start (two terminals)
-make dev-backend    # → http://localhost:8000
-make dev-frontend   # → http://localhost:5173
+# run (two terminals, from repo root)
+make dev-backend     # → http://localhost:8000
+make dev-frontend    # → http://localhost:5173
 ```
+
+> First run: create an account, paste/upload your résumé, add your Gmail **App Password** (Setup tab), then Hunt. Full walkthrough in [SETUP.md](SETUP.md).
 
 ---
 
-## LLM Configuration
+## LLM configuration
 
-ColdReach auto-detects the best available LLM at startup:
+ColdReach is provider-agnostic and auto-detects the best available LLM at startup:
 
 ```
 LLM_PROVIDER=auto (default)
-  → 1st: checks Ollama at localhost:11434
-  → 2nd: uses Groq if LLM_API_KEY (Groq key) is set
-  → otherwise: raises a clear error at compose time telling you what to configure
+  → 1st: Ollama at localhost:11434   (local, free, private)
+  → 2nd: Groq if LLM_API_KEY is set  (cloud, free tier, fastest)
+  → else: a clear error at compose time telling you what to configure
 ```
 
-> There is also a zero-config `mock` provider for demos/CI. It is **only** used
-> when you set `LLM_PROVIDER=mock` explicitly — it returns an obvious placeholder
-> that must not be sent. `auto` never silently falls back to it.
-
-### Ollama (local, free, private)
+Force any provider with env vars — no code changes:
 
 ```bash
-brew install ollama            # macOS
-ollama pull llama3.1           # ~5GB, runs on M1/M2/M3 Macs
-
-# Verify
-curl http://localhost:11434/api/tags
+LLM_PROVIDER=groq        LLM_API_KEY=gsk_...
+LLM_PROVIDER=openai      LLM_API_KEY=sk-...      LLM_MODEL=gpt-4o-mini
+LLM_PROVIDER=openrouter  LLM_API_KEY=sk-or-...   LLM_MODEL=mistralai/mistral-7b-instruct
+LLM_PROVIDER=anthropic   LLM_API_KEY=sk-ant-...
 ```
 
-Works without internet once the model is downloaded.
-
-### Groq (cloud, free tier, fastest)
-
-```
-# console.groq.com → free API key → 14,400 tokens/min
-GROQ_API_KEY=gsk_xxx
-```
-
-### Force a specific provider
-
-```bash
-# .env
-LLM_PROVIDER=groq
-LLM_API_KEY=gsk_xxx
-
-# or OpenAI
-LLM_PROVIDER=openai
-LLM_API_KEY=sk-xxx
-LLM_MODEL=gpt-4o-mini
-
-# or OpenRouter (100+ models)
-LLM_PROVIDER=openrouter
-LLM_API_KEY=sk-or-xxx
-LLM_MODEL=mistralai/mistral-7b-instruct
-```
-
-No code changes required — just environment variables.
+> A zero-config `mock` provider exists for demos/CI — used **only** when you set `LLM_PROVIDER=mock`. It returns an obvious placeholder that must not be sent; `auto` never silently falls back to it.
 
 ---
 
-## Project Structure
+## Privacy & safety (it's self-hosted for a reason)
 
-```
-coldreach/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI app + lifespan
-│   │   ├── config.py            # Pydantic settings
-│   │   ├── api/
-│   │   │   ├── hunt.py          # POST /api/hunt
-│   │   │   ├── compose.py       # POST /api/compose, /followup
-│   │   │   └── contacts.py      # CRUD /api/contacts
-│   │   ├── scrapers/            # Strategy pattern — add sources here
-│   │   │   ├── base.py          # BaseScraper ABC
-│   │   │   ├── hn.py            # HackerNews Algolia (free)
-│   │   │   ├── github.py        # GitHub commit emails (free)
-│   │   │   ├── web.py           # Playwright scraper
-│   │   │   └── enricher.py      # Hunter.io (optional)
-│   │   ├── llm/
-│   │   │   ├── factory.py       # Provider factory + auto-detect
-│   │   │   ├── generator.py     # Email generation
-│   │   │   └── prompts.py       # Templates per designation type
-│   │   └── db/
-│   │       ├── database.py      # SQLAlchemy engine + session
-│   │       ├── models.py        # ORM models
-│   │       └── crud.py          # Repository pattern
-│   └── requirements.txt
-├── frontend/
-│   └── src/
-│       ├── api/                 # Typed API clients
-│       ├── components/          # Setup, Hunt, Compose, Send tabs
-│       ├── store/               # Zustand state
-│       └── types/               # Shared TypeScript types
-├── docker-compose.yml
-├── Makefile
-└── .env.example
-```
+- **Your Gmail, your account.** Sends go through *your* Gmail via an App Password — no third-party sending service ever sees your contacts.
+- **Credentials encrypted at rest.** App Passwords are Fernet-encrypted before touching the database and are **never** persisted to the browser.
+- **Multi-user, fully scoped.** Email/password accounts with revocable sessions; every row is scoped to its owner.
+- **Reputation-safe sending.** Jittered pacing, a configurable daily cap, invalid-address skipping, and a guard that can't send a first-touch twice.
+- **SSRF-guarded.** Server-side scraping and SMTP probing refuse to connect to private/internal addresses.
+- **Nothing phones home.** No telemetry. Your résumé, contacts, and emails stay on your machine.
 
 ---
 
-## API Reference
+## Tech stack
 
-Interactive docs at **http://localhost:8000/docs** (Swagger UI).
-
-All endpoints except `/api/health`, `/api/auth/register`, and `/api/auth/login`
-require a `Authorization: Bearer <token>` header.
-
-| Method | Endpoint                  | Description                              |
-|--------|---------------------------|------------------------------------------|
-| GET    | /api/health               | Status + active LLM provider             |
-| POST   | /api/auth/register        | Create an account, returns a token       |
-| POST   | /api/auth/login           | Exchange credentials for a token         |
-| POST   | /api/auth/logout          | Revoke all of this user's tokens         |
-| GET    | /api/auth/me              | Current user                             |
-| POST   | /api/hunt                 | Run all scrapers for a keyword           |
-| POST   | /api/verify               | Verify contact emails (syntax/MX/heur.)  |
-| GET    | /api/contacts             | List all saved contacts                  |
-| POST   | /api/contacts             | Create contact manually                  |
-| PATCH  | /api/contacts/{id}        | Update status / notes                    |
-| DELETE | /api/contacts/{id}        | Delete one contact                       |
-| POST   | /api/resume/extract       | Extract + save text from a PDF/DOCX      |
-| GET    | /api/resume/latest        | Most recently saved résumé               |
-| POST   | /api/compose              | Generate cold email via LLM              |
-| POST   | /api/compose/followup     | Generate follow-up email                 |
-| PUT    | /api/compose/draft/{id}   | Edit a draft's subject/body              |
-| GET    | /api/compose/{id}         | List drafts for a contact                |
-| POST   | /api/send/bulk            | Bulk-send drafts via Gmail SMTP          |
-| POST   | /api/send/schedule        | Queue first-touch sends for later        |
-| POST   | /api/send/test            | Verify Gmail credentials (no send)       |
-| POST   | /api/inbox/sync           | Scan Gmail for replies/bounces (IMAP)    |
-| POST   | /api/config/gmail         | Save Gmail creds server-side (encrypted) |
-| GET    | /api/config               | Automation status (no secrets)           |
-| POST   | /api/config/automation    | Toggle automation / set daily cap        |
-| POST   | /api/followups/schedule   | Queue follow-ups N days out              |
-| GET    | /api/followups            | List pending scheduled follow-ups        |
-| DELETE | /api/followups/{id}       | Cancel a pending follow-up               |
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Backend | Python 3.12 + FastAPI | Async, auto OpenAPI docs |
+| Frontend | Vite + React 18 + TypeScript | Tailwind, Zustand, TanStack Query |
+| LLM | LangChain (any provider) | Swap via one env var |
+| Database | SQLite → PostgreSQL | Zero-setup default, swap for prod |
+| Email | Gmail SMTP (send) + IMAP (reply detection) | Your account, App Password |
+| Scraping | httpx + public APIs (+ Playwright) | Public endpoints only — no ToS-risky scraping |
 
 ---
 
-## Adding a New Scraper
+## Extending it
+
+**Add a generic source** — implement one method and register it:
 
 ```python
-# backend/app/scrapers/twitter.py
+# backend/app/scrapers/mysource.py
 from app.scrapers.base import BaseScraper
 
-class TwitterScraper(BaseScraper):
-    name = "Twitter"
-
+class MySourceScraper(BaseScraper):
+    name = "MySource"
     async def search(self, query: str, **_) -> list[dict]:
-        # your implementation
-        return [{"name": ..., "email": ..., "company": ..., "designation": ..., "source": "Twitter"}]
+        return [{"name": ..., "email": ..., "company": ..., "designation": ..., "source": "MySource"}]
 ```
-
-Register it in `backend/app/api/hunt.py`:
 
 ```python
-from app.scrapers.twitter import TwitterScraper
-
-def _build_scrapers(hunter_key):
-    return [
-        HackerNewsScraper(),
-        GitHubScraper(),
-        WebScraper(),
-        TwitterScraper(),    # ← add here
-    ]
+# backend/app/api/hunt.py — add to _build_scrapers()
+scrapers = [
+    HackerNewsScraper(), HNJobsScraper(), GitHubScraper(),
+    GreenhouseScraper(), LeverScraper(), AshbyScraper(),
+    SmartRecruitersScraper(), RecruiteeScraper(),
+    WorkableScraper(), BreezyScraper(),
+    RemoteOKScraper(), RemotiveScraper(), ArbeitnowScraper(),
+    MySourceScraper(),   # ← here
+]
 ```
 
-That's it.
+**Add an ATS** — subclass `BaseATSScraper` and implement `_fetch(slug)`, then add company rows to `scrapers/directory.py`.
+**Add a job board** — subclass `_JsonBoard` in `scrapers/jobboards.py` and implement `_listings(client)`.
 
 ---
 
-## Production Deployment
+## API reference
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for:
-- Railway / Render / Fly.io one-click deploy
-- PostgreSQL swap
-- Environment hardening
+Interactive Swagger UI at **http://localhost:8000/docs**. All routes except `/api/health`, `/api/auth/register`, and `/api/auth/login` require `Authorization: Bearer <token>`.
+
+<details>
+<summary><b>Endpoints</b></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/health | Status + active LLM provider |
+| POST | /api/auth/register · /login · /logout | Accounts + revocable sessions |
+| GET | /api/auth/me | Current user |
+| POST | /api/hunt | Run all scrapers for a query |
+| POST | /api/verify | Verify emails (syntax / MX / Hunter) |
+| GET·POST·PATCH·DELETE | /api/contacts | Contact CRUD + status |
+| POST | /api/resume/extract · /save | Extract/save résumé text (PDF/DOCX) |
+| GET | /api/resume/latest | Most recent résumé |
+| POST | /api/compose · /followup | Generate email / follow-up |
+| PUT | /api/compose/draft/{id} | Edit a draft |
+| POST | /api/send/bulk · /schedule · /test | Send now / queue / test creds |
+| POST | /api/inbox/sync | Scan Gmail for replies & bounces |
+| POST·GET | /api/config · /config/gmail · /config/automation | Server-side automation config |
+| POST·GET·DELETE | /api/followups · /schedule · /{id} | Queue / list / cancel follow-ups |
+
+</details>
 
 ---
 
-## Contributing
+## Project structure
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+```
+backend/app/
+├── main.py            # FastAPI app + lifespan + /api/health
+├── config.py          # env settings        timeutil.py  netguard.py (SSRF)
+├── security.py        # Fernet encryption + PBKDF2 + session tokens
+├── mailer.py          # Gmail SMTP send (single + reusable session)
+├── scheduler.py       # background follow-up delivery (paced)
+├── verifier.py        # syntax + MX + Hunter deliverability checks
+├── api/               # hunt · compose · contacts · resume · send · inbox · automation · verify · auth
+├── scrapers/
+│   ├── base.py        # BaseScraper ABC          directory.py  (company→ATS map)
+│   ├── hn.py github.py                            # free people sources
+│   ├── ats.py         # Greenhouse/Lever/Ashby/SmartRecruiters/Recruitee
+│   ├── jobboards.py   # RemoteOK/Remotive/Arbeitnow
+│   ├── resolver.py    # email pattern-learning + SMTP probe + confidence
+│   ├── web.py         # company-page email harvest    enricher.py (Hunter)
+├── llm/               # factory (auto-detect) · generator · prompts · parsing
+└── db/                # database · models · crud (repository pattern)
+
+frontend/src/          # api clients · components (Today/Setup/Hunt/Compose/Send) · store · types
+```
+
+---
+
+## Roadmap
+
+- [ ] **One-click hosted "lite"** + Gmail OAuth (remove the App-Password / self-host friction)
+- [ ] **Chrome extension** — find the hiring manager straight from a LinkedIn/job post
+- [ ] **A/B email variants** — test subjects/openers, learn what converts
+- [ ] **Cross-user benchmarks** — "emails like yours reply at X%; top performers do Y"
+
+---
+
+## Docs
+
+- [SETUP.md](SETUP.md) — full local / Docker setup + troubleshooting
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the pieces fit together
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Railway / Render / Fly.io + Postgres
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — contributing guide
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE) — use it, fork it, ship it.

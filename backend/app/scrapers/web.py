@@ -1,43 +1,115 @@
 """
-Playwright web scraper — handles JavaScript-heavy sites (SPAs, React apps).
-Same engine as Apify's PlaywrightCrawler, running locally.
+Company-page email harvesting.
+
+`emails_from_company_pages(domain)` is the fast, dependency-free path used during
+a hunt to turn a bare company domain into a real, named person's mailbox (from
+/team, /about, /careers …) instead of a generic role inbox. The Playwright-based
+`WebScraper.scrape_company_contact_pages` remains for JS-rendered deep scrapes.
 """
 
 import re
+import asyncio
 import httpx
 from urllib.parse import urlparse
 from app.scrapers.base import BaseScraper
+from app.netguard import resolves_public
 
-EMAIL_RE = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}\b')
+EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
+_UA    = "ColdReach/1.0 (contact finder)"
+_PAGES = ("/contact", "/about", "/team", "/careers", "/about-us", "/company")
+
+# Image filenames and vendor domains that regex matches as "emails" — skip them.
+_JUNK_RE = re.compile(
+    r"@\d+x|@\d{2,}x\d{2,}|\.(png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|css|js)$"
+    r"|@(sentry|cloudflare|amazonaws|fonts\.gstatic|googleapis|example|test)\.",
+    re.IGNORECASE,
+)
+
+
+def _clean(raw: list[str]) -> list[str]:
+    out, seen = [], set()
+    for e in raw:
+        e = e.lower().strip().rstrip(".,;:")
+        if e not in seen and not _JUNK_RE.search(e) and "@" in e and "." in e.split("@")[1]:
+            seen.add(e)
+            out.append(e)
+    return out
+
+
+async def emails_from_company_pages(domain: str, timeout: int = 8) -> list[str]:
+    """Scrape a company's public pages for email addresses.
+
+    Primary: Scrapling StealthyFetcher + get_all_text() — extracts only visible
+    text so it finds real emails (e.g. zeno@resend.com) instead of false-positive
+    image filenames (favicon@57x57.png) that raw HTML regex returns.
+    Also bypasses Cloudflare on many domains that httpx can't reach.
+
+    Fallback: plain httpx for sites where Scrapling fails or isn't available.
+
+    SSRF guard: refuses private/loopback/reserved domains.
+    """
+    if not await asyncio.to_thread(resolves_public, domain):
+        return []
+
+    emails = await _scrape_scrapling(domain, timeout)
+    if emails:
+        return emails
+    return await _scrape_httpx(domain, timeout)
+
+
+async def _scrape_scrapling(domain: str, timeout: int) -> list[str]:
+    try:
+        from scrapling.fetchers import StealthyFetcher
+        fetcher = StealthyFetcher()
+    except Exception:
+        return []
+
+    found: list[str] = []
+    for path in _PAGES:
+        try:
+            page = await asyncio.wait_for(
+                fetcher.async_fetch(f"https://{domain}{path}"),
+                timeout=timeout,
+            )
+            text = page.get_all_text(ignore_tags=("script", "style", "noscript"))
+            found.extend(EMAIL_RE.findall(text))
+        except Exception:
+            pass
+        if len(found) >= 12:
+            break
+    return _clean(found)[:8]
+
+
+async def _scrape_httpx(domain: str, timeout: int) -> list[str]:
+    found: list[str] = []
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True,
+            headers={"User-Agent": _UA},
+        ) as client:
+            for path in _PAGES:
+                try:
+                    resp = await client.get(f"https://{domain}{path}")
+                    if resp.is_success:
+                        found.extend(EMAIL_RE.findall(resp.text))
+                except Exception:
+                    pass
+                if len(found) >= 12:
+                    break
+    except Exception:
+        pass
+    return _clean(found)[:8]
 
 
 class WebScraper(BaseScraper):
     name = "Web"
 
     async def search(self, query: str, **_) -> list[dict]:
-        """Scrape Wellfound and company contact pages for emails."""
-        contacts = []
-        contacts.extend(await self._scrape_wellfound(query))
-        return contacts
-
-    async def _scrape_wellfound(self, query: str) -> list[dict]:
-        """Wellfound job listings — often lists founder contact info."""
-        try:
-            async with httpx.AsyncClient(
-                timeout=15,
-                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
-                follow_redirects=True,
-            ) as client:
-                url = f"https://wellfound.com/jobs?role={query.replace(' ', '+')}"
-                resp = await client.get(url)
-                text = resp.text
-        except Exception:
-            return []
-
-        return [
-            {"email": e, "company": "Unknown", "designation": "Recruiter", "source": "Wellfound", "name": "Contact"}
-            for e in set(EMAIL_RE.findall(text))
-        ]
+        # Wellfound is a heavy SPA with no server-rendered emails — scraping it
+        # over plain HTTP yielded nothing, so this source is intentionally inert.
+        # Company-page harvesting now happens in the resolver via
+        # emails_from_company_pages(). Kept registered for the Playwright path.
+        return []
 
     async def scrape_company_contact_pages(self, domain: str) -> list[str]:
         """

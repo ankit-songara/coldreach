@@ -4,7 +4,8 @@ Uses SQLite by default; swap to PostgreSQL via DATABASE_URL env var.
 """
 
 import logging
-from sqlalchemy import create_engine, inspect, text
+from pathlib import Path
+from sqlalchemy import create_engine, inspect, text, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from app.config import settings
 
@@ -12,9 +13,20 @@ log = logging.getLogger(__name__)
 
 
 # ── Engine ───────────────────────────────────────────────────────────────────
+_is_sqlite = settings.database_url.startswith("sqlite")
+
+# Ensure the SQLite file's parent directory exists (e.g. ./data) — otherwise the
+# first connection fails with "unable to open database file" on a fresh checkout.
+if _is_sqlite and ":memory:" not in settings.database_url:
+    _prefix = "sqlite:///"
+    if settings.database_url.startswith(_prefix):
+        _db_path = settings.database_url[len(_prefix):]
+        if _db_path:
+            Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
+
 connect_args = (
     {"check_same_thread": False}        # SQLite only
-    if settings.database_url.startswith("sqlite")
+    if _is_sqlite
     else {}
 )
 
@@ -23,6 +35,21 @@ engine = create_engine(
     connect_args=connect_args,
     echo=settings.debug,
 )
+
+
+# ── SQLite concurrency hardening ──────────────────────────────────────────────
+# The background scheduler thread writes while request handlers also write. With
+# the default rollback journal, SQLite serialises writers aggressively and throws
+# "database is locked" under contention. WAL lets readers and one writer proceed
+# concurrently; busy_timeout makes a blocked writer wait instead of failing fast.
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn, _record):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")   # wait up to 5s for a lock
+        cur.execute("PRAGMA synchronous=NORMAL")  # safe with WAL, much faster
+        cur.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -46,6 +73,7 @@ def create_tables() -> None:
     from app.db import models   # noqa: F401 — import registers models
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
+    _fix_contact_email_index()
 
 
 # ── Minimal SQLite migration ──────────────────────────────────────────────────
@@ -58,6 +86,7 @@ _NEW_COLUMNS = {
         ("bounced",         "BOOLEAN DEFAULT 0"),
         ("followups_sent",  "INTEGER DEFAULT 0"),
         ("email_status",    "VARCHAR(20) DEFAULT 'unknown'"),
+        ("confidence",      "INTEGER DEFAULT 0"),
         ("user_id",         "INTEGER DEFAULT 1"),
         ("context",         "TEXT"),
     ],
@@ -83,3 +112,29 @@ def _ensure_columns() -> None:
                 if name not in have:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
                     log.info(f"Migrated: added {table}.{name}")
+
+
+def _fix_contact_email_index() -> None:
+    """
+    Older schemas created a GLOBAL unique index on contacts.email. Email is now
+    unique only per-user (UniqueConstraint user_id+email), so a leftover global
+    unique index wrongly blocks a second user from saving an email another user
+    already has. Replace any unique email index with a plain one, and ensure the
+    per-user uniqueness index exists.
+    """
+    if not settings.database_url.startswith("sqlite"):
+        return
+    inspector = inspect(engine)
+    if "contacts" not in inspector.get_table_names():
+        return
+    with engine.begin() as conn:
+        for idx in inspector.get_indexes("contacts"):
+            if idx.get("unique") and idx.get("column_names") == ["email"]:
+                conn.execute(text(f'DROP INDEX IF EXISTS "{idx["name"]}"'))
+                conn.execute(text('CREATE INDEX IF NOT EXISTS ix_contacts_email ON contacts (email)'))
+                log.info(f"Migrated: dropped global-unique index {idx['name']} on contacts.email")
+        # Per-user uniqueness (no-op if it already exists).
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_contact_user_email "
+            "ON contacts (user_id, email)"
+        ))

@@ -14,6 +14,7 @@ Verdict: "valid" | "risky" | "invalid". MX lookups are cached per-process.
 import re
 import logging
 import dns.resolver
+import httpx
 
 log = logging.getLogger(__name__)
 
@@ -74,3 +75,40 @@ def verify_email(email: str) -> str:
         return "risky"
 
     return "valid"
+
+
+# ── Hunter.io verifier (optional, real deliverability check) ──────────────────
+# When the user has a Hunter key, this beats any self-probe: Hunter maintains
+# deliverability data and runs the SMTP checks for us from a clean reputation.
+# Returns "valid" | "risky" | "invalid", or None on failure so the caller can
+# fall back to the local heuristic.
+
+async def verify_with_hunter(email: str, api_key: str) -> str | None:
+    if not (email and api_key):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            r = await client.get(
+                "https://api.hunter.io/v2/email-verifier",
+                params={"email": email, "api_key": api_key},
+            )
+            if not r.is_success:
+                return None
+            d = r.json().get("data", {})
+    except Exception as e:
+        log.debug(f"Hunter verify failed for {email}: {e}")
+        return None
+
+    status = (d.get("status") or "").lower()
+    if status == "valid":
+        return "valid"
+    if status in ("invalid", "disposable"):
+        return "invalid"
+    if status in ("accept_all", "webmail", "unknown"):
+        return "risky"   # accept-all/catch-all: deliverable but unprovable
+
+    # No explicit status — fall back to Hunter's numeric score.
+    score = d.get("score")
+    if isinstance(score, (int, float)):
+        return "valid" if score >= 80 else "risky" if score >= 40 else "invalid"
+    return None

@@ -16,7 +16,7 @@ from app.config import settings
 from app.db.database import create_tables
 from app.llm.factory import detect_provider
 from app.scheduler import scheduler
-from app.api import hunt, compose, contacts, resume, send, inbox, automation, verify, auth
+from app.api import hunt, compose, contacts, resume, send, inbox, automation, verify, auth, demo, companies
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -31,6 +31,19 @@ async def lifespan(_: FastAPI):
     log.info(f"Starting {settings.app_name} v{settings.app_version}")
     create_tables()
     log.info("✓ Database ready")
+
+    # Load runtime-extensible company directory entries (user-added + discovered).
+    from app.db.database import SessionLocal
+    from app.db.crud import load_known_companies_into_directory
+    _db = SessionLocal()
+    try:
+        loaded = load_known_companies_into_directory(_db)
+        if loaded:
+            log.info(f"✓ Directory: +{loaded} learned companies")
+    except Exception as e:
+        log.warning(f"Could not load learned companies: {e}")
+    finally:
+        _db.close()
 
     try:
         provider, model = await detect_provider()
@@ -75,6 +88,8 @@ app.include_router(send.router,       prefix="/api")
 app.include_router(inbox.router,      prefix="/api")
 app.include_router(automation.router, prefix="/api")
 app.include_router(verify.router,     prefix="/api")
+app.include_router(demo.router,       prefix="/api")
+app.include_router(companies.router,  prefix="/api")
 
 
 @app.get("/api/health")

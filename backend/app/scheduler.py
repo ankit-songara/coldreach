@@ -12,9 +12,11 @@ Replies cancel pending follow-ups elsewhere (inbox sync), so anything still
 'pending' here is genuinely awaiting a nudge.
 """
 
+import time
+import random
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from collections import defaultdict
 
@@ -22,15 +24,18 @@ from app.db.database import SessionLocal
 from app.db.crud import (
     ConfigRepository, ScheduledEmailRepository, ContactRepository,
     all_due_scheduled, mark_scheduled_sent, mark_scheduled_failed,
+    already_first_touched,
 )
 from app.schemas.contact import ContactUpdate
+from app.timeutil import utcnow
 from app import mailer
 
 log = logging.getLogger(__name__)
 
 POLL_SECONDS = 60
 DEFAULT_DAILY_CAP = 50
-SEND_GAP_SECONDS = 4   # small jitterable gap between automated sends
+SEND_GAP_SECONDS = 4    # base gap between automated sends (plus jitter)
+MAX_PER_TICK = 10       # cap sends per tick so a tick can't run much past POLL_SECONDS
 
 
 class FollowUpScheduler:
@@ -67,7 +72,7 @@ class FollowUpScheduler:
     def _tick(self) -> None:
         db = SessionLocal()
         try:
-            due_all = all_due_scheduled(db, datetime.utcnow())
+            due_all = all_due_scheduled(db, utcnow())
             if not due_all:
                 return
 
@@ -97,18 +102,27 @@ class FollowUpScheduler:
             return
 
         cap = int(cfg.get("daily_send_cap", str(DEFAULT_DAILY_CAP)) or DEFAULT_DAILY_CAP)
-        budget = max(0, cap - self._sent_today(contacts))
+        budget = min(MAX_PER_TICK, max(0, cap - self._sent_today(contacts)))
         if budget <= 0:
             log.info(f"[user {user_id}] daily cap {cap} reached; deferring {len(due)}")
             return
 
-        for item in due[:budget]:
+        # Resolve all guards first (cancelling stale/duplicate items), then open a
+        # single SMTP session for the genuinely sendable ones.
+        sendable: list[tuple] = []
+        for item in due:
             contact = contacts.get_by_id(item.contact_id)
             if not contact:
                 mark_scheduled_failed(db, item.id, "contact deleted")
                 continue
-            if contact.replied_at or contact.status in ("replied", "interview", "rejected", "bounced"):
+            if contact.replied_at or contact.status in ("replied", "interview", "offer", "rejected", "bounced"):
                 sched.cancel(item.id)
+                continue
+            # A first-touch item must not fire if the contact was already emailed
+            # by another path (bulk send / manual Gmail) between scheduling and now.
+            if not item.is_followup and already_first_touched(contact):
+                sched.cancel(item.id)
+                log.info(f"[user {user_id}] cancelled duplicate first-touch to {contact.email}")
                 continue
             # Never send to addresses we already know are bad — protects the
             # sending account's reputation (mirrors the bulk-send guard).
@@ -116,28 +130,44 @@ class FollowUpScheduler:
                 sched.cancel(item.id)
                 log.info(f"[user {user_id}] skipped {contact.email}: known invalid/bounced")
                 continue
-            try:
-                mailer.send_email(address, password, contact.email, item.subject, item.body)
-                mark_scheduled_sent(db, item.id)
-                if item.is_followup:
-                    contacts.update(contact.id, ContactUpdate(
-                        status="followed_up",
-                        last_emailed_at=datetime.utcnow(),
-                        followups_sent=(contact.followups_sent or 0) + 1,
-                    ))
-                else:
-                    contacts.update(contact.id, ContactUpdate(
-                        status="emailed",
-                        last_emailed_at=datetime.utcnow(),
-                    ))
-                log.info(f"[user {user_id}] scheduled email sent to {contact.email}")
-            except Exception as e:
-                mark_scheduled_failed(db, item.id, str(e))
-                log.error(f"[user {user_id}] send to {contact.email} failed: {e}")
+            sendable.append((item, contact))
+            if len(sendable) >= budget:
+                break
+
+        if not sendable:
+            return
+
+        try:
+            with mailer.GmailSMTP(address, password) as smtp:
+                for i, (item, contact) in enumerate(sendable):
+                    if i > 0:
+                        # Jittered gap — constant intervals are a spam signal.
+                        time.sleep(SEND_GAP_SECONDS + random.uniform(0, 2))
+                    try:
+                        smtp.send(contact.email, item.subject, item.body)
+                        mark_scheduled_sent(db, item.id)
+                        if item.is_followup:
+                            contacts.update(contact.id, ContactUpdate(
+                                status="followed_up",
+                                last_emailed_at=utcnow(),
+                                followups_sent=(contact.followups_sent or 0) + 1,
+                            ))
+                        else:
+                            contacts.update(contact.id, ContactUpdate(
+                                status="emailed",
+                                last_emailed_at=utcnow(),
+                            ))
+                        log.info(f"[user {user_id}] scheduled email sent to {contact.email}")
+                    except Exception as e:
+                        mark_scheduled_failed(db, item.id, str(e))
+                        log.error(f"[user {user_id}] send to {contact.email} failed: {e}")
+        except Exception as e:
+            # Couldn't establish the session — leave items pending for the next tick.
+            log.error(f"[user {user_id}] SMTP session failed: {e}")
 
     @staticmethod
     def _sent_today(contacts: ContactRepository) -> int:
-        since = datetime.utcnow() - timedelta(hours=24)
+        since = utcnow() - timedelta(hours=24)
         return sum(
             1 for c in contacts.get_all()
             if c.last_emailed_at and c.last_emailed_at >= since

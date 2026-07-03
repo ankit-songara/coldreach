@@ -5,6 +5,8 @@ export interface ConfigStatus {
   has_credentials:    boolean
   automation_enabled: boolean
   daily_send_cap:     number
+  sender_name:        string
+  signature_links:    string
 }
 
 export interface ScheduledItem {
@@ -34,6 +36,11 @@ export const automationApi = {
 
   setAutomation: (opts: { enabled?: boolean; daily_send_cap?: number }) =>
     api.post<ConfigStatus>('/config/automation', opts).then(r => r.data),
+
+  setProfile: (senderName: string, signatureLinks?: string) =>
+    api.post<ConfigStatus>('/config/profile', {
+      sender_name: senderName, signature_links: signatureLinks,
+    }).then(r => r.data),
 
   scheduleFollowups: (contactIds: number[], days: number) =>
     api.post<ScheduleFollowupsResponse>('/followups/schedule', {

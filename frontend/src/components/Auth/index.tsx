@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { LogIn, UserPlus } from 'lucide-react'
+import { LogIn, UserPlus, Send as SendIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { authApi } from '../../api/auth'
 
@@ -31,11 +31,17 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <span className="text-3xl font-bold tracking-tight" style={{ fontFamily: 'Rajdhani', color: 'var(--accent)' }}>
-            COLD<span style={{ color: 'var(--text)' }}>REACH</span>
+        <div className="flex flex-col items-center mb-8">
+          <div
+            className="flex items-center justify-center mb-3"
+            style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--accent)', boxShadow: 'var(--shadow-sm)' }}
+          >
+            <SendIcon size={20} color="#fff" />
+          </div>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--accent)', lineHeight: 1 }}>
+            Cold<span style={{ color: 'var(--text)' }}>Reach</span>
           </span>
-          <p className="text-xs font-mono mt-1" style={{ color: 'var(--text-dim)' }}>
+          <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
             open-source cold outreach engine
           </p>
         </div>
@@ -47,19 +53,20 @@ export default function Auth() {
                 key={m}
                 type="button"
                 onClick={() => setMode(m)}
-                className="flex-1 text-xs font-bold font-mono py-2 rounded-md transition-colors"
+                className="flex-1 text-sm font-semibold py-2 rounded-md transition-colors"
                 style={{
                   background: mode === m ? 'var(--surface-1)' : 'transparent',
-                  color: mode === m ? 'var(--accent)' : 'var(--text-dim)',
+                  color: mode === m ? 'var(--accent)' : 'var(--text-muted)',
+                  boxShadow: mode === m ? 'var(--shadow-xs)' : 'none',
                 }}
               >
-                {m === 'login' ? 'LOG IN' : 'SIGN UP'}
+                {m === 'login' ? 'Log in' : 'Sign up'}
               </button>
             ))}
           </div>
 
           <div>
-            <label className="text-xs font-bold font-mono" style={{ color: 'var(--text-dim)' }}>EMAIL</label>
+            <label className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Email</label>
             <input
               type="email"
               value={email}
@@ -71,7 +78,7 @@ export default function Auth() {
           </div>
 
           <div>
-            <label className="text-xs font-bold font-mono" style={{ color: 'var(--text-dim)' }}>PASSWORD</label>
+            <label className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Password</label>
             <input
               type="password"
               value={password}

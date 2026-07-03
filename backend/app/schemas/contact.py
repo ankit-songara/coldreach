@@ -5,14 +5,16 @@ from pydantic import BaseModel, EmailStr
 
 
 class ContactCreate(BaseModel):
-    name:        str = "Contact"
-    email:       str
-    designation: str = "Hiring Manager"
-    company:     str = "Unknown"
-    source:      str = ""
-    context:     str | None = None
-    status:      str = "new"
-    notes:       str | None = None
+    name:         str = "Contact"
+    email:        str
+    designation:  str = "Hiring Manager"
+    company:      str = "Unknown"
+    source:       str = ""
+    context:      str | None = None
+    status:       str = "new"
+    notes:        str | None = None
+    confidence:   int = 0
+    email_status: str = "unknown"   # unknown | valid | risky | invalid
 
 
 class ContactUpdate(BaseModel):
@@ -42,6 +44,7 @@ class ContactOut(BaseModel):
     bounced:         bool = False
     followups_sent:  int = 0
     email_status:    str = "unknown"
+    confidence:      int = 0
     created_at:      datetime
     updated_at:      datetime
 

@@ -35,11 +35,19 @@ _login_attempts: dict[str, list[float]] = defaultdict(list)
 
 def _check_login_rate(ip: str) -> None:
     now = time.monotonic()
-    hits = [t for t in _login_attempts[ip] if now - t < _LOGIN_WINDOW_SECONDS]
+    hits = [t for t in _login_attempts.get(ip, []) if now - t < _LOGIN_WINDOW_SECONDS]
     if len(hits) >= _LOGIN_MAX_ATTEMPTS:
+        _login_attempts[ip] = hits
         raise HTTPException(429, "Too many login attempts. Try again in a few minutes.")
     hits.append(now)
     _login_attempts[ip] = hits
+
+    # Opportunistic sweep so the map can't grow unbounded across many IPs.
+    if len(_login_attempts) > 1024:
+        stale = [k for k, v in _login_attempts.items()
+                 if not v or now - v[-1] > _LOGIN_WINDOW_SECONDS]
+        for k in stale:
+            _login_attempts.pop(k, None)
 
 
 class Credentials(BaseModel):

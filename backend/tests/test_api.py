@@ -55,6 +55,59 @@ class TestContacts:
         assert r.status_code == 404
 
 
+class TestDemoSeed:
+    def test_seed_populates_then_clears(self, auth_client):
+        r = auth_client.post("/api/demo/seed")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["seeded"] is True and body["contacts"] > 0
+
+        contacts = auth_client.get("/api/contacts").json()
+        assert len(contacts) == body["contacts"]
+        # Seeded addresses must be non-routable so demo data can't reach a real person.
+        assert all(c["email"].endswith(".example") for c in contacts)
+
+        # Seeding again is a no-op (doesn't duplicate).
+        assert auth_client.post("/api/demo/seed").json()["seeded"] is False
+
+        # Clearing removes exactly the seeded rows.
+        cleared = auth_client.delete("/api/demo").json()["cleared"]
+        assert cleared == body["contacts"]
+        assert auth_client.get("/api/contacts").json() == []
+
+
+class TestCompaniesDirectory:
+    def test_add_extends_directory_then_delete(self, auth_client):
+        from app.scrapers import directory
+
+        # A company not present in the curated seed.
+        assert not directory.is_known("greenhouse", "acmewidgets")
+        before = auth_client.get("/api/companies").json()
+
+        r = auth_client.post("/api/companies", json={
+            "name": "Acme Widgets", "slug": "acmewidgets",
+            "ats": "greenhouse", "domain": "acmewidgets.com",
+        })
+        assert r.status_code == 201, r.text
+        cid = r.json()["id"]
+
+        # It's now live in the directory (lookup + role-mode scan) and listed.
+        assert directory.is_known("greenhouse", "acmewidgets")
+        assert directory.lookup("Acme Widgets") is not None
+        after = auth_client.get("/api/companies").json()
+        assert after["total"] == before["total"] + 1          # delta, not absolute
+        assert after["seed_count"] == before["seed_count"]    # CSV seed unchanged
+        assert any(c["slug"] == "acmewidgets" for c in after["companies"])
+
+        # Unknown ATS is rejected.
+        assert auth_client.post("/api/companies", json={
+            "name": "X", "slug": "x", "ats": "workday"}).status_code == 400
+
+        # Delete removes it from the live directory.
+        assert auth_client.delete(f"/api/companies/{cid}").status_code == 204
+        assert not directory.is_known("greenhouse", "acmewidgets")
+
+
 class TestResumeExtract:
     def test_unsupported_format_returns_400(self, auth_client):
         r = auth_client.post(

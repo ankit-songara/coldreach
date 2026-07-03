@@ -20,7 +20,7 @@ Docker is optional — only needed for the all-in-one Docker path.
 ## Option A — One-command setup (Mac/Linux)
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ankit-songara/coldreach
 cd coldreach
 bash run.sh
 ```
@@ -34,7 +34,7 @@ The script checks prerequisites, installs all dependencies, detects your LLM, ru
 ### 1. Clone the repo
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ankit-songara/coldreach
 cd coldreach
 ```
 
@@ -93,7 +93,7 @@ Open `http://localhost:5173`. API docs at `http://localhost:8000/docs`.
 Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ankit-songara/coldreach
 cd coldreach
 cp .env.example .env        # edit as needed
 docker compose up -d
@@ -156,9 +156,12 @@ LLM_API_KEY=sk-or-your_key_here
 LLM_MODEL=mistralai/mistral-7b-instruct
 ```
 
-### No LLM
+### No LLM configured
 
-Leave `LLM_PROVIDER=auto` with no keys. The app will fall back to template-based emails without AI personalization.
+With `LLM_PROVIDER=auto` and no Ollama running and no key set, email generation
+raises a clear error telling you what to configure — it does **not** silently
+send unpersonalised text. Configure one of the options above before composing.
+(For demos/CI only, set `LLM_PROVIDER=mock` to get an obvious, unsendable placeholder.)
 
 ---
 

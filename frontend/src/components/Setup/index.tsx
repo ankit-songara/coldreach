@@ -1,18 +1,34 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
-import { Eye, EyeOff, CheckCircle2, ExternalLink } from 'lucide-react'
+import { Eye, EyeOff, CheckCircle2, ExternalLink, ArrowRight, Save } from 'lucide-react'
 import { useStore } from '../../store'
 import { sendApi } from '../../api/send'
+import { resumeApi } from '../../api/resume'
+import { automationApi } from '../../api/automation'
 import api from '../../api/client'
 
 export default function Setup() {
-  const { resume, setResume, gmailAddress, gmailAppPassword, setGmailCreds } = useStore()
+  const { resume, setResume, gmailAddress, gmailAppPassword, setGmailCreds, setActiveTab } = useStore()
   const [extracting, setExtracting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [savingResume, setSavingResume] = useState(false)
   const [localAddress, setLocalAddress]   = useState(gmailAddress)
   const [localPassword, setLocalPassword] = useState(gmailAppPassword)
+  const [senderName, setSenderName]           = useState('')
+  const [signatureLinks, setSignatureLinks]   = useState('')
+  const [savingName, setSavingName]           = useState(false)
+
+  // Load the currently-resolved signature (config override → résumé → email).
+  useEffect(() => {
+    automationApi.getConfig()
+      .then(cfg => {
+        setSenderName(cfg.sender_name || '')
+        setSignatureLinks(cfg.signature_links || '')
+      })
+      .catch(() => {})
+  }, [])
 
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0]
@@ -64,13 +80,40 @@ export default function Setup() {
     }
   }
 
+  const handleSaveName = async () => {
+    setSavingName(true)
+    try {
+      const cfg = await automationApi.setProfile(senderName.trim(), signatureLinks.trim())
+      setSenderName(cfg.sender_name || '')
+      setSignatureLinks(cfg.signature_links || '')
+      toast.success('Signature saved')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? e.message)
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  const handleSaveResume = async () => {
+    if (!resume.trim()) { toast.error('Resume text is empty'); return }
+    setSavingResume(true)
+    try {
+      await resumeApi.save(resume)
+      toast.success('Resume saved')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? e.message)
+    } finally {
+      setSavingResume(false)
+    }
+  }
+
   const credsMatch = localAddress === gmailAddress && localPassword === gmailAppPassword
   const credsSaved = !!gmailAddress && !!gmailAppPassword && credsMatch
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'Rajdhani' }}>Setup</h1>
+        <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Setup</h1>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
           Configure your resume and Gmail once. ColdReach handles the rest.
         </p>
@@ -83,7 +126,7 @@ export default function Setup() {
             GMAIL CREDENTIALS
           </span>
           {credsSaved && (
-            <span className="flex items-center gap-1 text-xs" style={{ color: '#34d399' }}>
+            <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
               <CheckCircle2 size={12} /> Connected
             </span>
           )}
@@ -124,7 +167,7 @@ export default function Setup() {
 
           {/* Instructions */}
           <div className="rounded-lg p-3 text-xs space-y-1"
-            style={{ background: 'rgba(34,211,238,0.05)', border: '1px solid rgba(34,211,238,0.12)', color: 'var(--text-muted)' }}>
+            style={{ background: 'rgba(226,96,63,0.05)', border: '1px solid rgba(226,96,63,0.12)', color: 'var(--text-muted)' }}>
             <p className="font-semibold" style={{ color: 'var(--text)' }}>How to get an App Password:</p>
             <p>1. Enable 2-Step Verification on your Google account</p>
             <p>2. Go to <span style={{ color: 'var(--accent)' }}>myaccount.google.com/apppasswords</span></p>
@@ -146,8 +189,8 @@ export default function Setup() {
               disabled={testing || !localAddress || !localPassword}
               className="btn text-sm flex-1"
               style={{
-                background: 'rgba(34,211,238,0.10)',
-                borderColor: 'rgba(34,211,238,0.25)',
+                background: 'rgba(226,96,63,0.10)',
+                borderColor: 'rgba(226,96,63,0.25)',
                 color: 'var(--accent)',
                 opacity: testing || !localAddress || !localPassword ? 0.5 : 1,
               }}
@@ -164,6 +207,54 @@ export default function Setup() {
               </button>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* ── Signature ─────────────────────────────────────────────────────── */}
+      <div className="space-y-3">
+        <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
+          SIGNATURE
+        </span>
+        <div className="card space-y-3">
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Signed at the bottom of every email (“Best regards, …”). The name is auto-detected
+            from your résumé — override it if it’s wrong. Links render as one line under your
+            name; for a job-seeking email this is the click-through that gets you looked up.
+          </p>
+          <div className="space-y-1">
+            <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Name</label>
+            <input
+              value={senderName}
+              onChange={e => setSenderName(e.target.value)}
+              placeholder="e.g. Ankit Songara"
+              className="input text-sm w-full"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>
+              Links (optional — GitHub / LinkedIn / portfolio)
+            </label>
+            <input
+              value={signatureLinks}
+              onChange={e => setSignatureLinks(e.target.value)}
+              placeholder="github.com/you · linkedin.com/in/you"
+              className="input text-sm w-full"
+            />
+          </div>
+          <button
+            onClick={handleSaveName}
+            disabled={savingName}
+            className="btn text-sm flex items-center gap-1.5"
+            style={{
+              background: 'rgba(63,143,67,0.10)',
+              borderColor: 'rgba(63,143,67,0.25)',
+              color: '#3f8f43',
+              opacity: savingName ? 0.5 : 1,
+            }}
+          >
+            <Save size={13} />
+            {savingName ? 'Saving…' : 'Save signature'}
+          </button>
         </div>
       </div>
 
@@ -203,6 +294,39 @@ export default function Setup() {
           className="input font-mono text-xs resize-none"
           style={{ lineHeight: '1.7' }}
         />
+
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={handleSaveResume}
+            disabled={savingResume || !resume.trim()}
+            className="btn text-sm flex items-center gap-1.5"
+            style={{
+              background: 'rgba(63,143,67,0.10)',
+              borderColor: 'rgba(63,143,67,0.25)',
+              color: '#3f8f43',
+              opacity: savingResume || !resume.trim() ? 0.5 : 1,
+            }}
+          >
+            <Save size={13} />
+            {savingResume ? 'Saving…' : 'Save Resume'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Next step ─────────────────────────────────────────────────────── */}
+      <div className="flex justify-end pt-2">
+        <button
+          onClick={() => setActiveTab('hunt')}
+          className="btn flex items-center gap-2 text-sm font-semibold"
+          style={{
+            background: 'rgba(226,96,63,0.12)',
+            borderColor: 'rgba(226,96,63,0.35)',
+            color: 'var(--accent)',
+            padding: '9px 20px',
+          }}
+        >
+          Next: Hunt Contacts <ArrowRight size={14} />
+        </button>
       </div>
     </div>
   )

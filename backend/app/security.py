@@ -14,7 +14,6 @@ import os
 import stat
 import json
 import hmac
-import base64
 import hashlib
 import logging
 import secrets
@@ -36,7 +35,11 @@ def _load_or_create_key() -> bytes:
     try:
         os.chmod(_KEY_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 600 — POSIX only
     except OSError:
-        pass  # Windows: rely on user profile ACLs
+        log.warning(
+            "Could not restrict permissions on %s — on Windows, ensure only "
+            "your Windows account has access to the data/ directory.",
+            _KEY_PATH,
+        )
     log.info("Generated new encryption key at data/.secret_key")
     return key
 
@@ -99,7 +102,3 @@ def verify_token(token: str) -> dict | None:
     if payload.get("exp", 0) < datetime.now(timezone.utc).timestamp():
         return None
     return payload
-
-
-# silence unused-import linters for base64 (kept for future token formats)
-_ = base64

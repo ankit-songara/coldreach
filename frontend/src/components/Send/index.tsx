@@ -12,6 +12,26 @@ import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
 import type { ContactStatus } from '../../types'
 
+// A contact that has received a first-touch email — eligible for outcome capture.
+const CONTACTED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
+// Outcomes a user records by hand as a conversation progresses.
+const OUTCOME_STEPS: ContactStatus[] = ['replied', 'interview', 'offer', 'rejected']
+
+function EmailBadge({ status, confidence }: { status?: string; confidence?: number }) {
+  if (!status || status === 'unknown') return null
+  const meta: Record<string, { label: string; color: string; bg: string; sym: string }> = {
+    valid:   { label: 'verified', sym: '✓', color: '#3f8f43', bg: 'rgba(63,143,67,.12)'  },
+    risky:   { label: 'risky',    sym: '~', color: '#c47d1e', bg: 'rgba(196,125,30,.12)' },
+    invalid: { label: 'invalid',  sym: '✗', color: '#d2483a', bg: 'rgba(210,72,58,.12)'  },
+  }
+  const m = meta[status] ?? { label: status, sym: '?', color: '#8a7f70', bg: 'rgba(138,127,112,.12)' }
+  return (
+    <span className="badge inline-flex items-center gap-0.5" style={{ background: m.bg, color: m.color, fontSize: '9px', whiteSpace: 'nowrap' }}>
+      {m.sym} {m.label}{confidence != null ? ` · ${confidence}%` : ''}
+    </span>
+  )
+}
+
 export default function Send() {
   const { contacts, drafts, upsertContact, setDrafts, gmailAddress, gmailAppPassword, setActiveTab } = useStore()
   const qc = useQueryClient()
@@ -34,7 +54,10 @@ export default function Send() {
   }, [contacts.length])
 
   const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
-  const unsent = withDraft.filter(c => c.status !== 'emailed')
+  // Mirror the backend guard: a contact already actioned (emailed in any later
+  // state) must not be re-sent a first-touch. Keeps the "Send All (N)" count honest.
+  const ACTIONED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced']
+  const unsent = withDraft.filter(c => !ACTIONED.includes(c.status) && !c.last_emailed_at)
   const sentCount = contacts.filter(c =>
     ['emailed', 'followed_up', 'replied', 'interview'].includes(c.status)
   ).length
@@ -59,7 +82,6 @@ export default function Send() {
     setShowConfirm(false)
     setSending(true)
     setResults(null)
-    console.log('[SendAll] starting, gmail:', gmailAddress, 'contacts:', unsent.length)
     try {
       const res = await sendApi.bulk([], gmailAddress, gmailAppPassword)
       setResults(res.results)
@@ -139,7 +161,7 @@ export default function Send() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'Rajdhani' }}>Send</h1>
+          <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Send</h1>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             {withDraft.length} emails ready · {sentCount} sent/in progress
           </p>
@@ -152,9 +174,9 @@ export default function Send() {
             title="Scan your Gmail inbox for replies and update statuses"
             className="btn flex items-center gap-2 text-sm font-medium"
             style={{
-              background: 'rgba(167,139,250,0.10)',
-              borderColor: 'rgba(167,139,250,0.30)',
-              color: '#a78bfa',
+              background: 'rgba(111,90,224,0.10)',
+              borderColor: 'rgba(111,90,224,0.30)',
+              color: '#6f5ae0',
               padding: '8px 14px',
               opacity: noCredentials ? 0.5 : 1,
             }}
@@ -171,9 +193,9 @@ export default function Send() {
                 title="Schedule these emails for a future time"
                 className="btn flex items-center gap-2 text-sm font-medium"
                 style={{
-                  background: 'rgba(245,158,11,0.10)',
-                  borderColor: 'rgba(245,158,11,0.30)',
-                  color: '#f59e0b',
+                  background: 'rgba(196,125,30,0.10)',
+                  borderColor: 'rgba(196,125,30,0.30)',
+                  color: '#c47d1e',
                   padding: '8px 14px',
                 }}
               >
@@ -186,8 +208,8 @@ export default function Send() {
                 disabled={sending}
                 className="btn flex items-center gap-2 text-sm font-semibold"
                 style={{
-                  background: noCredentials ? 'rgba(100,116,139,0.10)' : 'rgba(34,211,238,0.12)',
-                  borderColor: noCredentials ? 'var(--border)' : 'rgba(34,211,238,0.35)',
+                  background: noCredentials ? 'rgba(138,127,112,0.10)' : 'rgba(226,96,63,0.12)',
+                  borderColor: noCredentials ? 'var(--border)' : 'rgba(226,96,63,0.35)',
                   color: noCredentials ? 'var(--text-dim)' : 'var(--accent)',
                   padding: '8px 16px',
                 }}
@@ -202,9 +224,9 @@ export default function Send() {
 
       {/* ── Schedule send popover ───────────────────────────────────────────── */}
       {showSchedule && (
-        <div className="card flex items-end gap-3 flex-wrap" style={{ border: '1px solid rgba(245,158,11,0.25)' }}>
+        <div className="card flex items-end gap-3 flex-wrap" style={{ border: '1px solid rgba(196,125,30,0.25)' }}>
           <div className="flex-1 min-w-[220px]">
-            <div className="text-xs font-bold font-mono mb-1.5" style={{ color: '#f59e0b' }}>
+            <div className="text-xs font-bold font-mono mb-1.5" style={{ color: '#c47d1e' }}>
               SCHEDULE {unsent.length} EMAILS
             </div>
             <input
@@ -218,7 +240,7 @@ export default function Send() {
             </p>
           </div>
           <button onClick={handleSchedule} className="btn text-sm font-semibold"
-            style={{ background: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.35)', color: '#f59e0b' }}>
+            style={{ background: 'rgba(196,125,30,0.12)', borderColor: 'rgba(196,125,30,0.35)', color: '#c47d1e' }}>
             Schedule
           </button>
           <button onClick={() => setShowSchedule(false)} className="btn btn-ghost text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -234,10 +256,10 @@ export default function Send() {
       {noCredentials && withDraft.length > 0 && (
         <div
           className="rounded-xl p-4 flex items-center justify-between gap-4"
-          style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
+          style={{ background: 'rgba(196,125,30,0.08)', border: '1px solid rgba(196,125,30,0.2)' }}
         >
           <div>
-            <p className="text-sm font-medium" style={{ color: '#f59e0b' }}>Gmail not connected</p>
+            <p className="text-sm font-medium" style={{ color: '#c47d1e' }}>Gmail not connected</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Add your Gmail + App Password in Setup to send emails directly.
             </p>
@@ -245,7 +267,7 @@ export default function Send() {
           <button
             onClick={() => setActiveTab('setup')}
             className="btn text-xs flex items-center gap-1 flex-shrink-0"
-            style={{ color: 'var(--accent)', borderColor: 'rgba(34,211,238,0.25)' }}
+            style={{ color: 'var(--accent)', borderColor: 'rgba(226,96,63,0.25)' }}
           >
             <Settings size={12} /> Setup
           </button>
@@ -261,7 +283,7 @@ export default function Send() {
         >
           <div
             className="card w-full max-w-sm mx-4 space-y-4"
-            style={{ border: '1px solid rgba(34,211,238,0.25)' }}
+            style={{ border: '1px solid rgba(226,96,63,0.25)' }}
             onClick={e => e.stopPropagation()}
           >
             <h3 className="font-bold text-base">Send {unsent.length} emails?</h3>
@@ -282,8 +304,8 @@ export default function Send() {
                 onClick={handleSendAll}
                 className="btn flex-1 flex items-center justify-center gap-2 font-semibold"
                 style={{
-                  background: 'rgba(34,211,238,0.15)',
-                  borderColor: 'rgba(34,211,238,0.4)',
+                  background: 'rgba(226,96,63,0.15)',
+                  borderColor: 'rgba(226,96,63,0.4)',
                   color: 'var(--accent)',
                 }}
               >
@@ -315,12 +337,12 @@ export default function Send() {
           {results.map(r => (
             <div key={r.contact_id} className="flex items-center gap-3 text-sm">
               {r.status === 'sent'
-                ? <CheckCircle2 size={14} style={{ color: '#34d399', flexShrink: 0 }} />
-                : <XCircle      size={14} style={{ color: '#ef4444', flexShrink: 0 }} />
+                ? <CheckCircle2 size={14} style={{ color: '#3f8f43', flexShrink: 0 }} />
+                : <XCircle      size={14} style={{ color: '#d2483a', flexShrink: 0 }} />
               }
               <span className="flex-1 truncate">{r.name} · {r.email}</span>
               {r.status === 'failed' && (
-                <span className="text-xs truncate max-w-[180px]" style={{ color: '#ef4444' }}>{r.error}</span>
+                <span className="text-xs truncate max-w-[180px]" style={{ color: '#d2483a' }}>{r.error}</span>
               )}
             </div>
           ))}
@@ -331,8 +353,8 @@ export default function Send() {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total',    value: contacts.length,  color: 'var(--text-muted)' },
-          { label: 'Ready',    value: withDraft.length, color: '#22d3ee' },
-          { label: 'Actioned', value: sentCount,        color: '#34d399' },
+          { label: 'Ready',    value: withDraft.length, color: '#0e9d88' },
+          { label: 'Actioned', value: sentCount,        color: '#3f8f43' },
         ].map(stat => (
           <div key={stat.label} className="card text-center">
             <div className="text-2xl font-bold" style={{ color: stat.color }}>{stat.value}</div>
@@ -348,46 +370,78 @@ export default function Send() {
           const st = STATUS_META[c.status] ?? STATUS_META.new
 
           return (
-            <div key={c.id} className="card flex items-center justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{c.name}</span>
-                  <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
-                    {st.label}
-                  </span>
+            <div key={c.id} className="card">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium">{c.name}</span>
+                    <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
+                      {st.label}
+                    </span>
+                    <EmailBadge status={c.email_status} confidence={c.confidence} />
+                  </div>
+                  <div className="text-xs font-mono truncate mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                    {c.email} · {c.company}
+                  </div>
                 </div>
-                <div className="text-xs font-mono truncate mt-0.5" style={{ color: 'var(--text-dim)' }}>
-                  {c.email} · {c.company}
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {draft ? (
+                    <>
+                      {c.status === 'emailed' && (
+                        <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
+                          <CheckCircle2 size={12} /> Sent
+                        </span>
+                      )}
+                      <button
+                        onClick={() => openGmail(c.email, draft.subject, draft.body, c.id)}
+                        className="btn text-xs flex items-center gap-1"
+                        style={{
+                          background: 'rgba(226,96,63,0.10)',
+                          borderColor: 'rgba(226,96,63,0.25)',
+                          color: 'var(--accent)',
+                        }}
+                      >
+                        <ExternalLink size={11} />
+                        Gmail
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>
+                      No draft
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {draft ? (
-                  <>
-                    {c.status === 'emailed' && (
-                      <span className="flex items-center gap-1 text-xs" style={{ color: '#34d399' }}>
-                        <CheckCircle2 size={12} /> Sent
-                      </span>
-                    )}
-                    <button
-                      onClick={() => openGmail(c.email, draft.subject, draft.body, c.id)}
-                      className="btn text-xs flex items-center gap-1"
-                      style={{
-                        background: 'rgba(34,211,238,0.10)',
-                        borderColor: 'rgba(34,211,238,0.25)',
-                        color: 'var(--accent)',
-                      }}
-                    >
-                      <ExternalLink size={11} />
-                      Gmail
-                    </button>
-                  </>
-                ) : (
-                  <span className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>
-                    No draft
+              {/* Outcome capture — once a contact has been emailed, record what
+                  happened so the Today funnel reflects real results. */}
+              {CONTACTED.includes(c.status) && (
+                <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: '1px solid var(--border)' }}>
+                  <span className="text-[10px] font-mono font-bold tracking-widest mr-1" style={{ color: 'var(--text-dim)' }}>
+                    OUTCOME
                   </span>
-                )}
-              </div>
+                  {OUTCOME_STEPS.map(s => {
+                    const meta = STATUS_META[s]
+                    const active = c.status === s
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => statusMutation.mutate({ id: c.id, status: s })}
+                        disabled={statusMutation.isPending}
+                        className="text-[10px] px-2 py-0.5 rounded-full font-semibold transition-all"
+                        style={{
+                          background: active ? meta.bg : 'transparent',
+                          color:      active ? meta.color : 'var(--text-dim)',
+                          border:     `1px solid ${active ? meta.color + '55' : 'var(--border)'}`,
+                        }}
+                      >
+                        {meta.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}

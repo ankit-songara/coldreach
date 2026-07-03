@@ -27,7 +27,7 @@ class Contact(Base):
     __table_args__ = (UniqueConstraint("user_id", "email", name="uq_contact_user_email"),)
 
     id:          Mapped[int]      = mapped_column(primary_key=True, index=True)
-    user_id:     Mapped[int]      = mapped_column(index=True, default=1)
+    user_id:     Mapped[int]      = mapped_column(index=True)
     name:        Mapped[str]      = mapped_column(String(255))
     # Unique per-user (enforced in the repository), not globally
     email:       Mapped[str]      = mapped_column(String(255), index=True)
@@ -38,16 +38,18 @@ class Contact(Base):
     # HN "Who is Hiring" post text, or the GitHub repos this person committed to.
     # Fed to the LLM so it can anchor on real signal instead of inventing details.
     context:     Mapped[str|None] = mapped_column(Text,        nullable=True)
-    status:      Mapped[str]      = mapped_column(String(50),  default="new")   # new|emailed|followed_up|replied|interview|rejected|bounced
+    status:      Mapped[str]      = mapped_column(String(50),  default="new", index=True)
     notes:       Mapped[str|None] = mapped_column(Text,        nullable=True)
 
     # ── Tracking (populated by send + inbox sync) ────────────────────────────
-    last_emailed_at: Mapped[datetime|None] = mapped_column(DateTime, nullable=True)
+    last_emailed_at: Mapped[datetime|None] = mapped_column(DateTime, nullable=True, index=True)
     replied_at:      Mapped[datetime|None] = mapped_column(DateTime, nullable=True)
     bounced:         Mapped[bool]          = mapped_column(Boolean, default=False)
     followups_sent:  Mapped[int]           = mapped_column(default=0)
     # Email-verification verdict: unknown | valid | risky | invalid
     email_status:    Mapped[str]           = mapped_column(String(20), default="unknown")
+    # Resolver confidence score: 0-100 (0 = unverified scrape, >50 = SMTP confirmed)
+    confidence:      Mapped[int]           = mapped_column(default=0)
 
     created_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -60,7 +62,7 @@ class EmailDraft(Base):
     __tablename__ = "email_drafts"
 
     id:         Mapped[int]       = mapped_column(primary_key=True, index=True)
-    user_id:    Mapped[int]       = mapped_column(index=True, default=1)
+    user_id:    Mapped[int]       = mapped_column(index=True)
     contact_id: Mapped[int]       = mapped_column(index=True)
     subject:    Mapped[str]       = mapped_column(Text)
     body:       Mapped[str]       = mapped_column(Text)
@@ -72,7 +74,7 @@ class Resume(Base):
     __tablename__ = "resumes"
 
     id:         Mapped[int]      = mapped_column(primary_key=True, index=True)
-    user_id:    Mapped[int]      = mapped_column(index=True, default=1)
+    user_id:    Mapped[int]      = mapped_column(index=True)
     text:       Mapped[str]      = mapped_column(Text)
     filename:   Mapped[str|None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -86,10 +88,33 @@ class AppConfig(Base):
     """
     __tablename__ = "app_config"
 
-    user_id:    Mapped[int]      = mapped_column(primary_key=True, default=1)
+    user_id:    Mapped[int]      = mapped_column(primary_key=True)
     key:        Mapped[str]      = mapped_column(String(64), primary_key=True)
     value:      Mapped[str]      = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class KnownCompany(Base):
+    """
+    Runtime-extensible company → ATS directory entries (the CSV is the curated
+    seed; these are added without code changes). Two origins:
+      - source="user":       added by a user via /api/companies
+      - source="discovered": auto-learned when a company-name hunt resolved to a
+                             real ATS board
+
+    Global (not user-scoped): a verified company→ATS mapping is a fact that
+    benefits every hunt. Unique per (ats, slug).
+    """
+    __tablename__ = "known_companies"
+    __table_args__ = (UniqueConstraint("ats", "slug", name="uq_known_company_ats_slug"),)
+
+    id:         Mapped[int]      = mapped_column(primary_key=True, index=True)
+    name:       Mapped[str]      = mapped_column(String(255))
+    slug:       Mapped[str]      = mapped_column(String(255))
+    ats:        Mapped[str]      = mapped_column(String(50))
+    domain:     Mapped[str]      = mapped_column(String(255), default="")
+    source:     Mapped[str]      = mapped_column(String(20), default="user")  # user | discovered
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class ScheduledEmail(Base):
@@ -101,7 +126,7 @@ class ScheduledEmail(Base):
     __tablename__ = "scheduled_emails"
 
     id:          Mapped[int]      = mapped_column(primary_key=True, index=True)
-    user_id:     Mapped[int]      = mapped_column(index=True, default=1)
+    user_id:     Mapped[int]      = mapped_column(index=True)
     contact_id:  Mapped[int]      = mapped_column(index=True)
     subject:     Mapped[str]      = mapped_column(Text)
     body:        Mapped[str]      = mapped_column(Text)

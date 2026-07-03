@@ -60,14 +60,22 @@ def client(test_engine):
     app.dependency_overrides.clear()
 
     # Wipe all rows between tests (keep schema)
-    from app.db.models import Contact, EmailDraft, Resume, User
+    from app.db.models import Contact, EmailDraft, Resume, User, ScheduledEmail, AppConfig, KnownCompany
     db = SessionTest()
+    db.query(ScheduledEmail).delete()
     db.query(EmailDraft).delete()
+    db.query(AppConfig).delete()
     db.query(Contact).delete()
     db.query(Resume).delete()
+    db.query(KnownCompany).delete()
     db.query(User).delete()
     db.commit()
     db.close()
+
+    # The directory's in-memory runtime registry is process-global — reset it so
+    # companies registered in one test don't leak into the next.
+    from app.scrapers import directory
+    directory._RUNTIME.clear()
 
 
 @pytest.fixture

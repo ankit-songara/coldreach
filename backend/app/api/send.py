@@ -12,7 +12,7 @@ import time
 import random
 import smtplib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -21,7 +21,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.database import get_db
-from app.db.crud import ContactRepository, DraftRepository, ScheduledEmailRepository, ConfigRepository
+from app.db.crud import (
+    ContactRepository, DraftRepository, ScheduledEmailRepository, ConfigRepository,
+    already_first_touched,
+)
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
@@ -71,7 +74,9 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     queue = []
     skipped_bad = 0
     for contact in contacts:
-        if contact.status == "emailed":
+        # Never re-send a first-touch to anyone already emailed (in any later
+        # state: emailed / followed_up / replied / interview / rejected).
+        if already_first_touched(contact):
             continue
         if contact.bounced or contact.email_status == "invalid":
             skipped_bad += 1
@@ -92,7 +97,7 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     # 24h (configurable) and defer the overflow rather than risk a suspension.
     cfg = ConfigRepository(db, user.id)
     daily_cap = int(cfg.get("daily_send_cap", "50") or 50)
-    since_24h = datetime.utcnow() - timedelta(hours=24)
+    since_24h = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
     sent_last_24h = sum(
         1 for c in contact_repo.get_all()
         if c.last_emailed_at and c.last_emailed_at >= since_24h
@@ -183,7 +188,7 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
             results.append(result)
             if result.status == "sent":
                 contact_repo.update(result.contact_id, ContactUpdate(
-                    status="emailed", last_emailed_at=datetime.utcnow()))
+                    status="emailed", last_emailed_at=datetime.now(timezone.utc).replace(tzinfo=None)))
 
         log.info(f"Batch {batch_idx+1}/{len(batches)} done — {len(results)} total so far")
 
@@ -229,7 +234,7 @@ def schedule_send(req: ScheduleSendRequest, db: Session = Depends(get_db), user:
 
     scheduled, skipped = 0, 0
     for contact in targets:
-        if contact.status == "emailed" or sched_repo.pending_for_contact(contact.id):
+        if already_first_touched(contact) or sched_repo.pending_for_contact(contact.id):
             skipped += 1
             continue
         draft = next((d for d in draft_repo.get_for_contact(contact.id) if not d.is_followup), None)

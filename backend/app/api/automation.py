@@ -11,7 +11,7 @@ Automation API — server-side Gmail config + follow-up sequence scheduling.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -19,11 +19,13 @@ from pydantic import BaseModel
 from app.db.database import get_db
 from app.db.crud import (
     ConfigRepository, ScheduledEmailRepository, ContactRepository, DraftRepository,
+    resolve_sender_name,
 )
 from app.db.models import User
 from app.deps import get_current_user
 from app import mailer
 from app.llm.generator import generator
+from app.llm.parsing import parse_subject_body
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["automation"])
@@ -45,6 +47,13 @@ class ConfigStatus(BaseModel):
     has_credentials:    bool
     automation_enabled: bool
     daily_send_cap:     int
+    sender_name:        str   # name used in email greetings/signatures
+    signature_links:    str   # one line of links under the name (GitHub/LinkedIn/…)
+
+
+class ProfileRequest(BaseModel):
+    sender_name:     str
+    signature_links: str | None = None   # None = leave unchanged
 
 
 @router.post("/config/gmail", response_model=ConfigStatus)
@@ -58,12 +67,12 @@ def save_gmail_config(req: GmailConfigRequest, db: Session = Depends(get_db), us
     cfg = ConfigRepository(db, user.id)
     cfg.set("gmail_address", req.gmail_address)
     cfg.set("gmail_app_password", req.gmail_app_password)
-    return _status(cfg)
+    return _status(db, user)
 
 
 @router.get("/config", response_model=ConfigStatus)
 def get_config(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return _status(ConfigRepository(db, user.id))
+    return _status(db, user)
 
 
 @router.post("/config/automation", response_model=ConfigStatus)
@@ -75,17 +84,31 @@ def set_automation(req: AutomationToggle, db: Session = Depends(get_db), user: U
             raise HTTPException(400, "Save Gmail credentials before enabling automation.")
         cfg.set("automation_enabled", "true" if req.enabled else "false")
     if req.daily_send_cap is not None:
-        cfg.set("daily_send_cap", str(max(1, req.daily_send_cap)))
-    return _status(cfg)
+        cfg.set("daily_send_cap", str(max(1, min(500, req.daily_send_cap))))
+    return _status(db, user)
 
 
-def _status(cfg: ConfigRepository) -> ConfigStatus:
+@router.post("/config/profile", response_model=ConfigStatus)
+def set_profile(req: ProfileRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Set the signature: name (overrides résumé auto-detection) and link line."""
+    cfg = ConfigRepository(db, user.id)
+    cfg.set("sender_name", req.sender_name.strip())
+    if req.signature_links is not None:
+        # One line, whitespace-collapsed, capped — it renders under the name.
+        cfg.set("signature_links", " ".join(req.signature_links.split())[:200])
+    return _status(db, user)
+
+
+def _status(db: Session, user: User) -> ConfigStatus:
+    cfg = ConfigRepository(db, user.id)
     addr, pw = cfg.get_gmail_creds()
     return ConfigStatus(
         gmail_address=addr,
         has_credentials=bool(addr and pw),
         automation_enabled=cfg.automation_enabled(),
         daily_send_cap=int(cfg.get("daily_send_cap", "50") or 50),
+        sender_name=resolve_sender_name(db, user.id, user.email),
+        signature_links=cfg.get("signature_links", ""),
     )
 
 
@@ -126,7 +149,9 @@ async def schedule_followups(req: ScheduleFollowupsRequest, db: Session = Depend
     else:
         targets = [c for c in contacts_repo.get_all() if c.status == "emailed"]
 
-    send_at = datetime.utcnow() + timedelta(days=max(0, req.days))
+    send_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=max(0, req.days))
+    sender_name  = resolve_sender_name(db, user.id, user.email)
+    sender_links = ConfigRepository(db, user.id).get("signature_links", "")
     items, skipped = [], 0
 
     for contact in targets:
@@ -148,8 +173,11 @@ async def schedule_followups(req: ScheduleFollowupsRequest, db: Session = Depend
                 name=contact.name,
                 company=contact.company,
                 original_email=f"SUBJECT: {original.subject}\n\nBODY:\n{original.body}",
+                sender_name=sender_name,
+                sender_links=sender_links,
+                context=contact.context or "",
             )
-            subject, body = _parse(text, fallback_subject=f"Re: {original.subject}")
+            subject, body = parse_subject_body(text, fallback_subject=f"Re: {original.subject}")
         except Exception as e:
             log.error(f"Follow-up generation failed for {contact.email}: {e}")
             skipped += 1
@@ -185,16 +213,3 @@ def cancel_followup(item_id: int, db: Session = Depends(get_db), user: User = De
     if not ScheduledEmailRepository(db, user.id).cancel(item_id):
         raise HTTPException(404, "No pending follow-up with that id")
     return {"ok": True}
-
-
-def _parse(text: str, fallback_subject: str) -> tuple[str, str]:
-    subject, body = fallback_subject, text.strip()
-    if "SUBJECT:" in text:
-        lines = text.strip().splitlines()
-        for i, line in enumerate(lines):
-            if line.startswith("SUBJECT:"):
-                subject = line.replace("SUBJECT:", "").strip() or fallback_subject
-            elif line.startswith("BODY:"):
-                body = "\n".join(lines[i + 1:]).strip()
-                break
-    return subject, body

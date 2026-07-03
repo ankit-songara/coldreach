@@ -45,7 +45,10 @@ async def extract_resume(
         raise HTTPException(400, "No filename provided")
 
     ext = file.filename.rsplit(".", 1)[-1].lower()
-    if ext not in ("pdf", "docx", "doc"):
+    if ext == "doc":
+        # python-docx only reads the modern XML .docx, not the legacy binary .doc.
+        raise HTTPException(400, "Legacy .doc isn't supported — re-save as .docx or PDF.")
+    if ext not in ("pdf", "docx"):
         raise HTTPException(400, f"Unsupported format: .{ext}. Use PDF or DOCX.")
 
     raw = await file.read()
@@ -67,6 +70,26 @@ async def extract_resume(
     ResumeRepository(db, user.id).save(text, file.filename)
 
     return ExtractResponse(text=text, chars=len(text), filename=file.filename)
+
+
+class ResumeSaveRequest(BaseModel):
+    text: str
+
+
+@router.post("/save", response_model=ResumeOut)
+def save_resume_text(
+    req: ResumeSaveRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Save manually pasted resume text (no file upload required)."""
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(400, "Resume text cannot be empty")
+    if len(text) > 50_000:
+        raise HTTPException(400, "Resume text too long (max 50,000 chars)")
+    saved = ResumeRepository(db, user.id).save(text, filename=None)
+    return ResumeOut(text=saved.text, filename=saved.filename)
 
 
 @router.get("/latest", response_model=ResumeOut)

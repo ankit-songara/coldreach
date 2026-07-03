@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Zap, Clock, Trash2, CalendarClock } from 'lucide-react'
 import { useStore } from '../../store'
@@ -12,7 +11,6 @@ import type { ConfigStatus, ScheduledItem } from '../../api/automation'
  */
 export default function AutomationPanel() {
   const { gmailAddress, gmailAppPassword } = useStore()
-  const qc = useQueryClient()
   const [config, setConfig] = useState<ConfigStatus | null>(null)
   const [queue, setQueue]   = useState<ScheduledItem[]>([])
   const [days, setDays]     = useState(3)
@@ -83,18 +81,18 @@ export default function AutomationPanel() {
   const enabled = config?.automation_enabled
 
   return (
-    <div className="card space-y-4" style={{ border: '1px solid rgba(167,139,250,0.22)' }}>
+    <div className="card space-y-4" style={{ border: '1px solid rgba(111,90,224,0.22)' }}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Zap size={15} style={{ color: '#a78bfa' }} />
-          <span className="text-sm font-bold tracking-wide" style={{ fontFamily: 'Rajdhani' }}>
+          <Zap size={15} style={{ color: '#6f5ae0' }} />
+          <span className="text-sm font-bold tracking-wide" style={{ fontFamily: 'var(--font-display)' }}>
             Follow-up Automation
           </span>
           <span
             className="badge"
             style={{
-              background: enabled ? 'rgba(52,211,153,0.12)' : 'rgba(100,116,139,0.12)',
-              color: enabled ? '#34d399' : 'var(--text-dim)', fontSize: '9px',
+              background: enabled ? 'rgba(63,143,67,0.12)' : 'rgba(138,127,112,0.12)',
+              color: enabled ? '#3f8f43' : 'var(--text-dim)', fontSize: '9px',
             }}
           >
             {enabled ? 'ON' : 'OFF'}
@@ -105,9 +103,9 @@ export default function AutomationPanel() {
           disabled={busy}
           className="btn text-xs font-semibold"
           style={{
-            background: enabled ? 'rgba(100,116,139,0.12)' : 'rgba(167,139,250,0.14)',
-            borderColor: enabled ? 'var(--border)' : 'rgba(167,139,250,0.35)',
-            color: enabled ? 'var(--text-dim)' : '#a78bfa',
+            background: enabled ? 'rgba(138,127,112,0.12)' : 'rgba(111,90,224,0.14)',
+            borderColor: enabled ? 'var(--border)' : 'rgba(111,90,224,0.35)',
+            color: enabled ? 'var(--text-dim)' : '#6f5ae0',
           }}
         >
           {enabled ? 'Pause' : 'Enable'}
@@ -160,7 +158,7 @@ export default function AutomationPanel() {
           onClick={scheduleAll}
           disabled={busy}
           className="btn text-xs flex items-center gap-1.5 font-semibold"
-          style={{ background: 'rgba(167,139,250,0.12)', borderColor: 'rgba(167,139,250,0.3)', color: '#a78bfa' }}
+          style={{ background: 'rgba(111,90,224,0.12)', borderColor: 'rgba(111,90,224,0.3)', color: '#6f5ae0' }}
         >
           <CalendarClock size={12} /> Schedule for all emailed
         </button>
@@ -174,7 +172,17 @@ export default function AutomationPanel() {
           </div>
           {queue.map(item => (
             <div key={item.id} className="flex items-center gap-3 text-xs">
-              <CalendarClock size={12} style={{ color: '#a78bfa', flexShrink: 0 }} />
+              <CalendarClock size={12} style={{ color: '#6f5ae0', flexShrink: 0 }} />
+              <span
+                className="badge flex-shrink-0"
+                style={{
+                  fontSize: '8px', fontWeight: 700,
+                  background: item.is_followup ? 'rgba(111,90,224,0.14)' : 'rgba(226,96,63,0.14)',
+                  color:      item.is_followup ? '#6f5ae0' : '#0e9d88',
+                }}
+              >
+                {item.is_followup ? 'FOLLOW-UP' : 'FIRST-TOUCH'}
+              </span>
               <span className="flex-1 truncate">
                 {item.name} · <span style={{ color: 'var(--text-dim)' }}>{item.email}</span>
               </span>
@@ -185,7 +193,7 @@ export default function AutomationPanel() {
                 onClick={() => cancel(item.id)}
                 title="Cancel"
                 className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded"
-                style={{ color: '#64748b' }}
+                style={{ color: '#8a7f70' }}
               >
                 <Trash2 size={11} />
               </button>
@@ -195,12 +203,11 @@ export default function AutomationPanel() {
       )}
 
       {enabled && (
-        <p className="text-xs" style={{ color: '#f59e0b' }}>
+        <p className="text-xs" style={{ color: '#c47d1e' }}>
           ⚠️ Your Gmail App Password is stored encrypted on this machine so the
           scheduler can send while the app runs. Pause to clear automated sending.
         </p>
       )}
-      <button onClick={() => { qc.invalidateQueries({ queryKey: ['contacts'] }); refresh() }} className="hidden" />
     </div>
   )
 }

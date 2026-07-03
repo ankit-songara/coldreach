@@ -5,12 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.crud import ContactRepository, DraftRepository, ResumeRepository
+from app.db.crud import (
+    ConfigRepository, ContactRepository, DraftRepository, ResumeRepository,
+    resolve_sender_name,
+)
 from app.db.models import User
 from app.deps import get_current_user
 from pydantic import BaseModel
 from app.schemas.email import ComposeRequest, FollowUpRequest, DraftOut, DraftCreate
 from app.llm.generator import generator
+from app.llm.parsing import parse_subject_body
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/compose", tags=["compose"])
@@ -34,6 +38,8 @@ async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User
     # Prefer user-supplied context; otherwise fall back to the genuine context
     # we captured at hunt time (HN post, GitHub repos, …).
     company_context = req.company_context.strip() or (contact.context or "")
+    sender_name  = resolve_sender_name(db, user.id, user.email)
+    sender_links = ConfigRepository(db, user.id).get("signature_links", "")
 
     try:
         email_text = await generator.generate(
@@ -43,13 +49,15 @@ async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User
             resume=resume_text,
             company_context=company_context,
             source=contact.source or "",
+            sender_name=sender_name,
+            sender_links=sender_links,
         )
     except Exception as e:
         log.error(f"LLM generation failed: {e}")
         raise HTTPException(500, f"LLM error: {e}")
 
     # Parse SUBJECT / BODY
-    subject, body = _parse_email(email_text)
+    subject, body = parse_subject_body(email_text)
 
     draft = DraftRepository(db, user.id).create(DraftCreate(
         contact_id=contact.id,
@@ -72,11 +80,14 @@ async def followup(req: FollowUpRequest, db: Session = Depends(get_db), user: Us
             name=contact.name,
             company=contact.company,
             original_email=req.original_email,
+            sender_name=resolve_sender_name(db, user.id, user.email),
+            sender_links=ConfigRepository(db, user.id).get("signature_links", ""),
+            context=contact.context or "",
         )
     except Exception as e:
         raise HTTPException(500, f"LLM error: {e}")
 
-    subject, body = _parse_email(email_text)
+    subject, body = parse_subject_body(email_text)
 
     draft = DraftRepository(db, user.id).create(DraftCreate(
         contact_id=contact.id,
@@ -105,17 +116,3 @@ def edit_draft(draft_id: int, req: DraftEdit, db: Session = Depends(get_db), use
 def get_drafts(contact_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """List all email drafts for a contact."""
     return DraftRepository(db, user.id).get_for_contact(contact_id)
-
-
-def _parse_email(text: str) -> tuple[str, str]:
-    """Extract SUBJECT and BODY from LLM output."""
-    subject, body = "", text.strip()
-    if "SUBJECT:" in text:
-        lines = text.strip().splitlines()
-        for i, line in enumerate(lines):
-            if line.startswith("SUBJECT:"):
-                subject = line.replace("SUBJECT:", "").strip()
-            elif line.startswith("BODY:"):
-                body = "\n".join(lines[i + 1:]).strip()
-                break
-    return subject, body

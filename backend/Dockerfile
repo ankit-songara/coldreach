@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     wget curl libglib2.0-0 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 \
-    libgbm1 libasound2 --no-install-recommends \
+    libgbm1 libasound2-dev --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

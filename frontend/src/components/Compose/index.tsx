@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useContext } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, X } from 'lucide-react'
@@ -6,11 +6,28 @@ import { useStore } from '../../store'
 import { composeApi } from '../../api/compose'
 import { STATUS_META } from '../../types'
 import type { Contact } from '../../types'
+import { ResumeReadyCtx } from '../../App'
 
-const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'rejected']
+const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
+
+function EmailBadge({ status, confidence }: { status?: string; confidence?: number }) {
+  if (!status || status === 'unknown') return null
+  const meta: Record<string, { label: string; color: string; bg: string; sym: string }> = {
+    valid:   { label: 'verified', sym: '✓', color: '#3f8f43', bg: 'rgba(63,143,67,.12)'  },
+    risky:   { label: 'risky',    sym: '~', color: '#c47d1e', bg: 'rgba(196,125,30,.12)' },
+    invalid: { label: 'invalid',  sym: '✗', color: '#d2483a', bg: 'rgba(210,72,58,.12)'  },
+  }
+  const m = meta[status] ?? { label: status, sym: '?', color: '#8a7f70', bg: 'rgba(138,127,112,.12)' }
+  return (
+    <span className="badge inline-flex items-center gap-0.5" style={{ background: m.bg, color: m.color, fontSize: '9px', whiteSpace: 'nowrap' }}>
+      {m.sym} {m.label}{confidence != null ? ` · ${confidence}%` : ''}
+    </span>
+  )
+}
 
 export default function Compose() {
   const { contacts, resume, drafts, setDrafts, setActiveTab } = useStore()
+  const resumeReady = useContext(ResumeReadyCtx)
   const [showSent, setShowSent] = useState(false)
 
   // Restore drafts from backend on mount
@@ -46,15 +63,22 @@ export default function Compose() {
 
   const pending = composeMutation.isPending || followupMutation.isPending
 
-  if (!resume.trim()) return (
-    <div className="text-center py-20 space-y-3">
-      <div className="text-3xl">📄</div>
-      <p className="text-sm font-semibold">No resume saved yet</p>
-      <button onClick={() => setActiveTab('setup')} className="btn btn-primary text-sm">
-        Go to Setup →
-      </button>
-    </div>
-  )
+  if (!resume.trim()) {
+    if (!resumeReady) return (
+      <div className="text-center py-20">
+        <div className="w-6 h-6 mx-auto rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }} />
+      </div>
+    )
+    return (
+      <div className="text-center py-20 space-y-3">
+        <div className="text-3xl">📄</div>
+        <p className="text-sm font-semibold">No resume saved yet</p>
+        <button onClick={() => setActiveTab('setup')} className="btn btn-primary text-sm">
+          Go to Setup →
+        </button>
+      </div>
+    )
+  }
 
   if (contacts.length === 0) return (
     <div className="text-center py-20 space-y-3">
@@ -80,7 +104,7 @@ export default function Compose() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'Rajdhani' }}>Compose</h1>
+          <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Compose</h1>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             {newContacts.length} new · {ungenerated.length} need drafts · {sentContacts.length} already sent
           </p>
@@ -170,6 +194,10 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
   const [editSubject, setEditSubject] = useState('')
   const [editBody, setEditBody] = useState('')
   const [saving, setSaving] = useState(false)
+  const [editingFollowup, setEditingFollowup] = useState(false)
+  const [editFollowupSubject, setEditFollowupSubject] = useState('')
+  const [editFollowupBody, setEditFollowupBody] = useState('')
+  const [savingFollowup, setSavingFollowup] = useState(false)
 
   const startEdit = () => {
     setEditSubject(latest.subject)
@@ -193,6 +221,28 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
     }
   }
 
+  const startEditFollowup = () => {
+    setEditFollowupSubject(followup.subject)
+    setEditFollowupBody(followup.body)
+    setEditingFollowup(true)
+  }
+
+  const saveFollowupEdit = async () => {
+    if (!editFollowupSubject.trim() || !editFollowupBody.trim()) { toast.error('Subject and body cannot be empty'); return }
+    setSavingFollowup(true)
+    try {
+      const updated = await composeApi.editDraft(followup.id, editFollowupSubject, editFollowupBody)
+      const existing = allDrafts[c.id] ?? []
+      setDrafts(c.id, existing.map((d: any) => d.id === updated.id ? updated : d))
+      setEditingFollowup(false)
+      toast.success('Follow-up updated')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? e.message)
+    } finally {
+      setSavingFollowup(false)
+    }
+  }
+
   const isGenerating =
     (composeMutation.isPending  && composeMutation.variables?.contact_id  === c.id) ||
     (followupMutation.isPending && followupMutation.variables?.contact_id === c.id)
@@ -202,11 +252,12 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
       {/* ── Header ── */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm">{c.name}</span>
             <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
               {st.label}
             </span>
+            <EmailBadge status={c.email_status} confidence={c.confidence} />
           </div>
           <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>
             {c.designation} · {c.company}
@@ -222,7 +273,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
               })}
               disabled={isGenerating}
               className="btn btn-ghost text-xs flex items-center gap-1"
-              style={{ color: '#a78bfa', borderColor: 'rgba(167,139,250,0.3)' }}
+              style={{ color: '#6f5ae0', borderColor: 'rgba(111,90,224,0.3)' }}
             >
               ↩ Follow Up
             </button>
@@ -250,7 +301,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
             onClick={startEdit}
             title="Edit draft"
             className="absolute top-2 right-2 flex items-center gap-1 text-xs px-2 py-1 rounded opacity-0 group-hover/draft:opacity-100 transition-opacity"
-            style={{ background: 'rgba(34,211,238,0.10)', color: 'var(--accent)' }}
+            style={{ background: 'rgba(226,96,63,0.10)', color: 'var(--accent)' }}
           >
             <Pencil size={11} /> Edit
           </button>
@@ -260,7 +311,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
           </div>
           <div>
             <div className="text-xs font-bold font-mono mb-1" style={{ color: 'var(--text-dim)' }}>BODY</div>
-            <div className="text-sm whitespace-pre-wrap" style={{ color: '#94a3b8', lineHeight: '1.75' }}>
+            <div className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-muted)', lineHeight: '1.75' }}>
               {latest.body}
             </div>
           </div>
@@ -269,7 +320,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
 
       {/* ── Draft (editing) ── */}
       {latest && editing && (
-        <div className="rounded-lg p-3 space-y-3" style={{ background: 'var(--surface-2)', border: '1px solid rgba(34,211,238,0.3)' }}>
+        <div className="rounded-lg p-3 space-y-3" style={{ background: 'var(--surface-2)', border: '1px solid rgba(226,96,63,0.3)' }}>
           <div>
             <div className="text-xs font-bold font-mono mb-1" style={{ color: 'var(--text-dim)' }}>SUBJECT</div>
             <input
@@ -293,7 +344,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
               onClick={saveEdit}
               disabled={saving}
               className="btn text-xs flex items-center gap-1.5 font-semibold"
-              style={{ background: 'rgba(52,211,153,0.12)', borderColor: 'rgba(52,211,153,0.35)', color: '#34d399' }}
+              style={{ background: 'rgba(63,143,67,0.12)', borderColor: 'rgba(63,143,67,0.35)', color: '#3f8f43' }}
             >
               <Check size={12} /> {saving ? 'Saving…' : 'Save'}
             </button>
@@ -310,14 +361,64 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
       )}
 
       {/* ── Follow-up draft ── */}
-      {followup && (
+      {followup && !editingFollowup && (
         <div
-          className="rounded-lg p-3 mt-3"
-          style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)' }}
+          className="rounded-lg p-3 mt-3 relative group/followup"
+          style={{ background: 'rgba(111,90,224,0.06)', border: '1px solid rgba(111,90,224,0.2)' }}
         >
-          <div className="text-xs font-bold font-mono mb-2" style={{ color: '#a78bfa' }}>FOLLOW-UP DRAFT</div>
+          <button
+            onClick={startEditFollowup}
+            title="Edit follow-up"
+            className="absolute top-2 right-2 flex items-center gap-1 text-xs px-2 py-1 rounded opacity-0 group-hover/followup:opacity-100 transition-opacity"
+            style={{ background: 'rgba(111,90,224,0.12)', color: '#6f5ae0' }}
+          >
+            <Pencil size={11} /> Edit
+          </button>
+          <div className="text-xs font-bold font-mono mb-2" style={{ color: '#6f5ae0' }}>FOLLOW-UP DRAFT</div>
           <div className="text-xs font-medium mb-1">{followup.subject}</div>
-          <div className="text-sm" style={{ color: '#94a3b8', lineHeight: '1.75' }}>{followup.body}</div>
+          <div className="text-sm" style={{ color: 'var(--text-muted)', lineHeight: '1.75' }}>{followup.body}</div>
+        </div>
+      )}
+
+      {followup && editingFollowup && (
+        <div className="rounded-lg p-3 mt-3 space-y-3" style={{ background: 'rgba(111,90,224,0.06)', border: '1px solid rgba(111,90,224,0.4)' }}>
+          <div className="text-xs font-bold font-mono mb-1" style={{ color: '#6f5ae0' }}>FOLLOW-UP DRAFT</div>
+          <div>
+            <div className="text-xs font-bold font-mono mb-1" style={{ color: 'var(--text-dim)' }}>SUBJECT</div>
+            <input
+              value={editFollowupSubject}
+              onChange={e => setEditFollowupSubject(e.target.value)}
+              className="input text-sm w-full"
+            />
+          </div>
+          <div>
+            <div className="text-xs font-bold font-mono mb-1" style={{ color: 'var(--text-dim)' }}>BODY</div>
+            <textarea
+              value={editFollowupBody}
+              onChange={e => setEditFollowupBody(e.target.value)}
+              rows={Math.min(10, Math.max(4, editFollowupBody.split('\n').length + 1))}
+              className="input text-sm w-full font-sans"
+              style={{ lineHeight: '1.7', resize: 'vertical' }}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={saveFollowupEdit}
+              disabled={savingFollowup}
+              className="btn text-xs flex items-center gap-1.5 font-semibold"
+              style={{ background: 'rgba(111,90,224,0.12)', borderColor: 'rgba(111,90,224,0.35)', color: '#6f5ae0' }}
+            >
+              <Check size={12} /> {savingFollowup ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => setEditingFollowup(false)}
+              disabled={savingFollowup}
+              className="btn btn-ghost text-xs flex items-center gap-1.5"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <X size={12} /> Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>

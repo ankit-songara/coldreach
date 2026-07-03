@@ -21,17 +21,19 @@ pydantic-settings>=2.0.0
 # ── Scraping ─────────────────────────────────────────────────────────────────
 playwright>=1.44.0
 # After install: python -m playwright install chromium
+scrapling[fetchers]>=0.4.9  # stealth TLS + clean text extraction for company pages
 
 # ── Resume parsing (no LLM needed) ───────────────────────────────────────────
-pdfminer.six>=20221105     # PDF text extraction
+pymupdf>=1.24.0            # PDF text extraction (imported as `fitz`)
 python-docx>=1.1.0         # DOCX text extraction
 
 # ── LLM orchestration ────────────────────────────────────────────────────────
 langchain>=0.2.0
 langchain-core>=0.2.0
-langchain-community>=0.2.0   # Ollama
+langchain-community>=0.2.0   # shared community integrations
 
-# LLM providers — uncomment what you use
-langchain-groq>=0.1.7        # Groq (free tier) — default cloud option
-# langchain-openai>=0.1.0    # OpenAI / OpenRouter
-# langchain-anthropic>=0.1.0 # Anthropic Claude
+# LLM providers
+langchain-ollama>=0.1.0      # Ollama (local) — default auto-detect provider
+langchain-groq>=0.1.7        # Groq (free tier) — default cloud fallback
+# langchain-openai>=0.1.0    # OpenAI / OpenRouter — uncomment if used
+# langchain-anthropic>=0.1.0 # Anthropic Claude — uncomment if used

@@ -7,13 +7,25 @@ so callers physically cannot read or write another user's rows. The scheduler,
 which runs outside a request, uses the admin helpers at the bottom.
 """
 
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.db.models import Contact, EmailDraft, Resume, ScheduledEmail, AppConfig, User
+from app.db.models import Contact, EmailDraft, Resume, ScheduledEmail, AppConfig, User, KnownCompany
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
 from app import security
+
+
+# Statuses that mean a contact has already received their first-touch email.
+# (A manual "open in Gmail" send sets status="emailed" but not last_emailed_at,
+#  so we check status too, not just the timestamp.)
+ALREADY_CONTACTED_STATUSES = {"emailed", "followed_up", "replied", "interview", "offer", "rejected"}
+
+
+def already_first_touched(contact: Contact) -> bool:
+    """True if a first-touch email should NOT be sent again to this contact."""
+    return contact.last_emailed_at is not None or contact.status in ALREADY_CONTACTED_STATUSES
 
 
 # ── User Repository (not user-scoped — it manages the users themselves) ───────
@@ -284,6 +296,125 @@ class ResumeRepository:
         return resume
 
 
+# ── Sender-name resolution (for email greetings/signatures) ───────────────────
+_NAME_WORD = re.compile(r"^[A-Za-z][A-Za-z.\-']*$")
+
+
+_URL_RE   = re.compile(r'https?://|www\.|linkedin\.com|github\.com', re.IGNORECASE)
+_PHONE_RE = re.compile(r'[\+\(]?\d[\d\s\-\(\)\.]{6,}')
+
+
+def _name_from_resume(text: str) -> str:
+    """Best-effort: scan the first few non-empty lines for a plausible name.
+
+    Skips lines that look like URLs, phone numbers, email addresses, or
+    location strings (contain digits or known URL patterns). Gives up after
+    the first 5 non-empty lines so we don't wander into the body.
+    """
+    checked = 0
+    for line in (text or "").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        checked += 1
+        if checked > 5:
+            break
+        # Skip obvious non-name lines
+        if "@" in s:
+            continue
+        if any(ch.isdigit() for ch in s):
+            continue
+        if _URL_RE.search(s):
+            continue
+        if _PHONE_RE.search(s):
+            continue
+        # Candidate: 2–4 words, all name-like tokens
+        words = s.split()
+        if 2 <= len(words) <= 4 and all(_NAME_WORD.match(w) for w in words):
+            return " ".join(w.capitalize() for w in words)
+    return ""
+
+
+def resolve_sender_name(db: Session, user_id: int, user_email: str = "") -> str:
+    """
+    Resolve the name to sign emails with, in priority order:
+      1. an explicit `sender_name` saved in config
+      2. the name on the first line of the user's latest résumé
+      3. a name derived from their email local-part (last resort)
+    """
+    cfg = ConfigRepository(db, user_id)
+    explicit = cfg.get("sender_name", "").strip()
+    if explicit:
+        return explicit
+
+    latest = ResumeRepository(db, user_id).get_latest()
+    if latest:
+        from_resume = _name_from_resume(latest.text)
+        if from_resume:
+            return from_resume
+
+    local = (user_email or "").split("@")[0]
+    local = re.sub(r"\d+", "", local)              # strip digits (e.g. ...2003)
+    parts = [p for p in re.split(r"[._\-]+", local) if p]
+    return " ".join(p.capitalize() for p in parts)
+
+
+# ── Known companies (runtime-extensible ATS directory; global, not user-scoped) ─
+def list_known_companies(db: Session) -> list[KnownCompany]:
+    return db.query(KnownCompany).order_by(KnownCompany.created_at.desc()).all()
+
+
+def add_known_company(db: Session, name: str, slug: str, ats: str,
+                      domain: str = "", source: str = "user") -> KnownCompany | None:
+    """Persist a company→ATS mapping and register it in the live directory.
+
+    Idempotent on (ats, slug). Returns the row (existing or new), or None on
+    invalid input.
+    """
+    from app.scrapers import directory
+    name, slug, ats = name.strip(), slug.strip(), (ats or "").strip().lower()
+    if not (name and slug and ats):
+        return None
+    existing = db.query(KnownCompany).filter(
+        KnownCompany.ats == ats, KnownCompany.slug == slug
+    ).first()
+    if existing:
+        return existing
+    kc = KnownCompany(name=name, slug=slug, ats=ats, domain=(domain or "").strip().lower(), source=source)
+    db.add(kc)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()   # a concurrent hunt inserted the same (ats, slug)
+        return db.query(KnownCompany).filter(
+            KnownCompany.ats == ats, KnownCompany.slug == slug
+        ).first()
+    db.refresh(kc)
+    directory.register(name, slug, ats, kc.domain)
+    return kc
+
+
+def delete_known_company(db: Session, company_id: int) -> bool:
+    from app.scrapers import directory
+    kc = db.query(KnownCompany).filter(KnownCompany.id == company_id).first()
+    if not kc:
+        return False
+    directory.unregister(kc.ats, kc.slug)
+    db.delete(kc)
+    db.commit()
+    return True
+
+
+def load_known_companies_into_directory(db: Session) -> int:
+    """Register all persisted companies into the in-memory directory (startup)."""
+    from app.scrapers import directory
+    n = 0
+    for kc in db.query(KnownCompany).all():
+        if directory.register(kc.name, kc.slug, kc.ats, kc.domain):
+            n += 1
+    return n
+
+
 # ── Admin helpers for the background scheduler (cross-user, no request scope) ──
 def all_due_scheduled(db: Session, now: datetime) -> list[ScheduledEmail]:
     return (
@@ -298,7 +429,7 @@ def mark_scheduled_sent(db: Session, item_id: int) -> None:
     item = db.query(ScheduledEmail).filter(ScheduledEmail.id == item_id).first()
     if item:
         item.status = "sent"
-        item.sent_at = datetime.utcnow()
+        item.sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
 
 

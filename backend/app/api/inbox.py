@@ -15,8 +15,8 @@ import re
 import imaplib
 import email
 import logging
-from datetime import datetime, timedelta
-from email.utils import parseaddr
+from datetime import timedelta
+from email.utils import parseaddr, parsedate_to_datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ from app.db.crud import ContactRepository, ScheduledEmailRepository
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
+from app.timeutil import utcnow, to_naive_utc
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/inbox", tags=["inbox"])
@@ -61,6 +62,17 @@ _DAEMON_HINTS = ("mailer-daemon", "postmaster", "mail delivery subsystem")
 def _is_daemon(addr: str) -> bool:
     a = addr.lower()
     return any(h in a for h in _DAEMON_HINTS)
+
+
+def _parse_date(raw: str | None):
+    """Parse an email Date header to naive UTC, or None if absent/unparseable."""
+    if not raw:
+        return None
+    try:
+        dt = parsedate_to_datetime(raw)
+        return to_naive_utc(dt) if dt else None
+    except Exception:
+        return None
 
 
 # "Final-Recipient: rfc822; someone@example.com" (per RFC 3464)
@@ -125,8 +137,8 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
 
     # Only scan back as far as the oldest email we sent (cap at 90 days)
     sent_times = [c.last_emailed_at for c in awaiting.values() if c.last_emailed_at]
-    since_date = min(sent_times) if sent_times else datetime.utcnow() - timedelta(days=90)
-    since_date = max(since_date, datetime.utcnow() - timedelta(days=90))
+    since_date = min(sent_times) if sent_times else utcnow() - timedelta(days=90)
+    since_date = max(since_date, utcnow() - timedelta(days=90))
     since_str  = since_date.strftime("%d-%b-%Y")
 
     try:
@@ -148,14 +160,15 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
         if typ == "OK" and data and data[0]:
             uids = data[0].split()
             for uid in uids:
-                # Cheap first pass: just the From header
-                typ, msg_data = imap.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM)])")
+                # Cheap first pass: just the From + Date headers
+                typ, msg_data = imap.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM DATE)])")
                 if typ != "OK" or not msg_data or not msg_data[0]:
                     continue
                 raw = msg_data[0][1]
                 if not raw:
                     continue
-                _, addr = parseaddr(email.message_from_bytes(raw).get("From", ""))
+                hdr = email.message_from_bytes(raw)
+                _, addr = parseaddr(hdr.get("From", ""))
                 if not addr:
                     continue
                 addr = addr.lower()
@@ -176,15 +189,21 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
                             for awaited in awaiting_emails:
                                 if awaited in body:
                                     bounced_emails.add(awaited)
-                else:
-                    sender_emails.add(addr)
+                elif addr in awaiting:
+                    # Only count it as a reply if it actually arrived after we
+                    # emailed them — a pre-existing message from this person (e.g.
+                    # an earlier thread) is not a reply to our outreach.
+                    msg_dt = _parse_date(hdr.get("Date"))
+                    cutoff = awaiting[addr].last_emailed_at
+                    if cutoff is None or msg_dt is None or msg_dt >= cutoff:
+                        sender_emails.add(addr)
     finally:
         try:
             imap.logout()
         except Exception:
             pass
 
-    now = datetime.utcnow()
+    now = utcnow()
     hits: list[ReplyHit] = []
     cancelled = 0
 

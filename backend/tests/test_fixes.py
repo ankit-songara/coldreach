@@ -8,6 +8,32 @@ from app.config import settings
 from app.timeutil import to_naive_utc
 from datetime import datetime, timezone
 
+from app.db.crud import already_first_touched
+from app.db.models import Contact
+
+
+class TestNoDuplicateSends:
+    """A first-touch email must never go to a contact already emailed once."""
+
+    def _contact(self, status="new", last_emailed_at=None):
+        return Contact(name="X", email="x@y.com", status=status,
+                       last_emailed_at=last_emailed_at)
+
+    def test_new_contact_is_sendable(self):
+        assert already_first_touched(self._contact()) is False
+
+    @pytest.mark.parametrize("status", ["emailed", "followed_up", "replied", "interview", "rejected"])
+    def test_actioned_statuses_are_skipped(self, status):
+        # This is the bug: previously only "emailed" was skipped.
+        assert already_first_touched(self._contact(status=status)) is True
+
+    def test_manual_gmail_send_is_skipped(self):
+        # Manual "open in Gmail" sets status=emailed but not last_emailed_at.
+        assert already_first_touched(self._contact(status="emailed", last_emailed_at=None)) is True
+
+    def test_timestamp_alone_is_enough(self):
+        assert already_first_touched(self._contact(status="new", last_emailed_at=datetime.now(timezone.utc).replace(tzinfo=None))) is True
+
 
 class TestTokenRevocation:
     def test_token_roundtrip_carries_version(self):

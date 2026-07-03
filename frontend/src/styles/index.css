@@ -1,20 +1,79 @@
-@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ColdReach — warm, light, premium theme.
+   Soft paper canvas, white cards, friendly coral accent, warm ink text. */
 :root {
-  --bg:        #06080f;
-  --surface-1: #0b0f1a;
-  --surface-2: #0f1929;
-  --border:    #1a2535;
-  --border-dim:#0d1829;
-  --accent:    #22d3ee;
-  --accent-dim:rgba(34,211,238,0.12);
-  --text:      #e2e8f0;
-  --text-muted:#64748b;
-  --text-dim:  #334155;
+  /* Canvas & surfaces */
+  --bg:          #faf7f2;
+  --surface-1:   #ffffff;
+  --surface-2:   #f5efe6;
+  --surface-3:   #efe7d9;
+
+  /* Borders */
+  --border:        #eae1d3;
+  --border-strong: #ddd1bf;
+  --border-dim:    #f2ece2;
+
+  /* Signal accent — warm coral */
+  --accent:       #e2603f;
+  --accent-hover: #d1502f;
+  --accent-press: #ba4527;
+  --accent-dim:   rgba(226, 96, 63, 0.10);
+  --accent-tint:  #fbede8;
+  --on-accent:    #ffffff;
+
+  /* Text ramp — warm ink */
+  --text:       #241d17;
+  --text-muted: #6f6457;
+  --text-dim:   #a99c8b;
+
+  /* Status hues */
+  --status-new:       #8a7f70;
+  --status-emailed:   #c47d1e;
+  --status-followup:  #6f5ae0;
+  --status-replied:   #0e9d88;
+  --status-interview: #3f8f43;
+  --status-rejected:  #d2483a;
+  --status-bounced:   #cf6a59;
+
+  /* Feedback roles */
+  --success: #3f8f43;
+  --warning: #c47d1e;
+  --danger:  #d2483a;
+  --info:    #6f5ae0;
+
+  /* Designation tiers */
+  --tier-founder:  #6f5ae0;
+  --tier-hr:       #c47d1e;
+  --tier-engineer: #0e9d88;
+
+  /* Fonts */
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-sans:    'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* Radii */
+  --radius-sm:   8px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   22px;
+  --radius-full: 9999px;
+
+  /* Shadows — soft, warm */
+  --shadow-xs: 0 1px 2px rgba(40, 30, 20, 0.05);
+  --shadow-sm: 0 1px 2px rgba(40, 30, 20, 0.04), 0 3px 8px -3px rgba(40, 30, 20, 0.08);
+  --shadow-md: 0 2px 4px rgba(40, 30, 20, 0.04), 0 14px 30px -10px rgba(40, 30, 20, 0.12);
+  --shadow-lg: 0 30px 60px -18px rgba(40, 30, 20, 0.22);
+  --glow-accent: 0 0 0 3px rgba(226, 96, 63, 0.18);
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 * { box-sizing: border-box; }
@@ -23,44 +82,90 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-::-webkit-scrollbar        { width: 4px; }
-::-webkit-scrollbar-track  { background: var(--bg); }
-::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 2px; }
+/* Soft warm scrollbars */
+::-webkit-scrollbar        { width: 10px; height: 10px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--border-strong); border-radius: 9999px; border: 3px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Shared micro-motion */
+@keyframes cr-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cr-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cr-pop     { 0% { transform: scale(.96); opacity: 0; } 60% { transform: scale(1.02); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes spin       { to { transform: rotate(360deg); } }
 
 @layer components {
   .card {
-    @apply rounded-xl border bg-surface-1 p-4;
-    border-color: var(--border);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
   }
 
   .btn {
-    @apply rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 cursor-pointer border;
+    @apply rounded-[10px] text-sm font-semibold cursor-pointer border inline-flex items-center;
+    padding: 9px 16px;
+    transition: all 130ms var(--ease-standard);
   }
 
+  /* Primary — solid coral with lift */
   .btn-primary {
-    @apply btn bg-accent text-surface border-accent;
+    @apply btn;
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: transparent;
+    box-shadow: var(--shadow-sm);
   }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); box-shadow: var(--shadow-md); }
+  .btn-primary:active:not(:disabled) { transform: scale(0.97); background: var(--accent-press); }
 
+  /* Ghost — white surface, hairline border */
   .btn-ghost {
-    @apply btn bg-transparent;
-    color: var(--text-muted);
+    @apply btn;
+    background: var(--surface-1);
+    color: var(--text);
     border-color: var(--border);
+    box-shadow: var(--shadow-xs);
   }
+  .btn-ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+
+  /* Soft — tinted fill, no border */
+  .btn-soft {
+    @apply btn;
+    background: var(--accent-tint);
+    color: var(--accent);
+    border-color: transparent;
+  }
+  .btn-soft:hover:not(:disabled) { background: var(--accent-dim); }
 
   .input {
-    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors;
-    background: var(--bg);
-    border-color: var(--border);
+    @apply w-full rounded-[10px] outline-none;
+    font-size: 15px;
+    line-height: 1.6;
+    padding: 9px 14px;
+    background: var(--surface-1);
+    border: 1.5px solid var(--border);
     color: var(--text);
+    box-shadow: var(--shadow-xs);
+    transition: border-color 130ms, box-shadow 130ms;
   }
-  .input:focus { border-color: var(--accent); }
-  
+  .input:focus { border-color: var(--accent); box-shadow: var(--glow-accent); }
+  .input::placeholder { color: var(--text-dim); }
 
   .badge {
-    @apply inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold font-mono tracking-wide;
+    @apply inline-flex items-center rounded-full;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.01em;
+    padding: 3px 9px;
   }
 }

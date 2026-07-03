@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     cors_origins: str   = "http://localhost:5173"   # Vite dev server
 
     # ── Database ─────────────────────────────────────────────────────────────
-    database_url: str   = "sqlite:///./coldreach.db"
+    # Lives under data/ alongside the encryption key (matches .env.example and
+    # the Docker volume mount). The directory is auto-created on startup.
+    database_url: str   = "sqlite:///./data/coldreach.db"
 
     # ── LLM — provider-agnostic ──────────────────────────────────────────────
     llm_provider: str   = "auto"          # auto | ollama | groq | openai | openrouter

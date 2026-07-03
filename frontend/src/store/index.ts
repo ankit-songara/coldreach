@@ -32,7 +32,7 @@ interface AppState {
   setDrafts: (contactId: number, drafts: Draft[]) => void
 
   // ── UI ────────────────────────────────────────────────────────────────────
-  activeTab:    'setup' | 'hunt' | 'compose' | 'send'
+  activeTab:    'today' | 'setup' | 'hunt' | 'compose' | 'send'
   setActiveTab: (tab: AppState['activeTab']) => void
 }
 
@@ -76,7 +76,7 @@ export const useStore = create<AppState>()(
       setDrafts: (contactId, drafts) =>
         set((s) => ({ drafts: { ...s.drafts, [contactId]: drafts } })),
 
-      activeTab:    'setup',
+      activeTab:    'today',
       setActiveTab: (activeTab) => set({ activeTab }),
     }),
     {

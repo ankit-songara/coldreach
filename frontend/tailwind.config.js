@@ -4,13 +4,20 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        mono: ['"JetBrains Mono"', 'monospace'],
-        sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+        mono:    ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+        sans:    ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
       },
       colors: {
-        surface: { DEFAULT: '#06080f', 1: '#0b0f1a', 2: '#0f1929' },
-        border:  { DEFAULT: '#1a2535', dim: '#0d1829' },
-        accent:  { DEFAULT: '#22d3ee', dim: 'rgba(34,211,238,0.12)' },
+        surface: { DEFAULT: '#faf7f2', 1: '#ffffff', 2: '#f5efe6', 3: '#efe7d9' },
+        border:  { DEFAULT: '#eae1d3', dim: '#f2ece2', strong: '#ddd1bf' },
+        accent:  { DEFAULT: '#e2603f', dim: 'rgba(226,96,63,0.10)', tint: '#fbede8' },
+      },
+      boxShadow: {
+        xs: '0 1px 2px rgba(40,30,20,0.05)',
+        sm: '0 1px 2px rgba(40,30,20,0.04), 0 3px 8px -3px rgba(40,30,20,0.08)',
+        md: '0 2px 4px rgba(40,30,20,0.04), 0 14px 30px -10px rgba(40,30,20,0.12)',
+        lg: '0 30px 60px -18px rgba(40,30,20,0.22)',
       },
     },
   },
