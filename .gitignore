@@ -8,6 +8,8 @@ dist/
 # Env
 .env
 *.env
+.env.backend
+.env.frontend
 
 # DB
 *.db
