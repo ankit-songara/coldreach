@@ -6,6 +6,7 @@ python-multipart>=0.0.9      # file uploads
 # ── Database ─────────────────────────────────────────────────────────────────
 sqlalchemy>=2.0.0
 alembic>=1.13.0              # migrations (optional for SQLite, useful for Postgres)
+psycopg2-binary>=2.9.0       # PostgreSQL driver (used when DATABASE_URL is postgres://)
 
 # ── Auth & secrets ───────────────────────────────────────────────────────────
 cryptography>=42.0.0        # at-rest encryption + session tokens (no JWT lib needed)
