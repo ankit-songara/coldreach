@@ -1,0 +1,166 @@
+name,slug,ats,domain
+Stripe,stripe,greenhouse,stripe.com
+Vercel,vercel,greenhouse,vercel.com
+Figma,figma,greenhouse,figma.com
+Anthropic,anthropic,greenhouse,anthropic.com
+Airbnb,airbnb,greenhouse,airbnb.com
+Dropbox,dropbox,greenhouse,dropbox.com
+Coinbase,coinbase,greenhouse,coinbase.com
+DoorDash,doordash,greenhouse,doordash.com
+Robinhood,robinhood,greenhouse,robinhood.com
+Reddit,reddit,greenhouse,reddit.com
+Pinterest,pinterest,greenhouse,pinterest.com
+Databricks,databricks,greenhouse,databricks.com
+Asana,asana,greenhouse,asana.com
+HubSpot,hubspot,greenhouse,hubspot.com
+Squarespace,squarespace,greenhouse,squarespace.com
+Wix,wix,greenhouse,wix.com
+Canva,canva,greenhouse,canva.com
+Loom,loom,greenhouse,loom.com
+1Password,1password,greenhouse,1password.com
+Cloudflare,cloudflare,greenhouse,cloudflare.com
+Fastly,fastly,greenhouse,fastly.com
+HashiCorp,hashicorp,greenhouse,hashicorp.com
+Elastic,elastic,greenhouse,elastic.co
+MongoDB,mongodb,greenhouse,mongodb.com
+Confluent,confluent,greenhouse,confluent.io
+Cloudinary,cloudinary,greenhouse,cloudinary.com
+PagerDuty,pagerduty,greenhouse,pagerduty.com
+Intercom,intercom,greenhouse,intercom.com
+Zendesk,zendesk,greenhouse,zendesk.com
+Snowflake,snowflake,greenhouse,snowflake.com
+Datadog,datadog,greenhouse,datadoghq.com
+Mixpanel,mixpanel,greenhouse,mixpanel.com
+Amplitude,amplitude,greenhouse,amplitude.com
+Segment,segment,greenhouse,segment.com
+Contentful,contentful,greenhouse,contentful.com
+Heap,heap,greenhouse,heap.io
+FullStory,fullstory,greenhouse,fullstory.com
+Algolia,algolia,greenhouse,algolia.com
+Mux,mux,greenhouse,mux.com
+Marqeta,marqeta,greenhouse,marqeta.com
+Chime,chime,greenhouse,chime.com
+SoFi,sofi,greenhouse,sofi.com
+NerdWallet,nerdwallet,greenhouse,nerdwallet.com
+Addepar,addepar,greenhouse,addepar.com
+Modern Treasury,moderntreasury,greenhouse,modernteasury.com
+Carta,carta,greenhouse,carta.com
+Gusto,gusto,greenhouse,gusto.com
+Rippling,rippling,greenhouse,rippling.com
+Lattice,lattice,greenhouse,lattice.com
+Checkr,checkr,greenhouse,checkr.com
+CrowdStrike,crowdstrike,greenhouse,crowdstrike.com
+SentinelOne,sentinelone,greenhouse,sentinelone.com
+Okta,okta,greenhouse,okta.com
+Snyk,snyk,greenhouse,snyk.io
+Wiz,wiz,greenhouse,wiz.io
+Lacework,lacework,greenhouse,lacework.com
+Orca Security,orcasecurity,greenhouse,orca.security
+GitGuardian,gitguardian,greenhouse,gitguardian.com
+Rubrik,rubrik,greenhouse,rubrik.com
+Riot Games,riotgames,greenhouse,riotgames.com
+Unity,unity,greenhouse,unity.com
+Lyft,lyft,greenhouse,lyft.com
+Instacart,instacart,greenhouse,instacart.com
+Toast,toasttab,greenhouse,toasttab.com
+GitLab,gitlab,greenhouse,gitlab.com
+Scale AI,scaleai,greenhouse,scale.com
+CockroachLabs,cockroach-labs,greenhouse,cockroachlabs.com
+Benchling,benchling,greenhouse,benchling.com
+Samsara,samsara,greenhouse,samsara.com
+Grammarly,grammarly,greenhouse,grammarly.com
+Duolingo,duolingo,greenhouse,duolingo.com
+Udemy,udemy,greenhouse,udemy.com
+Coursera,coursera,greenhouse,coursera.com
+Splunk,splunk,greenhouse,splunk.com
+Box,box,greenhouse,box.com
+Spotify,spotify,lever,spotify.com
+Plaid,plaid,lever,plaid.com
+Brex,brex,lever,brex.com
+Ramp,ramp,lever,ramp.com
+Mercury,mercury,lever,mercury.com
+Airtable,airtable,lever,airtable.com
+Zapier,zapier,lever,zapier.com
+Miro,miro,lever,miro.com
+Netlify,netlify,lever,netlify.com
+CircleCI,circleci,lever,circleci.com
+Kong,kong,lever,konghq.com
+LaunchDarkly,launchdarkly,lever,launchdarkly.com
+Sourcegraph,sourcegraph,lever,sourcegraph.com
+Statsig,statsig,lever,statsig.com
+Grafana Labs,grafana,lever,grafana.com
+Fivetran,fivetran,lever,fivetran.com
+Airbyte,airbyte,lever,airbyte.com
+dbt Labs,dbtlabs,lever,getdbt.com
+Hightouch,hightouch,lever,hightouch.com
+Hex,hex,lever,hex.tech
+Weights & Biases,wandb,lever,wandb.ai
+Sendbird,sendbird,lever,sendbird.com
+Attentive,attentive,lever,attentive.com
+Klaviyo,klaviyo,lever,klaviyo.com
+Supabase,supabase,lever,supabase.com
+Hasura,hasura,lever,hasura.io
+Stitch,stitch,lever,stitchdata.com
+Quora,quora,lever,quora.com
+OpenTable,opentable,lever,opentable.com
+OpenAI,openai,ashby,openai.com
+Cohere,cohere,ashby,cohere.com
+Runway,runway,ashby,runwayml.com
+Pika,pika,ashby,pika.art
+Linear,linear,ashby,linear.app
+Notion,notion,ashby,notion.so
+Vanta,vanta,ashby,vanta.com
+PostHog,posthog,ashby,posthog.com
+Perplexity,perplexity,ashby,perplexity.ai
+Mistral AI,mistral,ashby,mistral.ai
+Anyscale,anyscale,ashby,anyscale.com
+Together AI,togetherai,ashby,together.ai
+ElevenLabs,elevenlabs,ashby,elevenlabs.io
+Deepgram,deepgram,ashby,deepgram.com
+Glean,glean,ashby,glean.com
+Hugging Face,huggingface,ashby,huggingface.co
+Modal,modal,ashby,modal.com
+Replicate,replicate,ashby,replicate.com
+Baseten,baseten,ashby,baseten.co
+Character AI,characterai,ashby,character.ai
+Stability AI,stability,ashby,stability.ai
+Pinecone,pinecone,ashby,pinecone.io
+Weaviate,weaviate,ashby,weaviate.io
+Qdrant,qdrant,ashby,qdrant.tech
+Zilliz,zilliz,ashby,zilliz.com
+ClickHouse,clickhouse,ashby,clickhouse.com
+Cursor,cursor,ashby,cursor.sh
+Codeium,codeium,ashby,codeium.com
+Replit,replit,ashby,replit.com
+Neon,neon,ashby,neon.tech
+PlanetScale,planetscale,ashby,planetscale.com
+Remote,remote,ashby,remote.com
+Descript,descript,ashby,descript.com
+Liveblocks,liveblocks,ashby,liveblocks.io
+Tinybird,tinybird,ashby,tinybird.co
+Visa,Visa,smartrecruiters,visa.com
+Bosch Group,BoschGroup,smartrecruiters,bosch.com
+Ubisoft,Ubisoft2,smartrecruiters,ubisoft.com
+Experian,Experian,smartrecruiters,experian.com
+Delivery Hero,DeliveryHero,smartrecruiters,deliveryhero.com
+Wise,Wise,smartrecruiters,wise.com
+ByteDance,ByteDance,smartrecruiters,bytedance.com
+Equinox,Equinox,smartrecruiters,equinox.com
+Channable,channable,recruitee,channable.com
+bunq,bunq,recruitee,bunq.com
+Sendcloud,sendcloud,recruitee,sendcloud.com
+Effectory,effectory,recruitee,effectory.com
+Incentro,incentro,recruitee,incentro.com
+Nmbrs,nmbrs,recruitee,nmbrs.com
+Netdata,netdata,workable,netdata.cloud
+Printify,printify,workable,printify.com
+TestGorilla,testgorilla,workable,testgorilla.com
+Omnisend,omnisend,workable,omnisend.com
+Insurify,insurify,workable,insurify.com
+Proxify,proxify,workable,proxify.io
+Kaizen Gaming,kaizengaming,workable,kaizengaming.com
+Blueground,blueground,workable,theblueground.com
+Welcome Pickups,welcomepickups,workable,welcomepickups.com
+Signal,signal,workable,signal.org
+Toggl,toggl,breezy,toggl.com
+Breezy HR,breezy-hr,breezy,breezy.hr

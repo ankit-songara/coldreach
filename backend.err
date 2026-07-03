@@ -1,0 +1,2125 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\ankit\\Downloads\\coldreach\\backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [18108] using WatchFiles
+INFO:     Started server process [18268]
+INFO:     Waiting for application startup.
+INFO  coldreach  Starting ColdReach v1.0.0
+INFO  coldreach  \u2713 Database ready
+INFO  coldreach  \u2713 Directory: +2 learned companies
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  coldreach  \u2713 LLM ready: ollama/llama3.1:8b
+INFO  app.scheduler  Follow-up scheduler started
+INFO  coldreach  \u2713 Follow-up scheduler running
+INFO:     Application startup complete.
+INFO  watchfiles.main  3 changes detected
+INFO  app.mailer  Sent to talent_hiring@infystrat.com: 'Re: Quick question on Microservices Architecture'
+INFO  app.scheduler  [user 5] scheduled email sent to talent_hiring@infystrat.com
+INFO  watchfiles.main  1 change detected
+INFO  app.mailer  Sent to hn@ycombinator.com: 'Re: Payment Processing Insights'
+INFO  app.scheduler  [user 5] scheduled email sent to hn@ycombinator.com
+INFO  app.mailer  Sent to kwu@billiontoone.com: 'Quick question on AML risk-scoring'
+INFO  app.scheduler  [user 5] scheduled email sent to kwu@billiontoone.com
+INFO  app.mailer  Sent to mark@opertus.systems: 'Re: Quick question on async payment processing'
+INFO  app.scheduler  [user 5] scheduled email sent to mark@opertus.systems
+INFO  app.mailer  Sent to andrey+hiring@bubblehouse.com: 'Re: Your custom loyalty platform'
+INFO  app.scheduler  [user 5] scheduled email sent to andrey+hiring@bubblehouse.com
+INFO  app.mailer  Sent to careers@crossnokaye.com: 'Quick question about your platform'
+INFO  app.scheduler  [user 5] scheduled email sent to careers@crossnokaye.com
+INFO  app.mailer  Sent to hani.benhabiles+hn@mongodb.com: 'Quick Security Focus Question'
+INFO  app.scheduler  [user 5] scheduled email sent to hani.benhabiles+hn@mongodb.com
+INFO  app.mailer  Sent to jon@join.build: 'Re: Quick question on frontend-heavy roles'
+INFO  app.scheduler  [user 5] scheduled email sent to jon@join.build
+INFO  app.mailer  Sent to nikita@clipster.gg: "Re: Clipster's Performance-Based Content"
+INFO  app.scheduler  [user 5] scheduled email sent to nikita@clipster.gg
+INFO  app.mailer  Sent to admin@golfcartsofatx.com: 'Quick Chat?'
+INFO  app.scheduler  [user 5] scheduled email sent to admin@golfcartsofatx.com
+INFO  app.mailer  Sent to brandon@storyteller.ai: 'quick question'
+INFO  app.scheduler  [user 5] scheduled email sent to brandon@storyteller.ai
+INFO  app.mailer  Sent to devin@pineapplehi.com: 'Quick question about video analysis'
+INFO  app.scheduler  [user 5] scheduled email sent to devin@pineapplehi.com
+INFO  app.mailer  Sent to first.last@grafana.com: 'Observability in Action'
+INFO  app.scheduler  [user 5] scheduled email sent to first.last@grafana.com
+INFO  app.mailer  Sent to hiring@learndelta.ai: 'Quick question about conversational AI'
+INFO  app.scheduler  [user 5] scheduled email sent to hiring@learndelta.ai
+INFO  app.mailer  Sent to hr@spp.org: 'Quick Question'
+INFO  app.scheduler  [user 5] scheduled email sent to hr@spp.org
+INFO  app.mailer  Sent to humans@shiftco.ai: 'quick question'
+INFO  app.scheduler  [user 5] scheduled email sent to humans@shiftco.ai
+INFO  app.mailer  Sent to jurassictyler@proton.me: 'quick question'
+INFO  app.scheduler  [user 5] scheduled email sent to jurassictyler@proton.me
+INFO  app.mailer  Sent to matt@ipinfo.io: 'Quick question on Places API'
+INFO  app.scheduler  [user 5] scheduled email sent to matt@ipinfo.io
+INFO  app.mailer  Sent to recruiting@albert.com: 'quick question'
+INFO  app.scheduler  [user 5] scheduled email sent to recruiting@albert.com
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  app.mailer  Sent to recruiting@jerry.ai: 'Quick question'
+INFO  app.scheduler  [user 5] scheduled email sent to recruiting@jerry.ai
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  app.mailer  Sent to recruiting@starbridge.ai: 'quick question'
+INFO  app.scheduler  [user 5] scheduled email sent to recruiting@starbridge.ai
+INFO  app.mailer  Sent to ryan@vitalize.care: 'Quick question about ADT data integration'
+INFO  app.scheduler  [user 5] scheduled email sent to ryan@vitalize.care
+INFO  app.mailer  Sent to www.giridharpai@gmail.com: 'Quick Question on SIEM Monitoring'
+INFO  app.scheduler  [user 5] scheduled email sent to www.giridharpai@gmail.com
+INFO  app.api.hunt  Hunt: 'Golang'
+INFO  httpx  HTTP Request: GET https://remotive.com/api/remote-jobs?limit=200 "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [Remotive] 3 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://api.github.com/search/repositories?q=language%3AGo+pushed%3A%3E2026-03-05&sort=updated&order=desc&per_page=30 "HTTP/1.1 401 Unauthorized"
+INFO  app.scrapers.base  [GitHub] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://www.arbeitnow.com/api/job-board-api "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/amplitude/jobs?content=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/gitguardian/jobs?content=true "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/cloudinary/jobs?content=true "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/segment/jobs?content=true "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/grammarly/jobs?content=true "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/toasttab/jobs?content=true "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/carta/jobs?content=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/gusto/jobs?content=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/replit "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/superset/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/codeium "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/cursor "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/ByteDance/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/runway "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/baseten "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/Visa/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/anyscale "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [Arbeitnow] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/BoschGroup/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/remote "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://himalayas.app/jobs/api?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://hn.algolia.com/api/v1/search_by_date?tags=job&hitsPerPage=200&numericFilters=created_at_i%3E1779211227&attributesToHighlight=none "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/Wise/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.ashbyhq.com/posting-api/job-board/perplexity "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/testgorilla?details=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/netdata?details=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://hn.algolia.com/api/v1/search_by_date?tags=story%2Cauthor_whoishiring&query=who+is+hiring&hitsPerPage=6 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/proxify?details=true "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/insurify?details=true "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/omnisend?details=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/printify?details=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/DeliveryHero/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.smartrecruiters.com/v1/companies/Experian/postings?limit=100 "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [SmartRecruiters] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://channable.recruitee.com/api/offers/ "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://incentro.recruitee.com/api/offers/ "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://bunq.recruitee.com/api/offers/ "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [Himalayas] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://www.themuse.com/api/public/jobs?page=1 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://remoteok.com/api "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [HNJobs] 8 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/welcomepickups?details=true "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://sendcloud.recruitee.com/api/offers/ "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://effectory.recruitee.com/api/offers/ "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://nmbrs.recruitee.com/api/offers/ "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [Ashby] 0 leads for 'Golang'
+INFO  app.scrapers.base  [Greenhouse] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://jobicy.com/api/v2/remote-jobs?count=100 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://breezy-hr.breezy.hr/json "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://toggl.breezy.hr/json "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [Breezy] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://weworkremotely.com/remote-jobs.rss "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [Recruitee] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://apply.workable.com/api/v1/widget/accounts/blueground?details=true "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [Workable] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/klaviyo?mode=json&limit=10 "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/statsig?mode=json&limit=10 "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/hex?mode=json&limit=10 "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/attentive?mode=json&limit=10 "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/plaid?mode=json&limit=10 "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/quora?mode=json&limit=10 "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/hightouch?mode=json&limit=10 "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://api.lever.co/v0/postings/zapier?mode=json&limit=10 "HTTP/1.1 404 Not Found"
+INFO  app.scrapers.base  [Lever] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://hn.algolia.com/api/v1/search?tags=comment%2Cstory_48747976&hitsPerPage=1000&attributesToHighlight=none "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [RemoteOK] 10 leads for 'Golang'
+INFO  app.scrapers.base  [Jobicy] 1 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://www.themuse.com/api/public/jobs?page=2 "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [WeWorkRemotely] 0 leads for 'Golang'
+INFO  app.scrapers.base  [TheMuse] 0 leads for 'Golang'
+INFO  httpx  HTTP Request: GET https://hn.algolia.com/api/v1/search?tags=comment%2Cstory_48357725&hitsPerPage=1000&attributesToHighlight=none "HTTP/1.1 200 OK"
+INFO  app.scrapers.base  [HackerNews] 29 leads for 'Golang'
+INFO  app.api.hunt  Hunt: 28 direct emails, 20 identity-only leads
+[2026-07-03 22:50:44] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-131' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+[2026-07-03 22:50:44] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+[2026-07-03 22:50:44] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-132' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-133' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-134' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-135' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-136' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-137' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-138' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-139' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-140' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-141' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-142' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-143' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-144' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-145' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-146' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-147' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-148' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+[2026-07-03 22:50:45] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-149' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+[2026-07-03 22:50:45] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-150' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-151' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-152' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-153' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-154' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-155' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-156' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-157' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-158' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-159' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-160' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://proliferate.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://proliferate.com/about "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://proliferate.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://proliferate.com/careers "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://hightouch.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://proliferate.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://proliferate.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://manufact.com/contact "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://hightouch.com/about "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://noxmetals.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://hightouch.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://hightouch.com/careers "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://noxmetals.com/about "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://dexter.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://hightouch.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://noxmetals.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://hightouch.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://manufact.com/about "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://noxmetals.com/careers "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://noxmetals.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://noxmetals.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://manufact.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://manufact.com/careers "HTTP/1.1 307 Temporary Redirect"
+INFO  httpx  HTTP Request: GET https://dexter.com/about "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://www.ycombinator.com/companies/manufact/jobs "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://manufact.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://dexter.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://manufact.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://dexter.com/careers "HTTP/1.1 302 Found"
+INFO  httpx  HTTP Request: GET https://dexter.com/about-us/careers "HTTP/1.1 301 Moved Permanently"
+[2026-07-03 22:50:52] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-161' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-162' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-163' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-164' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-165' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-166' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://dexter.com/about-us/careers/ "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://wildcard.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://wildcard.com/about "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://dexter.com/about-us "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://wildcard.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://wildcard.com/careers "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://wildcard.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://wildcard.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://dexter.com/about-us/ "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://dexter.com/company "HTTP/1.1 404 Not Found"
+[2026-07-03 22:50:59] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-167' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-168' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-169' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-170' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-171' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-172' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+[2026-07-03 22:51:00] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-173' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-174' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-175' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-176' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-177' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-178' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://theelites.com/contact "HTTP/1.1 503 Service Unavailable"
+INFO  httpx  HTTP Request: GET https://apprentus.com/contact "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://apprentus.com/about "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://apprentus.com/team "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://apprentus.com/careers "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://apprentus.com/about-us "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://apprentus.com/company "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://theelites.com/about "HTTP/1.1 503 Service Unavailable"
+INFO  httpx  HTTP Request: GET https://theelites.com/team "HTTP/1.1 503 Service Unavailable"
+INFO  httpx  HTTP Request: GET https://theelites.com/careers "HTTP/1.1 503 Service Unavailable"
+INFO  httpx  HTTP Request: GET https://theelites.com/about-us "HTTP/1.1 503 Service Unavailable"
+INFO  httpx  HTTP Request: GET https://theelites.com/company "HTTP/1.1 503 Service Unavailable"
+[2026-07-03 22:51:01] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-179' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-180' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-181' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-182' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-183' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-184' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+[2026-07-03 22:51:02] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-185' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-186' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-187' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-188' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-189' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-190' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://medidaai.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://nymbus.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://medidaai.com/about "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://medidaai.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://nymbus.com/about "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://medidaai.com/careers "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://nymbus.com/about/ "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://medidaai.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://medidaai.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://nymbus.com/team "HTTP/1.1 404 Not Found"
+[2026-07-03 22:51:04] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-191' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-192' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-193' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-194' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-195' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-196' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://nymbus.com/careers "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://nymbus.com/careers/ "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://nymbus.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://kabannas.com/contact "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://nymbus.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://kabannas.com/about "HTTP/1.1 301 Moved Permanently"
+[2026-07-03 22:51:07] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-199' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-200' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-201' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-202' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-203' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-204' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+[2026-07-03 22:51:07] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-205' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-206' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-207' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-208' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-209' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-210' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://coletobrands.com/contact "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/about "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://lemon.io/contact "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.coletobrands.com/contact "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/wp-content/uploads/2025/10/About.jpg "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://lemon.io/about-us/ "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://kabannas.com/team "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://coletobrands.com/about "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://www.coletobrands.com/about "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://kabannas.com/careers "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://coletobrands.com/team "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.coletobrands.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://coletobrands.com/careers "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/careers "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.coletobrands.com/pages/careers "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/wp-content/uploads/2025/10/Careers.jpg "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://coletobrands.com/about-us "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.coletobrands.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://kabannas.com/about-us "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://coletobrands.com/company "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.coletobrands.com/company "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://kabannas.com/company "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.kabannas.com/company "HTTP/1.1 404 Not Found"
+[2026-07-03 22:51:13] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-211' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-212' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-213' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-214' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-215' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-216' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://telusdigital.com/contact "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://telusdigital.com/about "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://telusdigital.com/team "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://telusdigital.com/careers "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://telusdigital.com/about-us "HTTP/1.1 403 Forbidden"
+INFO  httpx  HTTP Request: GET https://telusdigital.com/company "HTTP/1.1 403 Forbidden"
+[2026-07-03 22:51:14] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-217' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-218' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-219' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-220' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-221' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-222' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+[2026-07-03 22:51:18] WARNING: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+WARNING  scrapling  This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-223' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-224' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-225' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-226' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-227' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+ERROR  asyncio  Task exception was never retrieved
+future: <Task finished name='Task-228' coro=<Connection.run() done, defined at C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py:267> exception=NotImplementedError()>
+Traceback (most recent call last):
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_connection.py", line 274, in run
+    await self._transport.connect()
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 106, in connect
+    raise exc
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\site-packages\patchright\_impl\_transport.py", line 93, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ankit\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+INFO  httpx  HTTP Request: GET https://qad.com/contact "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.qad.com/contact "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.qad.com/about/contact "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://qad.com/about "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.qad.com/about "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://qad.com/team "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.qad.com/team "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://qad.com/careers "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.qad.com/careers "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.qad.com/about/careers "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: GET https://qad.com/about-us "HTTP/1.1 301 Moved Permanently"
+INFO  httpx  HTTP Request: GET https://www.qad.com/about-us "HTTP/1.1 404 Not Found"
+INFO  httpx  HTTP Request: GET https://qad.com/company "HTTP/1.1 301 Moved Permanently"
+INFO  app.api.hunt  Hunt: resolve budget hit — 2 leads left unresolved
+INFO  app.api.hunt  Hunt complete: 19 new contacts saved
+INFO  watchfiles.main  1 change detected
+INFO  app.llm.factory  LLM forced: ollama/llama3.1:8b
+INFO  app.llm.generator  EmailGenerator using ollama/llama3.1:8b
+INFO  httpx  HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+INFO  httpx  HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
