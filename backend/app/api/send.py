@@ -261,12 +261,26 @@ def test_connection(req: BulkSendRequest, user: User = Depends(get_current_user)
         smtp.login(req.gmail_address.strip(), normalize_app_password(req.gmail_app_password))
         smtp.quit()
         return {"ok": True, "message": "Gmail connection successful"}
-    except smtplib.SMTPAuthenticationError:
+    except smtplib.SMTPAuthenticationError as e:
+        # Surface Gmail's actual response so we can distinguish causes:
+        #   535-5.7.8  Username and Password not accepted  → wrong/invalid App Password
+        #   534-5.7.14 / 5.7.9  Please log in via your web browser → IP/security block
+        #                       (common when sending from a datacenter IP like Vercel)
+        code = getattr(e, "smtp_code", "?")
+        raw = getattr(e, "smtp_error", b"")
+        detail = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+        detail = " ".join(detail.split())
+        log.warning(f"Gmail auth rejected [{code}]: {detail}")
+        if "5.7.14" in detail or "5.7.9" in detail or "web browser" in detail.lower():
+            raise HTTPException(401,
+                f"Gmail blocked this login from the server's IP [{code}]. Your App "
+                f"Password is likely fine — Gmail distrusts logins from cloud/datacenter "
+                f"IPs. Gmail said: {detail}"
+            )
         raise HTTPException(401,
-            "Gmail rejected these credentials. Two things to check: "
-            "(1) enable 2-Step Verification on your Google account, then "
-            "(2) create an App Password at myaccount.google.com/apppasswords and "
-            "paste that 16-character code here — not your normal Gmail password."
+            f"Gmail rejected the credentials [{code}]. Make sure 2-Step Verification "
+            f"is ON and you pasted a 16-char App Password (not your normal password). "
+            f"Gmail said: {detail}"
         )
     except Exception as e:
         raise HTTPException(502, f"Could not reach Gmail SMTP: {e}")
