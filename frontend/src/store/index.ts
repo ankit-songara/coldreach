@@ -4,6 +4,17 @@ import type { Contact, Draft } from '../types'
 import { getToken, setToken } from '../api/client'
 import { authApi } from '../api/auth'
 
+type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send'
+
+// Initial tab comes from the URL hash so a reload (or shared link) lands on
+// the right tab. Starting at 'today' and correcting in an effect loses the
+// race against the hash-sync effect, which rewrites the URL first.
+const initialTab = ((): TabId => {
+  const h = window.location.hash.replace('#', '')
+  return (['today', 'setup', 'hunt', 'compose', 'send'] as const).includes(h as TabId)
+    ? (h as TabId) : 'today'
+})()
+
 interface AppState {
   // ── Auth ──────────────────────────────────────────────────────────────────
   token:      string | null
@@ -32,7 +43,7 @@ interface AppState {
   setDrafts: (contactId: number, drafts: Draft[]) => void
 
   // ── UI ────────────────────────────────────────────────────────────────────
-  activeTab:    'today' | 'setup' | 'hunt' | 'compose' | 'send'
+  activeTab:    TabId
   setActiveTab: (tab: AppState['activeTab']) => void
 }
 
@@ -79,7 +90,7 @@ export const useStore = create<AppState>()(
       setDrafts: (contactId, drafts) =>
         set((s) => ({ drafts: { ...s.drafts, [contactId]: drafts } })),
 
-      activeTab:    'today',
+      activeTab:    initialTab,
       setActiveTab: (activeTab) => set({ activeTab }),
     }),
     {

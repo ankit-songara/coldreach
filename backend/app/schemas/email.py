@@ -39,8 +39,9 @@ class HuntRequest(BaseModel):
 
 
 class HuntResult(BaseModel):
+    # Per-source breakdowns deliberately stay server-side: where the leads come
+    # from is our pipeline detail, not something the product surfaces to users.
     contacts:   list[dict]
     total:      int                # new contacts saved this hunt
-    sources:    dict[str, int]     # {"HackerNews": 3, "GitHub": 2, ...}
-    found:      int = 0            # leads discovered across sources (pre-resolution)
+    found:      int = 0            # leads discovered (pre-resolution)
     duplicates: int = 0            # resolved contacts already in the user's list

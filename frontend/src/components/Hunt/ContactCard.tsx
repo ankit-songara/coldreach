@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import { X } from 'lucide-react'
 import { contactsApi } from '../../api/contacts'
 import { useStore } from '../../store'
@@ -13,7 +14,7 @@ export default function ContactCard({ contact: c }: Props) {
   const statusMutation = useMutation({
     mutationFn: (status: ContactStatus) => contactsApi.setStatus(c.id, status),
     onSuccess: (updated) => upsertContact(updated),
-    onError: () => {},
+    onError: (e: Error) => toast.error(e.message),
   })
 
   const deleteMutation = useMutation({
@@ -22,6 +23,7 @@ export default function ContactCard({ contact: c }: Props) {
       removeContact(c.id)
       qc.invalidateQueries({ queryKey: ['contacts'] })
     },
+    onError: (e: Error) => toast.error(e.message),
   })
 
   const getDesigTier = (d: string) => {
@@ -119,10 +121,6 @@ export default function ContactCard({ contact: c }: Props) {
           </span>
         )}
       </div>
-      {c.source && (
-        <div className="text-xs mb-3" style={{ color: 'var(--text-dim)' }}>via {c.source}</div>
-      )}
-
       {/* ── Status pills ── */}
       <div className="flex flex-wrap gap-1">
         {(Object.entries(STATUS_META) as [ContactStatus, typeof STATUS_META[ContactStatus]][]).map(([key, meta]) => (

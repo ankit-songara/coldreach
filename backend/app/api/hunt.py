@@ -463,13 +463,11 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             "email":        c.email,
             "designation":  c.designation,
             "company":      c.company,
-            "source":       c.source,
             "status":       c.status,
             "confidence":   c.confidence,
             "email_status": c.email_status,
         } for c in saved],
         total=len(saved),
-        sources=source_counts,
         found=found,
         duplicates=duplicates,
     )

@@ -89,16 +89,15 @@ app.include_router(companies.router,  prefix="/api")
 
 @app.get("/api/health")
 async def health():
-    # llm_ok is what the frontend keys on; the label is for operators (logs,
-    # curl) and must never be shown verbatim to end users.
+    # llm_ok is all the frontend needs. The provider/model label is stack
+    # detail — it's only exposed with DEBUG on, so a public deployment doesn't
+    # advertise its internals to anyone who curls /api/health.
     try:
         provider, model = await detect_provider()
         llm_ok, llm_status = True, f"{provider}/{model}"
     except Exception as e:
         llm_ok, llm_status = False, f"unavailable: {e}"
-    return {
-        "status":   "ok",
-        "version":  settings.app_version,
-        "llm_ok":   llm_ok,
-        "llm":      llm_status,
-    }
+    body = {"status": "ok", "version": settings.app_version, "llm_ok": llm_ok}
+    if settings.debug:
+        body["llm"] = llm_status
+    return body

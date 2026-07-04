@@ -45,7 +45,10 @@ class Settings(BaseSettings):
     # Provider-specific defaults
     ollama_base_url: str       = "http://localhost:11434"
     ollama_default_model: str  = "llama3.1"
-    groq_default_model: str    = "llama-3.1-8b-instant"
+    # 70B writes noticeably better cold emails than 8B (follows the "no invented
+    # facts" rules, stronger hooks). Still on Groq's free tier — just slower per
+    # request, which the sequential compose flow absorbs fine.
+    groq_default_model: str    = "llama-3.3-70b-versatile"
 
     # ── Optional enrichment ──────────────────────────────────────────────────
     hunter_api_key: str = ""    # hunter.io — domain email search

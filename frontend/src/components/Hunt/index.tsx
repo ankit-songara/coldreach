@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Search, Trash2, Download, ShieldCheck } from 'lucide-react'
@@ -10,27 +10,56 @@ import ContactCard from './ContactCard'
 import ConfirmDialog from '../shared/ConfirmDialog'
 import type { ContactStatus } from '../../types'
 
-const CHIPS = [
-  'golang hiring',
-  'react engineer hiring',
-  'python backend hiring',
-  'founding engineer india',
-  'devops kubernetes hiring',
-  'data engineer india',
-]
-
 const STATUS_FILTERS: Array<ContactStatus | 'all'> = [
   'all', 'new', 'emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced',
 ]
 
 // Staged status shown while a hunt runs — hunts take 30–60s and a silent
-// button label is not enough feedback. Timings roughly mirror the real phases.
+// button label is not enough feedback. Timings roughly mirror the real phases
+// without naming the places we look.
 const HUNT_STAGES = [
-  { after: 0,      label: 'Scanning HackerNews, GitHub and 160+ job boards…' },
+  { after: 0,      label: 'Searching for companies hiring right now…' },
   { after: 12_000, label: 'Matching people to your query…' },
   { after: 25_000, label: 'Finding and checking email addresses…' },
   { after: 40_000, label: 'Almost there — putting your results together…' },
 ]
+
+// ── Dynamic query suggestions ────────────────────────────────────────────────
+// Chips adapt to the user's résumé: skills we spot become tailored queries,
+// topped up with rotating general ones so the row always feels fresh.
+const SKILL_QUERIES: Array<[pattern: RegExp, query: string]> = [
+  [/\breact\b/i,                 'react engineer hiring'],
+  [/\b(golang|go)\b/i,           'golang hiring'],
+  [/\bpython\b/i,                'python backend hiring'],
+  [/\btypescript\b/i,            'typescript engineer hiring'],
+  [/\bnode(\.js)?\b/i,           'node backend hiring'],
+  [/\bjava\b(?!script)/i,        'java engineer hiring'],
+  [/\b(kubernetes|devops|terraform|docker)\b/i, 'devops kubernetes hiring'],
+  [/\b(data engineer|spark|airflow|etl)\b/i,    'data engineer hiring'],
+  [/\b(machine learning|pytorch|tensorflow|llm)\b/i, 'machine learning engineer hiring'],
+  [/\b(android|kotlin)\b/i,      'android developer hiring'],
+  [/\b(ios|swift)\b/i,           'ios developer hiring'],
+  [/\brust\b/i,                  'rust engineer hiring'],
+  [/\bfullstack|full-stack|full stack\b/i, 'fullstack engineer remote'],
+  [/\bfrontend|front-end\b/i,    'frontend developer hiring'],
+  [/\bbackend|back-end\b/i,      'backend engineer hiring'],
+]
+const GENERAL_QUERIES = [
+  'founding engineer', 'software engineer hiring india', 'senior engineer remote',
+  'startup hiring engineers', 'platform engineer hiring', 'sre hiring',
+]
+
+function buildChips(resume: string): string[] {
+  const matched = SKILL_QUERIES.filter(([re]) => re.test(resume)).map(([, q]) => q)
+  // Shuffle the general pool so returning users see variety
+  const extras = [...GENERAL_QUERIES].sort(() => Math.random() - 0.5)
+  const chips: string[] = []
+  for (const q of [...matched, ...extras]) {
+    if (!chips.includes(q)) chips.push(q)
+    if (chips.length >= 6) break
+  }
+  return chips
+}
 
 // Honest, specific empty-state copy based on what the hunt actually found.
 function emptyHuntMessage(query: string, found: number, duplicates: number): string {
@@ -67,8 +96,11 @@ export default function Hunt() {
   const [huntInfo, setHuntInfo] = useState<{ found: number; duplicates: number; query: string } | null>(null)
   const [stageLabel, setStageLabel] = useState('')
   const stageTimers = useRef<number[]>([])
-  const { setContacts, contacts, clearContacts, upsertContact } = useStore()
+  const { setContacts, contacts, clearContacts, upsertContact, resume } = useStore()
   const qc = useQueryClient()
+
+  // Suggestions personalised from the résumé, stable for this visit.
+  const chips = useMemo(() => buildChips(resume), [resume])
 
   // Clean up any pending stage timers on unmount
   useEffect(() => () => { stageTimers.current.forEach(clearTimeout) }, [])
@@ -161,7 +193,7 @@ export default function Hunt() {
   })
 
   const exportCSV = () => {
-    const header = 'Name,Email,Designation,Company,Status,Source'
+    const header = 'Name,Email,Designation,Company,Status'
     // Guard against CSV formula injection: a field starting with = + - @ can be
     // executed as a formula when opened in Excel/Sheets — prefix it with a quote.
     const cell = (v: string) => {
@@ -170,7 +202,7 @@ export default function Hunt() {
       return `"${s.replace(/"/g, '""')}"`
     }
     const rows = contacts.map(c =>
-      [c.name, c.email, c.designation, c.company, c.status, c.source].map(cell).join(',')
+      [c.name, c.email, c.designation, c.company, c.status].map(cell).join(',')
     )
     const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' })
     const url  = URL.createObjectURL(blob)
@@ -197,9 +229,8 @@ export default function Hunt() {
           Hunt Contacts
         </h1>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Searches HackerNews, GitHub, and 160+ job &amp; ATS boards (Greenhouse, Lever,
-          Ashby, RemoteOK, Remotive and more) for people who are actively hiring —
-          free, nothing to configure.
+          Type a role, skill, or company — ColdReach finds hiring managers, recruiters,
+          and founders who are actively hiring right now, each with a reachable email.
         </p>
       </div>
 
@@ -223,9 +254,9 @@ export default function Hunt() {
         </button>
       </div>
 
-      {/* ── Query chips ─────────────────────────────────────────────── */}
+      {/* ── Query chips (personalised from the résumé) ───────────────── */}
       <div className="flex flex-wrap gap-2">
-        {CHIPS.map(chip => (
+        {chips.map(chip => (
           <button
             key={chip}
             onClick={() => { setQuery(chip); doHunt(chip) }}

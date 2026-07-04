@@ -8,6 +8,21 @@ import { resumeApi } from '../../api/resume'
 import { automationApi } from '../../api/automation'
 import api from '../../api/client'
 
+// The backend stores the signature links as ONE line ("a · b · c").
+// The UI edits them as three labeled fields — split/join at the boundary.
+function splitLinks(line: string): { linkedin: string; github: string; portfolio: string } {
+  const out = { linkedin: '', github: '', portfolio: '' }
+  for (const part of (line || '').split('·').map(s => s.trim()).filter(Boolean)) {
+    const p = part.toLowerCase()
+    if (p.includes('linkedin') && !out.linkedin) out.linkedin = part
+    else if (p.includes('github') && !out.github) out.github = part
+    else if (!out.portfolio) out.portfolio = part
+  }
+  return out
+}
+const joinLinks = (l: { linkedin: string; github: string; portfolio: string }) =>
+  [l.linkedin, l.github, l.portfolio].map(s => s.trim()).filter(Boolean).join(' · ')
+
 export default function Setup() {
   const { resume, setResume, gmailAddress, gmailAppPassword, setGmailCreds, setActiveTab } = useStore()
   const [extracting, setExtracting] = useState(false)
@@ -16,16 +31,16 @@ export default function Setup() {
   const [savingResume, setSavingResume] = useState(false)
   const [localAddress, setLocalAddress]   = useState(gmailAddress)
   const [localPassword, setLocalPassword] = useState(gmailAppPassword)
-  const [senderName, setSenderName]           = useState('')
-  const [signatureLinks, setSignatureLinks]   = useState('')
-  const [savingName, setSavingName]           = useState(false)
+  const [senderName, setSenderName]       = useState('')
+  const [links, setLinks]                 = useState({ linkedin: '', github: '', portfolio: '' })
+  const [savingName, setSavingName]       = useState(false)
 
   // Load the currently-resolved signature (config override → résumé → email).
   useEffect(() => {
     automationApi.getConfig()
       .then(cfg => {
         setSenderName(cfg.sender_name || '')
-        setSignatureLinks(cfg.signature_links || '')
+        setLinks(splitLinks(cfg.signature_links || ''))
       })
       .catch(() => {})
   }, [])
@@ -83,9 +98,9 @@ export default function Setup() {
   const handleSaveName = async () => {
     setSavingName(true)
     try {
-      const cfg = await automationApi.setProfile(senderName.trim(), signatureLinks.trim())
+      const cfg = await automationApi.setProfile(senderName.trim(), joinLinks(links))
       setSenderName(cfg.sender_name || '')
-      setSignatureLinks(cfg.signature_links || '')
+      setLinks(splitLinks(cfg.signature_links || ''))
       toast.success('Signature saved')
     } catch (e: any) {
       toast.error(e.message)
@@ -115,15 +130,22 @@ export default function Setup() {
       <div>
         <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Setup</h1>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Configure your resume and Gmail once. ColdReach handles the rest.
+          Add your resume once — that's all you need to start. Connect Gmail only
+          if you want to send emails directly from ColdReach.
         </p>
       </div>
 
-      {/* ── Gmail Credentials ─────────────────────────────────────────────── */}
+      {/* ── Gmail Credentials (optional) ──────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
             GMAIL CREDENTIALS
+            <span
+              className="ml-2 px-1.5 py-0.5 rounded font-sans font-semibold"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-dim)', fontSize: 9, letterSpacing: '0.02em' }}
+            >
+              OPTIONAL
+            </span>
           </span>
           {credsSaved && (
             <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
@@ -133,6 +155,11 @@ export default function Setup() {
         </div>
 
         <div className="card space-y-3">
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Without Gmail connected you can still hunt contacts, generate emails, and
+            send each one from your own Gmail with one click. Connecting enables
+            in-app sending ("Send All" and per-contact Send) plus reply tracking.
+          </p>
           <div className="space-y-1">
             <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Gmail address</label>
             <input
@@ -222,8 +249,8 @@ export default function Setup() {
         <div className="card space-y-3">
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             Signed at the bottom of every email (“Best regards, …”). The name is auto-detected
-            from your résumé — override it if it’s wrong. Links render as one line under your
-            name; for a job-seeking email this is the click-through that gets you looked up.
+            from your résumé — override it if it’s wrong. Your links render as one line under
+            your name; for a job-seeking email this is the click-through that gets you looked up.
           </p>
           <div className="space-y-1">
             <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Name</label>
@@ -234,16 +261,34 @@ export default function Setup() {
               className="input text-sm w-full"
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>
-              Links (optional — GitHub / LinkedIn / portfolio)
-            </label>
-            <input
-              value={signatureLinks}
-              onChange={e => setSignatureLinks(e.target.value)}
-              placeholder="github.com/you · linkedin.com/in/you"
-              className="input text-sm w-full"
-            />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>LinkedIn</label>
+              <input
+                value={links.linkedin}
+                onChange={e => setLinks(l => ({ ...l, linkedin: e.target.value }))}
+                placeholder="linkedin.com/in/you"
+                className="input text-sm w-full"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>GitHub</label>
+              <input
+                value={links.github}
+                onChange={e => setLinks(l => ({ ...l, github: e.target.value }))}
+                placeholder="github.com/you"
+                className="input text-sm w-full"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Portfolio</label>
+              <input
+                value={links.portfolio}
+                onChange={e => setLinks(l => ({ ...l, portfolio: e.target.value }))}
+                placeholder="yoursite.dev"
+                className="input text-sm w-full"
+              />
+            </div>
           </div>
           <button
             onClick={handleSaveName}

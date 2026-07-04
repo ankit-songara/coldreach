@@ -16,7 +16,6 @@ export interface Contact {
   email:            string
   designation:      string
   company:          string
-  source:           string
   status:           ContactStatus
   notes?:           string
   last_emailed_at?: string | null
@@ -46,8 +45,7 @@ export interface HuntRequest {
 export interface HuntResult {
   contacts:    Partial<Contact>[]
   total:       number
-  sources:     Record<string, number>
-  found?:      number   // leads discovered across sources (pre-resolution)
+  found?:      number   // leads discovered (pre-resolution)
   duplicates?: number   // resolved contacts already in the user's list
 }
 

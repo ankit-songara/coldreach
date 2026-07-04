@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
+import ErrorBoundary from './components/shared/ErrorBoundary'
 import './styles/index.css'
 
 const queryClient = new QueryClient({
@@ -16,6 +17,7 @@ const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
+    <ErrorBoundary>
     <GoogleOAuthProvider clientId={googleClientId}>
       <QueryClientProvider client={queryClient}>
         <App />
@@ -30,5 +32,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         }} />
       </QueryClientProvider>
     </GoogleOAuthProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

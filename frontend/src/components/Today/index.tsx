@@ -67,14 +67,14 @@ function OnboardingFlow({ resume, gmailAddress, contacts, onTab, onSeedDemo, see
     },
     {
       n: 2, done: !!gmailAddress,
-      title: 'Connect Gmail',
-      body: 'Add your Gmail address + App Password so we can send via your real account.',
+      title: 'Connect Gmail (optional)',
+      body: 'Lets ColdReach send for you and track replies automatically. Skip it — you can always send each email from your own Gmail with one click.',
       cta: 'Connect Gmail', tab: 'setup' as const, color: '#c47d1e', bg: 'rgba(196,125,30,.10)',
     },
     {
       n: 3, done: contacts > 0,
       title: 'Find contacts',
-      body: 'Hunt hiring managers, recruiters, and founders from HackerNews, GitHub, and 160+ job & ATS boards.',
+      body: 'Type a role or company — ColdReach finds hiring managers, recruiters, and founders who are actively hiring, with a real email for each.',
       cta: 'Hunt contacts', tab: 'hunt' as const, color: '#6f5ae0', bg: 'rgba(111,90,224,.10)',
     },
     {
@@ -286,79 +286,6 @@ function StatTile({ label, value, sub, color, icon: Icon, iconBg }: {
   )
 }
 
-// ── Source → channel grouping (for "what's working") ─────────────────────────
-// Contact sources look like "GitHub/vercel", "Greenhouse/stripe", "RemoteOK".
-// Collapse the sub-slug and group providers into the channels users reason about.
-const _CHANNELS: Record<string, string> = {
-  hackernews: 'HackerNews', github: 'GitHub',
-  greenhouse: 'ATS boards', lever: 'ATS boards', ashby: 'ATS boards',
-  smartrecruiters: 'ATS boards', recruitee: 'ATS boards',
-  remoteok: 'Job boards', remotive: 'Job boards', arbeitnow: 'Job boards',
-  jobicy: 'Job boards', himalayas: 'Job boards', themuse: 'Job boards',
-  weworkremotely: 'Job boards',
-  'hunter.io': 'Hunter', hunter: 'Hunter', web: 'Other', wellfound: 'Other',
-}
-function channelOf(source: string): string {
-  const head = (source || '').split('/')[0].trim().toLowerCase()
-  return _CHANNELS[head] || (head ? head[0].toUpperCase() + head.slice(1) : 'Other')
-}
-
-type ChannelRow = { name: string; found: number; sent: number; replied: number; rate: number | null }
-
-function SourceInsights({ rows, onHunt }: { rows: ChannelRow[]; onHunt: () => void }) {
-  const ranked = rows.filter(r => r.found > 0)
-  if (ranked.length === 0) return null
-  const best = ranked.find(r => r.sent >= 2 && (r.rate ?? 0) > 0)
-  const maxRate = Math.max(...ranked.map(r => r.rate ?? 0), 1)
-  const rateColor = (rate: number) => (rate >= 20 ? '#3f8f43' : rate >= 10 ? '#c47d1e' : '#8a7f70')
-
-  return (
-    <div style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 18, padding: '24px 28px', boxShadow: 'var(--shadow-sm)' }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.015em', color: 'var(--text)' }}>What's working</h2>
-          <p className="text-[13px]" style={{ color: 'var(--text-muted)', margin: 0 }}>Reply rate by source — spend effort where you convert</p>
-        </div>
-        <div className="flex items-center gap-1.5" style={{ padding: '5px 12px', borderRadius: 'var(--radius-full)', background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <TrendingUp size={13} style={{ color: 'var(--text-muted)' }} />
-          <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Sources</span>
-        </div>
-      </div>
-
-      {best && (
-        <div className="flex items-center gap-2.5" style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 12, background: 'rgba(63,143,67,.10)', border: '1px solid rgba(63,143,67,.22)' }}>
-          <Lightbulb size={14} color="#3f8f43" style={{ flexShrink: 0 }} />
-          <span className="text-[13px]" style={{ color: 'var(--text)' }}>
-            <strong>{best.name}</strong> is your best source at <strong>{best.rate}%</strong> reply rate.
-            <button onClick={onHunt} className="font-semibold" style={{ color: '#3f8f43', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 4px' }}>
-              Hunt more →
-            </button>
-          </span>
-        </div>
-      )}
-
-      {ranked.map(r => (
-        <div key={r.name} className="flex items-center gap-3.5" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ width: 116, flexShrink: 0 }}>
-            <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{r.name}</div>
-            <div className="text-[11px]" style={{ color: 'var(--text-dim)' }}>{r.found} found</div>
-          </div>
-          <div className="flex-1" style={{ height: 8, borderRadius: 99, background: 'var(--surface-2)', overflow: 'hidden' }}>
-            {r.rate != null && (
-              <div style={{ height: '100%', borderRadius: 99, background: rateColor(r.rate), width: `${(r.rate / maxRate) * 100}%`, minWidth: r.replied > 0 ? 8 : 0, transition: 'width .6s var(--ease-out)' }} />
-            )}
-          </div>
-          <div className="flex-shrink-0 text-right" style={{ minWidth: 96 }}>
-            {r.sent > 0
-              ? <span className="text-[13px]"><strong style={{ color: rateColor(r.rate ?? 0) }}>{r.rate}%</strong> <span style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{r.replied}/{r.sent} sent</span></span>
-              : <span style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>not sent yet</span>}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export default function Today() {
   const { contacts, drafts, setDrafts, userEmail, resume, gmailAddress, setActiveTab, setContacts, setResume } = useStore()
   const [llmReady, setLlmReady] = useState<boolean | null>(null)
@@ -461,21 +388,6 @@ export default function Today() {
     c => !SENT_STATUSES.includes(c.status) && !hasDraftFor(c.id)
   )
 
-  // Reply rate by source channel — "what's working".
-  const REPLIED_SET = ['replied', 'interview', 'offer']
-  const channelAgg = new Map<string, { found: number; sent: number; replied: number }>()
-  for (const c of contacts) {
-    const ch = channelOf(c.source)
-    const a = channelAgg.get(ch) ?? { found: 0, sent: 0, replied: 0 }
-    a.found++
-    if (SENT_STATUSES.includes(c.status)) a.sent++
-    if (REPLIED_SET.includes(c.status)) a.replied++
-    channelAgg.set(ch, a)
-  }
-  const channelRows: ChannelRow[] = [...channelAgg.entries()]
-    .map(([name, a]) => ({ name, ...a, rate: a.sent > 0 ? Math.round((a.replied / a.sent) * 100) : null }))
-    .sort((x, y) => (y.rate ?? -1) - (x.rate ?? -1) || y.found - x.found)
-
   type Alert = { id: string; icon: LucideIcon; color: string; bg: string; title: string; body: string; action: string; tab: 'today' | 'setup' | 'hunt' | 'compose' | 'send' }
   const alerts: Alert[] = []
   if (recentReplies.length > 0) {
@@ -567,7 +479,9 @@ export default function Today() {
             {greeting()}, {name}.
           </h1>
           <p className="text-[15px]" style={{ color: 'var(--text-muted)', margin: 0 }}>
-            {fmtDate(new Date())} · {replyRate > 0 ? `Your reply rate is ${replyRate}% this week` : 'Start reaching out to grow your pipeline.'}
+            {fmtDate(new Date())} · {replyRate > 0
+              ? `Your reply rate is ${replyRate}% this week`
+              : 'Your next opportunity is one email away — let’s go find it.'}
           </p>
         </div>
         <div
@@ -647,15 +561,12 @@ export default function Today() {
             )}
           </div>
 
-          {/* ── What's working (reply rate by source) ── */}
-          {sent > 0 && <SourceInsights rows={channelRows} onHunt={() => setActiveTab('hunt')} />}
-
           {/* ── Quick actions ── */}
           <div>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--text)', margin: '0 0 12px' }}>Quick actions</h2>
             <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
               {([
-                { icon: Search,   label: 'Find more contacts', sub: 'HackerNews, GitHub, 160+ boards', tab: 'hunt' as const, color: 'var(--accent)', bg: 'var(--accent-tint)' },
+                { icon: Search,   label: 'Find more contacts', sub: 'Fresh leads for your pipeline', tab: 'hunt' as const, color: 'var(--accent)', bg: 'var(--accent-tint)' },
                 { icon: Wand2,    label: 'Generate drafts',    sub: `${ungenerated.length} contacts waiting`,  tab: 'compose' as const, color: '#6f5ae0', bg: 'rgba(111,90,224,.10)' },
                 { icon: SendIcon, label: 'Send emails',        sub: `${hasDraft} ready to go`,                tab: 'send' as const,    color: '#0e9d88', bg: 'rgba(14,157,136,.10)' },
                 { icon: Settings, label: 'Setup Gmail',        sub: 'Connect your account',                   tab: 'setup' as const,   color: '#c47d1e', bg: 'rgba(196,125,30,.10)' },

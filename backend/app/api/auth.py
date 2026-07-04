@@ -13,6 +13,7 @@ import time
 import logging
 from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -98,9 +99,21 @@ def register(creds: Credentials, request: Request, db: Session = Depends(get_db)
     if len(creds.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters.")
     repo = UserRepository(db)
-    if repo.get_by_email(creds.email):
-        raise HTTPException(409, "An account with that email already exists.")
-    user = repo.create(creds.email, creds.password)
+    existing = repo.get_by_email(creds.email)
+    if existing:
+        # A Google-only account has no password: signing up (or logging in) with
+        # a password can never work for it. Say so, or it just looks broken.
+        if existing.google_sub and not existing.password_hash:
+            raise HTTPException(409,
+                "This email is already registered with Google Sign-In. "
+                "Use the 'Continue with Google' button instead.")
+        raise HTTPException(409, "An account with that email already exists. Log in instead.")
+    try:
+        user = repo.create(creds.email, creds.password)
+    except IntegrityError:
+        # Two concurrent registrations raced past the check above.
+        db.rollback()
+        raise HTTPException(409, "An account with that email already exists. Log in instead.")
     log.info(f"Registered user {user.email} (id={user.id})")
     return AuthResponse(
         token=security.create_token(user.id, user.token_version),
@@ -112,6 +125,10 @@ def register(creds: Credentials, request: Request, db: Session = Depends(get_db)
 def login(creds: Credentials, request: Request, db: Session = Depends(get_db)):
     _check_login_rate(_client_ip(request))
     user = UserRepository(db).get_by_email(creds.email)
+    if user and user.google_sub and not user.password_hash:
+        raise HTTPException(400,
+            "This account uses Google Sign-In and has no password. "
+            "Use the 'Continue with Google' button instead.")
     if not user or not security.verify_password(creds.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password.")
     return AuthResponse(

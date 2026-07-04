@@ -32,6 +32,7 @@ export default function Send() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [results, setResults] = useState<SendResult[] | null>(null)
   const [sending, setSending] = useState(false)
+  const [sendingId, setSendingId] = useState<number | null>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [checkingReplies, setCheckingReplies] = useState(false)
 
@@ -149,6 +150,25 @@ export default function Send() {
 
     setSending(false)
     setProgress(null)
+  }
+
+  // Send ONE contact's draft over SMTP — for people who want to pick and
+  // choose instead of firing "Send All".
+  const sendOne = async (contactId: number, name: string) => {
+    if (noCredentials) { toast.error('Add your Gmail and App Password in Setup first'); return }
+    setSendingId(contactId)
+    try {
+      const res = await sendApi.bulk([contactId], gmailAddress, gmailAppPassword)
+      const r = res.results[0]
+      if (r?.status === 'sent') toast.success(`Sent to ${name}`)
+      else if (res.deferred > 0) toast('Held back by today\'s sending limit — try tomorrow', { icon: '⏳' })
+      else toast.error(r?.error || `Couldn't send to ${name}`)
+      await refreshContacts()
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSendingId(null)
+    }
   }
 
   const handleCheckReplies = async () => {
@@ -355,6 +375,26 @@ export default function Send() {
                         <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
                           <CheckCircle2 size={12} /> Sent
                         </span>
+                      )}
+                      {/* Direct SMTP send for THIS contact only — first-touch
+                          contacts, when Gmail is connected. */}
+                      {!isFollowupSend && unsent.some(u => u.id === c.id) && !noCredentials && (
+                        <button
+                          onClick={() => sendOne(c.id, c.name)}
+                          disabled={sendingId !== null || sending}
+                          title={`Send this email to ${c.name} now`}
+                          className="btn text-xs flex items-center gap-1 font-semibold"
+                          style={{
+                            background: 'rgba(63,143,67,0.12)',
+                            borderColor: 'rgba(63,143,67,0.35)',
+                            color: '#3f8f43',
+                            opacity: sendingId !== null && sendingId !== c.id ? 0.5 : 1,
+                          }}
+                        >
+                          {sendingId === c.id
+                            ? <><RefreshCw size={11} className="animate-spin" /> Sending…</>
+                            : <><SendIcon size={11} /> Send</>}
+                        </button>
                       )}
                       <button
                         onClick={() => openGmail(

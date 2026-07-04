@@ -246,7 +246,15 @@ class ConfigRepository:
             row.value = stored
         else:
             self.db.add(AppConfig(user_id=self.user_id, key=key, value=stored))
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            # Concurrent insert on the same (user_id, key) — retry as an update.
+            self.db.rollback()
+            row = self._row(key)
+            if row:
+                row.value = stored
+                self.db.commit()
 
 
 # ── Resume Repository ─────────────────────────────────────────────────────────
