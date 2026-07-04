@@ -22,7 +22,17 @@ function greeting() {
   return 'Good evening'
 }
 function firstName(email: string) {
-  return (email || '').split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) || 'there'
+  // "ankitsongara2003@…" → "Ankitsongara" (digits and separators are noise)
+  const raw = (email || '').split('@')[0].split(/[._\-]/)[0].replace(/\d+/g, '')
+  return raw ? raw[0].toUpperCase() + raw.slice(1) : 'there'
+}
+
+// Show at most `max` names, then "+ N more" — an alert card must never grow
+// into a wall of 183 comma-separated names.
+function nameList(items: { name: string }[], max = 3): string {
+  const names = items.slice(0, max).map(i => i.name)
+  const more = items.length - names.length
+  return names.join(', ') + (more > 0 ? ` + ${more} more` : '')
 }
 function fmtDate(d: Date) {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -261,7 +271,17 @@ function AlertCard({ icon: Icon, color, bg, title, body, action, onAction }: {
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-bold text-sm" style={{ color: 'var(--text)', marginBottom: 2 }}>{title}</div>
-        <div className="text-[13px]" style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>{body}</div>
+        {/* Clamped: an alert is a headline, not a report — long bodies get cut */}
+        <div
+          className="text-[13px]"
+          title={body}
+          style={{
+            color: 'var(--text-muted)', lineHeight: 1.5,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}
+        >
+          {body}
+        </div>
       </div>
       <span className="text-xs font-semibold flex-shrink-0" style={{ color, marginTop: 2 }}>{action} →</span>
     </div>
@@ -394,7 +414,7 @@ export default function Today() {
     alerts.push({
       id: 'reply', icon: MailOpen, color: '#0e9d88', bg: 'rgba(14,157,136,.13)',
       title: `${recentReplies.length} new ${recentReplies.length === 1 ? 'reply' : 'replies'}`,
-      body: recentReplies.map(c => c.name).join(', ') + (recentReplies.length === 1 ? ' replied — follow up or set up a call.' : ' replied — time to respond!'),
+      body: nameList(recentReplies) + (recentReplies.length === 1 ? ' replied — follow up or set up a call.' : ' replied — time to respond!'),
       action: 'View in Send', tab: 'send',
     })
   }
@@ -402,7 +422,8 @@ export default function Today() {
     alerts.push({
       id: 'offer', icon: Trophy, color: '#2f9e44', bg: 'rgba(47,158,68,.14)',
       title: `🎉 ${offersWon.length} offer${offersWon.length > 1 ? 's' : ''}!`,
-      body: offersWon.map(c => `${c.name} at ${c.company}`).join(' · ') + ' — congratulations.',
+      body: offersWon.slice(0, 3).map(c => `${c.name} at ${c.company}`).join(' · ')
+        + (offersWon.length > 3 ? ` + ${offersWon.length - 3} more` : '') + ' — congratulations.',
       action: 'View', tab: 'send',
     })
   }
@@ -410,7 +431,8 @@ export default function Today() {
     alerts.push({
       id: 'interview', icon: CalendarCheck, color: '#3f8f43', bg: 'rgba(63,143,67,.13)',
       title: `${activeInterviews.length} interview${activeInterviews.length > 1 ? 's' : ''} lined up`,
-      body: activeInterviews.map(c => `${c.name} at ${c.company}`).join(' · '),
+      body: activeInterviews.slice(0, 3).map(c => `${c.name} at ${c.company}`).join(' · ')
+        + (activeInterviews.length > 3 ? ` + ${activeInterviews.length - 3} more` : ''),
       action: 'Track', tab: 'send',
     })
   }
@@ -426,7 +448,7 @@ export default function Today() {
     alerts.push({
       id: 'draft', icon: Wand2, color: '#e2603f', bg: 'rgba(226,96,63,.10)',
       title: `${ungenerated.length} contact${ungenerated.length > 1 ? 's' : ''} need${ungenerated.length === 1 ? 's' : ''} a draft`,
-      body: ungenerated.map(c => c.name).join(', ') + ' — one click to generate personalised emails.',
+      body: nameList(ungenerated) + ' — one click to generate personalised emails.',
       action: 'Compose', tab: 'compose',
     })
   }
