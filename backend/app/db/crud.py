@@ -354,6 +354,63 @@ def resolve_sender_name(db: Session, user_id: int, user_email: str = "") -> str:
     return " ".join(p.capitalize() for p in parts)
 
 
+# ── Signature-link extraction from the résumé ─────────────────────────────────
+# High-precision patterns only: a wrong link in a signature is worse than none.
+# GitHub must be a bare profile (no /repo path) — "github.com/acme/widgets" in a
+# work-history bullet is an employer's repo, not the candidate.
+_LINKEDIN_RE = re.compile(r"(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9_%\-\.]+", re.IGNORECASE)
+_GITHUB_RE   = re.compile(r"(?:https?://)?(?:www\.)?github\.com/[A-Za-z0-9\-]+(?!/)", re.IGNORECASE)
+# Personal-site guess: a bare domain on a personal-links TLD.
+_SITE_RE     = re.compile(
+    r"(?:https?://)?(?:www\.)?[A-Za-z0-9\-]+\.(?:dev|me|io|tech|xyz|site|codes|page)\b(?:/[^\s,;)]*)?"
+)
+
+
+def _clean_url(u: str) -> str:
+    u = u.strip().rstrip(".,;:)")
+    return re.sub(r"^https?://(www\.)?", "", u)
+
+
+def extract_links_from_resume(text: str) -> str:
+    """Best-effort LinkedIn / GitHub / personal-site links from résumé text,
+    formatted as the one signature line ('a · b · c'). Empty string if none.
+
+    Only the header and footer are searched — that's where candidates put their
+    own links; URLs in the body are usually employers, products, or projects.
+    """
+    lines = (text or "").splitlines()
+    regions = "\n".join(lines[:10] + lines[-5:])
+    links: list[str] = []
+    m = _LINKEDIN_RE.search(regions)
+    if m:
+        links.append(_clean_url(m.group(0)))
+    m = _GITHUB_RE.search(regions)
+    if m:
+        links.append(_clean_url(m.group(0)))
+    m = _SITE_RE.search(regions)
+    if m:
+        site = _clean_url(m.group(0))
+        if not any(site.split("/")[0] in l for l in links):
+            links.append(site)
+    return " · ".join(links[:3])
+
+
+def resolve_signature_links(db: Session, user_id: int) -> str:
+    """
+    Resolve the signature link line, in priority order:
+      1. explicit `signature_links` saved in config
+      2. links auto-extracted from the latest résumé
+    """
+    cfg = ConfigRepository(db, user_id)
+    explicit = cfg.get("signature_links", "").strip()
+    if explicit:
+        return explicit
+    latest = ResumeRepository(db, user_id).get_latest()
+    if latest:
+        return extract_links_from_resume(latest.text)
+    return ""
+
+
 # ── Known companies (runtime-extensible ATS directory; global, not user-scoped) ─
 def list_known_companies(db: Session) -> list[KnownCompany]:
     return db.query(KnownCompany).order_by(KnownCompany.created_at.desc()).all()

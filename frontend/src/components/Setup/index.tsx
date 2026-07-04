@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
-import { Eye, EyeOff, CheckCircle2, ExternalLink, ArrowRight, Save } from 'lucide-react'
+import { Eye, EyeOff, CheckCircle2, ExternalLink, ArrowRight, Save, Pencil } from 'lucide-react'
 import { useStore } from '../../store'
 import { sendApi } from '../../api/send'
 import { resumeApi } from '../../api/resume'
@@ -34,16 +34,21 @@ export default function Setup() {
   const [senderName, setSenderName]       = useState('')
   const [links, setLinks]                 = useState({ linkedin: '', github: '', portfolio: '' })
   const [savingName, setSavingName]       = useState(false)
+  const [editingSig, setEditingSig]       = useState(false)
 
-  // Load the currently-resolved signature (config override → résumé → email).
-  useEffect(() => {
+  const loadSignature = () =>
     automationApi.getConfig()
       .then(cfg => {
         setSenderName(cfg.sender_name || '')
         setLinks(splitLinks(cfg.signature_links || ''))
       })
       .catch(() => {})
-  }, [])
+
+  // Load the resolved signature (explicit override → auto-detected from résumé).
+  useEffect(() => { loadSignature() }, [])
+
+  // Re-detect after the résumé changes — a new upload may carry new links/name.
+  const refreshSignatureFromResume = () => { if (!editingSig) loadSignature() }
 
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0]
@@ -56,13 +61,14 @@ export default function Setup() {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       setResume(data.text)
+      refreshSignatureFromResume()
       toast.success(`Extracted ${data.text.length.toLocaleString()} chars from ${file.name}`)
     } catch (e: any) {
       toast.error(e.message)
     } finally {
       setExtracting(false)
     }
-  }, [setResume])
+  }, [setResume]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -101,6 +107,7 @@ export default function Setup() {
       const cfg = await automationApi.setProfile(senderName.trim(), joinLinks(links))
       setSenderName(cfg.sender_name || '')
       setLinks(splitLinks(cfg.signature_links || ''))
+      setEditingSig(false)
       toast.success('Signature saved')
     } catch (e: any) {
       toast.error(e.message)
@@ -114,6 +121,7 @@ export default function Setup() {
     setSavingResume(true)
     try {
       await resumeApi.save(resume)
+      refreshSignatureFromResume()
       toast.success('Resume saved')
     } catch (e: any) {
       toast.error(e.message)
@@ -241,70 +249,108 @@ export default function Setup() {
         </div>
       </div>
 
-      {/* ── Signature ─────────────────────────────────────────────────────── */}
+      {/* ── Signature (auto-detected; preview-first, edit on demand) ──────── */}
       <div className="space-y-3">
-        <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
-          SIGNATURE
-        </span>
-        <div className="card space-y-3">
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Signed at the bottom of every email (“Best regards, …”). The name is auto-detected
-            from your résumé — override it if it’s wrong. Your links render as one line under
-            your name; for a job-seeking email this is the click-through that gets you looked up.
-          </p>
-          <div className="space-y-1">
-            <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Name</label>
-            <input
-              value={senderName}
-              onChange={e => setSenderName(e.target.value)}
-              placeholder="e.g. Ankit Songara"
-              className="input text-sm w-full"
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>LinkedIn</label>
-              <input
-                value={links.linkedin}
-                onChange={e => setLinks(l => ({ ...l, linkedin: e.target.value }))}
-                placeholder="linkedin.com/in/you"
-                className="input text-sm w-full"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>GitHub</label>
-              <input
-                value={links.github}
-                onChange={e => setLinks(l => ({ ...l, github: e.target.value }))}
-                placeholder="github.com/you"
-                className="input text-sm w-full"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Portfolio</label>
-              <input
-                value={links.portfolio}
-                onChange={e => setLinks(l => ({ ...l, portfolio: e.target.value }))}
-                placeholder="yoursite.dev"
-                className="input text-sm w-full"
-              />
-            </div>
-          </div>
-          <button
-            onClick={handleSaveName}
-            disabled={savingName}
-            className="btn text-sm flex items-center gap-1.5"
-            style={{
-              background: 'rgba(63,143,67,0.10)',
-              borderColor: 'rgba(63,143,67,0.25)',
-              color: '#3f8f43',
-              opacity: savingName ? 0.5 : 1,
-            }}
-          >
-            <Save size={13} />
-            {savingName ? 'Saving…' : 'Save signature'}
-          </button>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
+            EMAIL SIGNATURE
+          </span>
+          {!editingSig && (
+            <button
+              onClick={() => setEditingSig(true)}
+              className="flex items-center gap-1 text-xs font-semibold"
+              style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              <Pencil size={11} /> Edit
+            </button>
+          )}
         </div>
+
+        {!editingSig ? (
+          <div className="card space-y-3">
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Detected automatically from your résumé and added to the bottom of every email.
+              Wrong or missing something? Hit Edit.
+            </p>
+            <div
+              className="text-sm"
+              style={{ padding: '12px 16px', background: 'var(--surface-2)', borderRadius: 10, lineHeight: 1.8 }}
+            >
+              <span style={{ color: 'var(--text-muted)' }}>Best regards,</span><br />
+              <span className="font-semibold">{senderName || 'Your name'}</span><br />
+              {joinLinks(links)
+                ? <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{joinLinks(links)}</span>
+                : <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                    No links found in your résumé — add LinkedIn / GitHub / portfolio via Edit.
+                  </span>}
+            </div>
+          </div>
+        ) : (
+          <div className="card space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Name</label>
+              <input
+                value={senderName}
+                onChange={e => setSenderName(e.target.value)}
+                placeholder="e.g. Ankit Songara"
+                className="input text-sm w-full"
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>LinkedIn</label>
+                <input
+                  value={links.linkedin}
+                  onChange={e => setLinks(l => ({ ...l, linkedin: e.target.value }))}
+                  placeholder="linkedin.com/in/you"
+                  className="input text-sm w-full"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>GitHub</label>
+                <input
+                  value={links.github}
+                  onChange={e => setLinks(l => ({ ...l, github: e.target.value }))}
+                  placeholder="github.com/you"
+                  className="input text-sm w-full"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Portfolio</label>
+                <input
+                  value={links.portfolio}
+                  onChange={e => setLinks(l => ({ ...l, portfolio: e.target.value }))}
+                  placeholder="yoursite.dev"
+                  className="input text-sm w-full"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveName}
+                disabled={savingName}
+                className="btn text-sm flex items-center gap-1.5"
+                style={{
+                  background: 'rgba(63,143,67,0.10)',
+                  borderColor: 'rgba(63,143,67,0.25)',
+                  color: '#3f8f43',
+                  opacity: savingName ? 0.5 : 1,
+                }}
+              >
+                <Save size={13} />
+                {savingName ? 'Saving…' : 'Save signature'}
+              </button>
+              <button
+                onClick={() => { setEditingSig(false); loadSignature() }}
+                disabled={savingName}
+                className="btn text-sm"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Resume ────────────────────────────────────────────────────────── */}

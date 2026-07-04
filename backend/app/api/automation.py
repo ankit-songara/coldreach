@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.database import get_db
-from app.db.crud import ConfigRepository, resolve_sender_name
+from app.db.crud import ConfigRepository, resolve_sender_name, resolve_signature_links
 from app.db.models import User
 from app.deps import get_current_user
 
@@ -50,8 +50,9 @@ def set_profile(req: ProfileRequest, db: Session = Depends(get_db), user: User =
 
 
 def _status(db: Session, user: User) -> ConfigStatus:
-    cfg = ConfigRepository(db, user.id)
+    # Both values are RESOLVED (explicit override → résumé auto-detection), so
+    # the frontend can render the signature preview without its own fallbacks.
     return ConfigStatus(
         sender_name=resolve_sender_name(db, user.id, user.email),
-        signature_links=cfg.get("signature_links", ""),
+        signature_links=resolve_signature_links(db, user.id),
     )

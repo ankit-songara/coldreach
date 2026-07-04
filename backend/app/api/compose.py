@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.crud import (
-    ConfigRepository, ContactRepository, DraftRepository, ResumeRepository,
-    resolve_sender_name,
+    ContactRepository, DraftRepository, ResumeRepository,
+    resolve_sender_name, resolve_signature_links,
 )
 from app.db.models import User
 from app.deps import get_current_user
@@ -51,7 +51,7 @@ async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User
     # we captured at hunt time (HN post, GitHub repos, …).
     company_context = req.company_context.strip() or (contact.context or "")
     sender_name  = resolve_sender_name(db, user.id, user.email)
-    sender_links = ConfigRepository(db, user.id).get("signature_links", "")
+    sender_links = resolve_signature_links(db, user.id)
 
     try:
         email_text = await generator.generate(
@@ -95,7 +95,7 @@ async def followup(req: FollowUpRequest, db: Session = Depends(get_db), user: Us
             company=contact.company,
             original_email=req.original_email,
             sender_name=resolve_sender_name(db, user.id, user.email),
-            sender_links=ConfigRepository(db, user.id).get("signature_links", ""),
+            sender_links=resolve_signature_links(db, user.id),
             context=contact.context or "",
         )
     except Exception as e:
