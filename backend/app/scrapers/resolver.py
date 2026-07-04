@@ -18,6 +18,7 @@ Confidence bands:
 
 import asyncio
 import logging
+import os
 import random
 import smtplib
 import socket
@@ -144,6 +145,11 @@ def _smtp_probe(email: str, mx_host: str, timeout: int = _SMTP_TIMEOUT) -> Optio
     Non-destructive RCPT TO probe.
     Returns True (accepted), False (rejected), None (inconclusive / policy).
     """
+    # Serverless hosts (Vercel) block outbound port 25, so every probe would
+    # just burn its full timeout. Bail out instantly — the resolver degrades
+    # to pattern heuristics, which still produce usable guesses.
+    if os.environ.get("VERCEL"):
+        return None
     # SSRF guard: the MX host comes from a query-derived domain's DNS — never
     # connect to one that resolves to private/internal infrastructure.
     if not resolves_public(mx_host):

@@ -11,7 +11,9 @@ import { useStore } from '../../store'
 import api from '../../api/client'
 import { demoApi, DEMO_SENTINEL } from '../../api/demo'
 import { contactsApi } from '../../api/contacts'
+import { composeApi } from '../../api/compose'
 import { resumeApi } from '../../api/resume'
+import type { Draft } from '../../types'
 
 function greeting() {
   const h = new Date().getHours()
@@ -27,24 +29,22 @@ function fmtDate(d: Date) {
 }
 
 // ── LLM health banner ───────────────────────────────────────────────────────
-function LLMBanner({ label, onSetup }: { label: string; onSetup: () => void }) {
+// The raw provider label ("unavailable: No LLM provider…") is operator-speak —
+// it goes in a hover tooltip for whoever runs the server, never in the copy.
+function LLMBanner({ label }: { label: string }) {
   return (
     <div
       className="flex items-center gap-3 rounded-xl px-4 py-3"
       style={{ background: 'rgba(196,125,30,0.09)', border: '1px solid rgba(196,125,30,0.28)' }}
+      title={label}
     >
       <AlertTriangle size={16} color="#c47d1e" style={{ flexShrink: 0 }} />
       <div className="flex-1 text-sm" style={{ color: '#c47d1e' }}>
-        <strong>LLM not connected</strong> — email generation won't work until you configure it.
-        {label && <span style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11, marginLeft: 8 }}>{label}</span>}
+        <strong>Email writing is temporarily unavailable.</strong>{' '}
+        <span style={{ color: 'var(--text-muted)' }}>
+          You can still hunt contacts and track replies — try generating drafts again in a few minutes.
+        </span>
       </div>
-      <button
-        onClick={onSetup}
-        className="text-xs font-semibold flex-shrink-0"
-        style={{ color: '#c47d1e', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}
-      >
-        Setup guide →
-      </button>
     </div>
   )
 }
@@ -74,7 +74,7 @@ function OnboardingFlow({ resume, gmailAddress, contacts, onTab, onSeedDemo, see
     {
       n: 3, done: contacts > 0,
       title: 'Find contacts',
-      body: 'Hunt hiring managers, recruiters, and founders from HN, GitHub, Wellfound, and 150+ company ATS boards.',
+      body: 'Hunt hiring managers, recruiters, and founders from HackerNews, GitHub, and 160+ job & ATS boards.',
       cta: 'Hunt contacts', tab: 'hunt' as const, color: '#6f5ae0', bg: 'rgba(111,90,224,.10)',
     },
     {
@@ -360,25 +360,40 @@ function SourceInsights({ rows, onHunt }: { rows: ChannelRow[]; onHunt: () => vo
 }
 
 export default function Today() {
-  const { contacts, drafts, userEmail, resume, gmailAddress, setActiveTab, setContacts, setResume } = useStore()
+  const { contacts, drafts, setDrafts, userEmail, resume, gmailAddress, setActiveTab, setContacts, setResume } = useStore()
   const [llmReady, setLlmReady] = useState<boolean | null>(null)
   const [llmLabel, setLlmLabel] = useState('')
   const [seeding, setSeeding] = useState(false)
+  const [contactsLoaded, setContactsLoaded] = useState(false)
 
   // Check LLM health once on mount
   useEffect(() => {
-    api.get<{ llm: string }>('/health')
+    api.get<{ llm_ok?: boolean; llm: string }>('/health')
       .then(r => {
-        const lbl = r.data.llm || ''
-        setLlmLabel(lbl)
-        setLlmReady(!lbl.includes('unavailable'))
+        setLlmLabel(r.data.llm || '')
+        // Prefer the explicit flag; fall back to label sniffing for older backends.
+        setLlmReady(r.data.llm_ok ?? !(r.data.llm || '').includes('unavailable'))
       })
       .catch(() => { setLlmReady(false); setLlmLabel('unreachable') })
   }, [])
 
   // Load contacts so the dashboard is accurate even when Today is the first tab opened.
   useEffect(() => {
-    contactsApi.list().then(setContacts).catch(() => {})
+    contactsApi.list()
+      .then(setContacts)
+      .catch(() => {})
+      .finally(() => setContactsLoaded(true))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hydrate drafts too — the "Drafted" funnel stage and "needs a draft" alert
+  // read from the drafts store, which is otherwise only filled when the user
+  // visits Compose or Send first.
+  useEffect(() => {
+    composeApi.getAllDrafts().then(all => {
+      const grouped: Record<number, Draft[]> = {}
+      for (const d of all) (grouped[d.contact_id] ??= []).push(d)
+      Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
+    }).catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshAll = async () => {
@@ -490,9 +505,9 @@ export default function Today() {
   if (followupsDue > 0) {
     alerts.push({
       id: 'followup', icon: Clock, color: '#c47d1e', bg: 'rgba(196,125,30,.13)',
-      title: `${followupsDue} follow-up${followupsDue > 1 ? 's' : ''} ready to send`,
-      body: `Contacts you emailed that haven't replied yet. A timely nudge 3–5 days out gets ~40% more replies.`,
-      action: 'Automate', tab: 'send',
+      title: `${followupsDue} contact${followupsDue > 1 ? 's' : ''} waiting on a follow-up`,
+      body: `They haven't replied yet — a friendly nudge 3–5 days after the first email gets ~40% more replies. Write one in Compose, then send it from the Send tab.`,
+      action: 'Write follow-up', tab: 'compose',
     })
   }
   if (ungenerated.length > 0) {
@@ -508,12 +523,30 @@ export default function Today() {
   // Brand-new user: no contacts and no resume uploaded yet
   const isNewUser = total === 0 && !resume.trim()
 
+  // Until the first contacts fetch resolves we don't know whether this is a new
+  // user or a returning one — render a quiet skeleton instead of flashing the
+  // onboarding flow (or a zeroed funnel) and then swapping it out.
+  if (!contactsLoaded && total === 0) {
+    return (
+      <div className="flex flex-col animate-pulse" style={{ gap: 28 }} aria-hidden>
+        <div>
+          <div className="h-8 rounded w-64 mb-3" style={{ background: 'var(--surface-3)' }} />
+          <div className="h-4 rounded w-80" style={{ background: 'var(--surface-2)' }} />
+        </div>
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="h-20 rounded-2xl" style={{ background: 'var(--surface-2)' }} />
+          ))}
+        </div>
+        <div className="h-64 rounded-2xl" style={{ background: 'var(--surface-2)' }} />
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col" style={{ gap: 28 }}>
       {/* ── LLM health banner (shown only when LLM is unavailable) ── */}
-      {llmReady === false && (
-        <LLMBanner label={llmLabel} onSetup={() => setActiveTab('setup')} />
-      )}
+      {llmReady === false && <LLMBanner label={llmLabel} />}
 
       {/* ── Sample-data banner ── */}
       {isDemo && (
@@ -622,7 +655,7 @@ export default function Today() {
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--text)', margin: '0 0 12px' }}>Quick actions</h2>
             <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
               {([
-                { icon: Search,   label: 'Find more contacts', sub: 'HN, GitHub, 160+ job boards', tab: 'hunt' as const,    color: 'var(--accent)', bg: 'var(--accent-tint)' },
+                { icon: Search,   label: 'Find more contacts', sub: 'HackerNews, GitHub, 160+ boards', tab: 'hunt' as const, color: 'var(--accent)', bg: 'var(--accent-tint)' },
                 { icon: Wand2,    label: 'Generate drafts',    sub: `${ungenerated.length} contacts waiting`,  tab: 'compose' as const, color: '#6f5ae0', bg: 'rgba(111,90,224,.10)' },
                 { icon: SendIcon, label: 'Send emails',        sub: `${hasDraft} ready to go`,                tab: 'send' as const,    color: '#0e9d88', bg: 'rgba(14,157,136,.10)' },
                 { icon: Settings, label: 'Setup Gmail',        sub: 'Connect your account',                   tab: 'setup' as const,   color: '#c47d1e', bg: 'rgba(196,125,30,.10)' },

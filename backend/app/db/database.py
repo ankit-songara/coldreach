@@ -46,8 +46,8 @@ engine = create_engine(settings.database_url, **_engine_kwargs)
 
 
 # ── SQLite concurrency hardening ──────────────────────────────────────────────
-# The background scheduler thread writes while request handlers also write. With
-# the default rollback journal, SQLite serialises writers aggressively and throws
+# Concurrent request handlers can write at the same time. With the default
+# rollback journal, SQLite serialises writers aggressively and throws
 # "database is locked" under contention. WAL lets readers and one writer proceed
 # concurrently; busy_timeout makes a blocked writer wait instead of failing fast.
 if _is_sqlite:
@@ -99,8 +99,8 @@ _PERF_INDEXES = (
     "CREATE INDEX IF NOT EXISTS ix_contacts_user_last_emailed ON contacts (user_id, last_emailed_at)",
     # drafts hydration + per-contact draft lookups
     "CREATE INDEX IF NOT EXISTS ix_drafts_user_contact ON email_drafts (user_id, contact_id)",
-    # scheduler due-item scan: status='pending' AND send_at <= now
-    "CREATE INDEX IF NOT EXISTS ix_sched_status_send_at ON scheduled_emails (status, send_at)",
+    # GET /compose/drafts/all — all of a user's drafts ordered newest-first
+    "CREATE INDEX IF NOT EXISTS ix_drafts_user_created ON email_drafts (user_id, created_at)",
 )
 
 
@@ -128,7 +128,6 @@ _NEW_COLUMNS = {
                          ("google_sub",    "VARCHAR(255)")],
     "email_drafts":     [("user_id", "INTEGER DEFAULT 1")],
     "resumes":          [("user_id", "INTEGER DEFAULT 1")],
-    "scheduled_emails": [("user_id", "INTEGER DEFAULT 1")],
     "app_config":       [("user_id", "INTEGER DEFAULT 1")],
 }
 

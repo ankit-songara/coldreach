@@ -9,6 +9,8 @@ import { sendApi } from '../../api/send'
 import { inboxApi } from '../../api/inbox'
 import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
+import EmailBadge from '../shared/EmailBadge'
+import ConfirmDialog from '../shared/ConfirmDialog'
 import type { ContactStatus, Draft } from '../../types'
 
 // A contact that has received a first-touch email — eligible for outcome capture.
@@ -16,31 +18,25 @@ const CONTACTED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'r
 // Outcomes a user records by hand as a conversation progresses.
 const OUTCOME_STEPS: ContactStatus[] = ['replied', 'interview', 'offer', 'rejected']
 
-function EmailBadge({ status, confidence }: { status?: string; confidence?: number }) {
-  if (!status || status === 'unknown') return null
-  const meta: Record<string, { label: string; color: string; bg: string; sym: string }> = {
-    valid:   { label: 'verified', sym: '✓', color: '#3f8f43', bg: 'rgba(63,143,67,.12)'  },
-    risky:   { label: 'risky',    sym: '~', color: '#c47d1e', bg: 'rgba(196,125,30,.12)' },
-    invalid: { label: 'invalid',  sym: '✗', color: '#d2483a', bg: 'rgba(210,72,58,.12)'  },
-  }
-  const m = meta[status] ?? { label: status, sym: '?', color: '#8a7f70', bg: 'rgba(138,127,112,.12)' }
-  return (
-    <span className="badge inline-flex items-center gap-0.5" style={{ background: m.bg, color: m.color, fontSize: '9px', whiteSpace: 'nowrap' }}>
-      {m.sym} {m.label}{confidence != null ? ` · ${confidence}%` : ''}
-    </span>
-  )
-}
+// Send in small chunks (one request each) so a serverless backend never has to
+// hold one giant request past its execution limit, and the UI can show progress.
+const SEND_CHUNK_SIZE = 5
+
+// Gmail's compose URL truncates very long bodies; beyond this we copy the body
+// to the clipboard instead of losing the tail silently.
+const MAX_GMAIL_URL = 1900
 
 export default function Send() {
-  const { contacts, drafts, upsertContact, setDrafts, gmailAddress, gmailAppPassword, setActiveTab } = useStore()
+  const { contacts, drafts, upsertContact, setContacts, setDrafts, gmailAddress, gmailAppPassword, setActiveTab } = useStore()
   const qc = useQueryClient()
   const [showConfirm, setShowConfirm] = useState(false)
   const [results, setResults] = useState<SendResult[] | null>(null)
   const [sending, setSending] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [checkingReplies, setCheckingReplies] = useState(false)
 
   // Sync drafts from backend on mount so Send tab works even after refresh —
-  // ONE request for all contacts (was one request per contact).
+  // ONE request for all contacts.
   useEffect(() => {
     if (contacts.length === 0) return
     if (contacts.every(c => drafts[c.id]?.length)) return
@@ -49,7 +45,7 @@ export default function Send() {
       for (const d of all) (grouped[d.contact_id] ??= []).push(d)
       Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
     }).catch(() => {})
-  }, [contacts.length])
+  }, [contacts.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
   // Mirror the backend guard: a contact already actioned (emailed in any later
@@ -67,62 +63,110 @@ export default function Send() {
       upsertContact(updated)
       qc.invalidateQueries({ queryKey: ['contacts'] })
     },
+    onError: (e: Error) => toast.error(e.message),
   })
 
-  const openGmail = (email: string, subject: string, body: string, contactId: number) => {
-    const url = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  const refreshContacts = async () => {
+    try {
+      setContacts(await contactsApi.list())
+      qc.invalidateQueries({ queryKey: ['contacts'] })
+    } catch { /* next tab visit will refetch */ }
+  }
+
+  const openGmail = async (
+    email: string, subject: string, body: string, contactId: number,
+    newStatus: ContactStatus, prevStatus: ContactStatus,
+  ) => {
+    const base = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}`
+    let url = `${base}&body=${encodeURIComponent(body)}`
+    if (url.length > MAX_GMAIL_URL) {
+      // Gmail silently cuts long bodies off — copy instead so nothing is lost.
+      try {
+        await navigator.clipboard.writeText(body)
+        toast('Email is long, so the body was copied — paste it into the Gmail window', { icon: '📋', duration: 6000 })
+      } catch {
+        toast('Email is long — Gmail may cut off the end. Review before sending.', { icon: '⚠️', duration: 6000 })
+      }
+      url = base
+    }
     window.open(url, '_blank')
-    statusMutation.mutate({ id: contactId, status: 'emailed' })
-    toast.success(`Opened Gmail for ${email}`)
+    // Opening compose isn't proof it was sent — mark it, but offer an undo.
+    statusMutation.mutate({ id: contactId, status: newStatus })
+    toast(t => (
+      <span className="flex items-center gap-3 text-sm">
+        Marked as {STATUS_META[newStatus].label.toLowerCase()}
+        <button
+          onClick={() => { statusMutation.mutate({ id: contactId, status: prevStatus }); toast.dismiss(t.id) }}
+          style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
+        >
+          Undo
+        </button>
+      </span>
+    ), { duration: 5000 })
   }
 
   const handleSendAll = async () => {
     setShowConfirm(false)
     setSending(true)
     setResults(null)
-    try {
-      const res = await sendApi.bulk([], gmailAddress, gmailAppPassword)
-      setResults(res.results)
-      // Refresh contact statuses in store
-      res.results
-        .filter(r => r.status === 'sent')
-        .forEach(r => statusMutation.mutate({ id: r.contact_id, status: 'emailed' }))
-      const deferNote = res.deferred ? ` · ${res.deferred} deferred (daily cap)` : ''
-      if (res.failed === 0) {
-        toast.success(`Sent ${res.sent} emails${deferNote}`)
-      } else {
-        toast(`${res.sent} sent · ${res.failed} failed${deferNote}`, { icon: '⚠️' })
+
+    const ids = unsent.map(c => c.id)
+    const chunks: number[][] = []
+    for (let i = 0; i < ids.length; i += SEND_CHUNK_SIZE) chunks.push(ids.slice(i, i + SEND_CHUNK_SIZE))
+
+    const all: SendResult[] = []
+    let deferred = 0
+    let aborted = false
+    setProgress({ done: 0, total: ids.length })
+
+    for (const chunk of chunks) {
+      try {
+        const res = await sendApi.bulk(chunk, gmailAddress, gmailAppPassword)
+        all.push(...res.results)
+        deferred += res.deferred
+        setResults([...all])
+        setProgress({ done: Math.min(all.length + deferred, ids.length), total: ids.length })
+        if (res.deferred > 0) break   // daily cap reached — stop cleanly
+      } catch (e: any) {
+        toast.error(e.message)
+        aborted = true
+        break                          // bad credentials / server error — don't hammer on
       }
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
-    } finally {
-      setSending(false)
     }
+
+    // One refresh for all status changes (the backend already marked them).
+    await refreshContacts()
+
+    const sent = all.filter(r => r.status === 'sent').length
+    const failed = all.filter(r => r.status === 'failed').length
+    if (!aborted) {
+      const deferNote = deferred ? ` · ${deferred} held for tomorrow (daily limit)` : ''
+      if (failed === 0 && sent > 0) toast.success(`Sent ${sent} email${sent !== 1 ? 's' : ''}${deferNote}`)
+      else if (sent > 0 || failed > 0) toast(`${sent} sent · ${failed} failed${deferNote}`, { icon: '⚠️' })
+    } else if (sent > 0) {
+      toast(`${sent} email${sent !== 1 ? 's' : ''} were sent before the error`, { icon: 'ℹ️' })
+    }
+
+    setSending(false)
+    setProgress(null)
   }
 
   const handleCheckReplies = async () => {
-    if (noCredentials) { toast.error('Add Gmail credentials in Setup first'); return }
+    if (noCredentials) { toast.error('Add your Gmail and App Password in Setup first'); return }
     setCheckingReplies(true)
     try {
       const res = await inboxApi.sync(gmailAddress, gmailAppPassword)
-      // Refresh contacts so newly-replied ones update in the UI
-      const fresh = await contactsApi.list()
-      fresh.forEach(c => upsertContact(c))
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      await refreshContacts()
       const bounceNote = res.bounces_found ? ` · ${res.bounces_found} bounced` : ''
       if (res.replies_found === 0 && res.bounces_found === 0) {
-        toast(`No new replies (scanned ${res.scanned})`, { icon: '📭' })
+        toast(`No new replies yet (checked ${res.scanned} contact${res.scanned !== 1 ? 's' : ''})`, { icon: '📭' })
       } else if (res.replies_found === 0) {
-        toast(`${res.bounces_found} bounced`, { icon: '⚠️' })
+        toast(`${res.bounces_found} email${res.bounces_found !== 1 ? 's' : ''} bounced`, { icon: '⚠️' })
       } else {
-        toast.success(
-          `${res.replies_found} new ${res.replies_found === 1 ? 'reply' : 'replies'}` +
-          bounceNote +
-          (res.followups_cancelled ? ` · ${res.followups_cancelled} follow-ups cancelled` : '')
-        )
+        toast.success(`${res.replies_found} new ${res.replies_found === 1 ? 'reply' : 'replies'}${bounceNote}`)
       }
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
+      toast.error(e.message)
     } finally {
       setCheckingReplies(false)
     }
@@ -168,7 +212,8 @@ export default function Send() {
           {unsent.length > 0 && (
             <button
               onClick={() => {
-                noCredentials ? toast.error('Add Gmail credentials in Setup first') : setShowConfirm(true)
+                if (noCredentials) toast.error('Add your Gmail and App Password in Setup first')
+                else setShowConfirm(true)
               }}
               disabled={sending}
               className="btn flex items-center gap-2 text-sm font-semibold"
@@ -180,16 +225,13 @@ export default function Send() {
               }}
             >
               <SendIcon size={14} />
-              {sending ? 'Sending…' : `Send All (${unsent.length})`}
+              {sending && progress
+                ? `Sending ${progress.done}/${progress.total}…`
+                : sending ? 'Sending…' : `Send All (${unsent.length})`}
             </button>
           )}
         </div>
       </div>
-
-      {/* NOTE: scheduled sends + follow-up automation UI removed for the
-          serverless deployment (no background worker to deliver them). The
-          backend endpoints and AutomationPanel component are kept — restore
-          this section when the API moves to a persistent host. */}
 
       {/* ── No credentials banner ───────────────────────────────────────────── */}
       {noCredentials && withDraft.length > 0 && (
@@ -200,7 +242,8 @@ export default function Send() {
           <div>
             <p className="text-sm font-medium" style={{ color: '#c47d1e' }}>Gmail not connected</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Add your Gmail + App Password in Setup to send emails directly.
+              Add your Gmail address and App Password in Setup to send. For your security we
+              never store the App Password in this browser, so you'll re-enter it after a refresh.
             </p>
           </div>
           <button
@@ -215,51 +258,25 @@ export default function Send() {
 
       {/* ── Confirm modal ───────────────────────────────────────────────────── */}
       {showConfirm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.6)' }}
-          onClick={() => setShowConfirm(false)}
+        <ConfirmDialog
+          title={`Send ${unsent.length} email${unsent.length !== 1 ? 's' : ''}?`}
+          confirmLabel="Send all now"
+          onConfirm={handleSendAll}
+          onCancel={() => setShowConfirm(false)}
         >
-          <div
-            className="card w-full max-w-sm mx-4 space-y-4"
-            style={{ border: '1px solid rgba(226,96,63,0.25)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-base">Send {unsent.length} emails?</h3>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Sending from <strong style={{ color: 'var(--text)' }}>{gmailAddress}</strong> via Gmail SMTP.
-              All contacts will be marked as <em>Emailed</em>.
-            </p>
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {unsent.map(c => (
-                <div key={c.id} className="flex items-center gap-2 text-xs font-mono" style={{ color: 'var(--text-dim)' }}>
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />
-                  {c.name} · {c.email}
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={handleSendAll}
-                className="btn flex-1 flex items-center justify-center gap-2 font-semibold"
-                style={{
-                  background: 'rgba(226,96,63,0.15)',
-                  borderColor: 'rgba(226,96,63,0.4)',
-                  color: 'var(--accent)',
-                }}
-              >
-                <SendIcon size={13} /> Send all now
-              </button>
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="btn"
-                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
-              >
-                Cancel
-              </button>
-            </div>
+          <p>
+            Sending from <strong style={{ color: 'var(--text)' }}>{gmailAddress}</strong> via Gmail.
+            Each contact will be marked as <em>Emailed</em>.
+          </p>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {unsent.map(c => (
+              <div key={c.id} className="flex items-center gap-2 text-xs font-mono" style={{ color: 'var(--text-dim)' }}>
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />
+                {c.name} · {c.email}
+              </div>
+            ))}
           </div>
-        </div>
+        </ConfirmDialog>
       )}
 
       {/* ── Send results ────────────────────────────────────────────────────── */}
@@ -281,7 +298,9 @@ export default function Send() {
               }
               <span className="flex-1 truncate">{r.name} · {r.email}</span>
               {r.status === 'failed' && (
-                <span className="text-xs truncate max-w-[180px]" style={{ color: '#d2483a' }}>{r.error}</span>
+                <span className="text-xs truncate max-w-[180px]" style={{ color: '#d2483a' }} title={r.error}>
+                  {r.error}
+                </span>
               )}
             </div>
           ))}
@@ -305,7 +324,12 @@ export default function Send() {
       {/* ── Contact rows ────────────────────────────────────────────────────── */}
       <div className="space-y-2">
         {contacts.map(c => {
-          const draft = (drafts[c.id] ?? []).find(d => !d.is_followup)
+          const first    = (drafts[c.id] ?? []).find(d => !d.is_followup)
+          const followup = (drafts[c.id] ?? []).find(d => d.is_followup)
+          // Already contacted + a follow-up draft exists → the Gmail button
+          // sends the follow-up (the manual replacement for the old scheduler).
+          const isFollowupSend = CONTACTED.includes(c.status) && !!followup
+          const draft = isFollowupSend ? followup : first
           const st = STATUS_META[c.status] ?? STATUS_META.new
 
           return (
@@ -333,16 +357,27 @@ export default function Send() {
                         </span>
                       )}
                       <button
-                        onClick={() => openGmail(c.email, draft.subject, draft.body, c.id)}
+                        onClick={() => openGmail(
+                          c.email, draft.subject, draft.body, c.id,
+                          isFollowupSend ? 'followed_up' : 'emailed',
+                          c.status,
+                        )}
+                        title={isFollowupSend
+                          ? 'Open Gmail with the follow-up draft'
+                          : 'Open Gmail with this draft'}
                         className="btn text-xs flex items-center gap-1"
-                        style={{
+                        style={isFollowupSend ? {
+                          background: 'rgba(111,90,224,0.10)',
+                          borderColor: 'rgba(111,90,224,0.30)',
+                          color: '#6f5ae0',
+                        } : {
                           background: 'rgba(226,96,63,0.10)',
                           borderColor: 'rgba(226,96,63,0.25)',
                           color: 'var(--accent)',
                         }}
                       >
                         <ExternalLink size={11} />
-                        Gmail
+                        {isFollowupSend ? 'Send follow-up' : 'Gmail'}
                       </button>
                     </>
                   ) : (

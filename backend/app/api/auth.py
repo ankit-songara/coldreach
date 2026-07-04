@@ -34,6 +34,20 @@ _LOGIN_MAX_ATTEMPTS   = 10
 _login_attempts: dict[str, list[float]] = defaultdict(list)
 
 
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP.
+
+    Behind a proxy/LB (Vercel, Railway, nginx) request.client.host is the
+    proxy's address — keying the throttle on it would bucket EVERY user into
+    one counter and lock everyone out together. The first hop of
+    X-Forwarded-For is the real client on those platforms.
+    """
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _check_login_rate(ip: str) -> None:
     now = time.monotonic()
     hits = [t for t in _login_attempts.get(ip, []) if now - t < _LOGIN_WINDOW_SECONDS]
@@ -75,7 +89,10 @@ _EMAIL_RE = __import__("re").compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 @router.post("/register", response_model=AuthResponse)
-def register(creds: Credentials, db: Session = Depends(get_db)):
+def register(creds: Credentials, request: Request, db: Session = Depends(get_db)):
+    # Same throttle as login — unbounded account creation is an abuse vector
+    # (each account gets free scraping through this server's IP).
+    _check_login_rate(_client_ip(request))
     if not _EMAIL_RE.match(creds.email.strip()):
         raise HTTPException(400, "Enter a valid email address.")
     if len(creds.password) < 8:
@@ -93,7 +110,7 @@ def register(creds: Credentials, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=AuthResponse)
 def login(creds: Credentials, request: Request, db: Session = Depends(get_db)):
-    _check_login_rate(request.client.host if request.client else "unknown")
+    _check_login_rate(_client_ip(request))
     user = UserRepository(db).get_by_email(creds.email)
     if not user or not security.verify_password(creds.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password.")

@@ -1,7 +1,4 @@
-"""
-Low-level Gmail SMTP send helper, shared by the bulk-send route and the
-background scheduler. One function, one responsibility: deliver a single message.
-"""
+"""Gmail SMTP helpers shared by the send routes."""
 
 import smtplib
 import logging
@@ -60,40 +57,3 @@ def send_email(address: str, app_password: str, to: str, subject: str, body: str
             smtp.quit()
         except Exception:
             pass
-
-
-class GmailSMTP:
-    """Reusable authenticated Gmail SMTP session — one login, many sends.
-
-    Re-logging in per message is slow and is itself a pattern Gmail flags. The
-    background scheduler uses this to send a batch of due follow-ups over a single
-    connection. Use as a context manager:
-
-        with GmailSMTP(addr, pw) as smtp:
-            smtp.send(to, subject, body)
-    """
-
-    def __init__(self, address: str, app_password: str, timeout: int = 20):
-        self.address = address.strip()
-        self.app_password = normalize_app_password(app_password)
-        self.timeout = timeout
-        self._smtp: smtplib.SMTP | None = None
-
-    def __enter__(self) -> "GmailSMTP":
-        self._smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=self.timeout)
-        self._smtp.starttls()
-        self._smtp.login(self.address, self.app_password)
-        return self
-
-    def send(self, to: str, subject: str, body: str) -> None:
-        assert self._smtp is not None, "GmailSMTP used outside its context manager"
-        self._smtp.sendmail(self.address, to, _build_message(self.address, to, subject, body).as_string())
-        log.info(f"Sent to {to}: {subject!r}")
-
-    def __exit__(self, *exc) -> None:
-        if self._smtp is not None:
-            try:
-                self._smtp.quit()
-            except Exception:
-                pass
-            self._smtp = None

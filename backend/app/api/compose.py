@@ -20,6 +20,18 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/compose", tags=["compose"])
 
 
+def _friendly_llm_error(e: Exception) -> str:
+    """Map raw provider exceptions to a message safe to show an end user."""
+    s = str(e).lower()
+    if "429" in s or "rate limit" in s or "rate_limit" in s:
+        return "The email writer is busy right now (rate limit). Wait a few seconds and try again."
+    if "no llm provider" in s or "api key" in s or "authentication" in s or "401" in s:
+        return "Email generation isn't set up on this server yet. Contact the administrator."
+    if "timeout" in s or "timed out" in s or "connect" in s:
+        return "The email writer took too long to respond. Please try again."
+    return "Couldn't generate the email this time. Please try again in a moment."
+
+
 @router.post("", response_model=DraftOut)
 async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Generate a cold email for a contact using the configured LLM."""
@@ -53,8 +65,10 @@ async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User
             sender_links=sender_links,
         )
     except Exception as e:
-        log.error(f"LLM generation failed: {e}")
-        raise HTTPException(500, f"LLM error: {e}")
+        # Full details go to the server log only — raw provider errors (rate
+        # limits, model names, stack fragments) mean nothing to the end user.
+        log.error(f"LLM generation failed for contact {contact.id}: {e}")
+        raise HTTPException(502, _friendly_llm_error(e))
 
     # Parse SUBJECT / BODY
     subject, body = parse_subject_body(email_text)
@@ -85,7 +99,8 @@ async def followup(req: FollowUpRequest, db: Session = Depends(get_db), user: Us
             context=contact.context or "",
         )
     except Exception as e:
-        raise HTTPException(500, f"LLM error: {e}")
+        log.error(f"Follow-up generation failed for contact {contact.id}: {e}")
+        raise HTTPException(502, _friendly_llm_error(e))
 
     subject, body = parse_subject_body(email_text)
 

@@ -10,18 +10,13 @@ from app.db.database import Base, get_db
 
 
 @pytest.fixture(autouse=True)
-def _no_scheduler(monkeypatch):
-    """Don't spawn the background follow-up task during tests — it leaks an
-    asyncio task across the many lifespan start/stop cycles and produces noisy
-    teardown errors. The scheduler has its own coverage elsewhere."""
-    import app.main as main_mod
-
-    async def _noop_stop():
-        return None
-
-    monkeypatch.setattr(main_mod.scheduler, "start", lambda: None)
-    monkeypatch.setattr(main_mod.scheduler, "stop", _noop_stop)
+def _reset_login_throttle():
+    """The auth throttle is in-memory and keyed by IP; every test hits it from
+    the same TestClient address, so clear it between tests."""
+    from app.api import auth as auth_mod
+    auth_mod._login_attempts.clear()
     yield
+    auth_mod._login_attempts.clear()
 
 
 @pytest.fixture(scope="session")
@@ -60,9 +55,8 @@ def client(test_engine):
     app.dependency_overrides.clear()
 
     # Wipe all rows between tests (keep schema)
-    from app.db.models import Contact, EmailDraft, Resume, User, ScheduledEmail, AppConfig, KnownCompany
+    from app.db.models import Contact, EmailDraft, Resume, User, AppConfig, KnownCompany
     db = SessionTest()
-    db.query(ScheduledEmail).delete()
     db.query(EmailDraft).delete()
     db.query(AppConfig).delete()
     db.query(Contact).delete()

@@ -7,7 +7,6 @@ Startup sequence:
   3. Register routers
 """
 
-import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -16,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db.database import create_tables
 from app.llm.factory import detect_provider
-from app.scheduler import scheduler
 from app.api import hunt, compose, contacts, resume, send, inbox, automation, verify, auth, demo, companies
 
 logging.basicConfig(
@@ -52,17 +50,8 @@ async def lifespan(_: FastAPI):
     except RuntimeError as e:
         log.warning(str(e))      # non-fatal — compose routes will error if called
 
-    if os.environ.get("VERCEL"):
-        # Serverless: no persistent process, so a polling loop can never run.
-        # Don't start it — avoids a dangling task per cold start.
-        log.info("Serverless environment — background scheduler disabled")
-    else:
-        scheduler.start()       # background follow-up delivery (local / VM hosts)
-        log.info("✓ Follow-up scheduler running")
-
     yield
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    await scheduler.stop()
     log.info("Shutting down")
 
 
@@ -100,13 +89,16 @@ app.include_router(companies.router,  prefix="/api")
 
 @app.get("/api/health")
 async def health():
+    # llm_ok is what the frontend keys on; the label is for operators (logs,
+    # curl) and must never be shown verbatim to end users.
     try:
         provider, model = await detect_provider()
-        llm_status = f"{provider}/{model}"
+        llm_ok, llm_status = True, f"{provider}/{model}"
     except Exception as e:
-        llm_status = f"unavailable: {e}"
+        llm_ok, llm_status = False, f"unavailable: {e}"
     return {
         "status":   "ok",
         "version":  settings.app_version,
+        "llm_ok":   llm_ok,
         "llm":      llm_status,
     }

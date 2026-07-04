@@ -3,15 +3,14 @@ Repository pattern: all database access goes through these classes.
 Routes never touch SQLAlchemy directly.
 
 Every data repository is scoped to a single user_id — passed in at construction
-so callers physically cannot read or write another user's rows. The scheduler,
-which runs outside a request, uses the admin helpers at the bottom.
+so callers physically cannot read or write another user's rows.
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.db.models import Contact, EmailDraft, Resume, ScheduledEmail, AppConfig, User, KnownCompany
+from app.db.models import Contact, EmailDraft, Resume, AppConfig, User, KnownCompany
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
 from app import security
@@ -147,12 +146,21 @@ class ContactRepository:
         contact = self.get_by_id(contact_id)
         if not contact:
             return False
+        # No FK/cascade on these tables (SQLite can't add one retroactively), so
+        # remove the contact's drafts explicitly or they orphan forever.
+        self.db.query(EmailDraft).filter(
+            EmailDraft.user_id == self.user_id,
+            EmailDraft.contact_id == contact_id,
+        ).delete(synchronize_session=False)
         self.db.delete(contact)
         self.db.commit()
         return True
 
     def delete_all(self) -> int:
         count = self._scoped().count()
+        self.db.query(EmailDraft).filter(
+            EmailDraft.user_id == self.user_id
+        ).delete(synchronize_session=False)
         self._scoped().delete()
         self.db.commit()
         return count
@@ -205,69 +213,11 @@ class DraftRepository:
         self.db.commit()
 
 
-# ── ScheduledEmail Repository ─────────────────────────────────────────────────
-class ScheduledEmailRepository:
-    def __init__(self, db: Session, user_id: int):
-        self.db = db
-        self.user_id = user_id
-
-    def _scoped(self):
-        return self.db.query(ScheduledEmail).filter(ScheduledEmail.user_id == self.user_id)
-
-    def create(self, contact_id: int, subject: str, body: str,
-               send_at: datetime, is_followup: bool = False) -> ScheduledEmail:
-        item = ScheduledEmail(
-            user_id=self.user_id, contact_id=contact_id, subject=subject, body=body,
-            send_at=send_at, is_followup=is_followup, status="pending",
-        )
-        self.db.add(item)
-        self.db.commit()
-        self.db.refresh(item)
-        return item
-
-    def pending_for_contact(self, contact_id: int) -> list[ScheduledEmail]:
-        return (
-            self._scoped()
-            .filter(ScheduledEmail.contact_id == contact_id,
-                    ScheduledEmail.status == "pending")
-            .all()
-        )
-
-    def all_pending(self) -> list[ScheduledEmail]:
-        return (
-            self._scoped()
-            .filter(ScheduledEmail.status == "pending")
-            .order_by(ScheduledEmail.send_at.asc())
-            .all()
-        )
-
-    def cancel_followups_for_contact(self, contact_id: int) -> int:
-        """Cancel all pending follow-ups for a contact (e.g. on reply). Returns count."""
-        rows = (
-            self._scoped()
-            .filter(ScheduledEmail.contact_id == contact_id,
-                    ScheduledEmail.status == "pending",
-                    ScheduledEmail.is_followup == True)  # noqa: E712
-            .all()
-        )
-        for r in rows:
-            r.status = "cancelled"
-        self.db.commit()
-        return len(rows)
-
-    def cancel(self, item_id: int) -> bool:
-        item = self._scoped().filter(ScheduledEmail.id == item_id).first()
-        if not item or item.status != "pending":
-            return False
-        item.status = "cancelled"
-        self.db.commit()
-        return True
-
-
 # ── AppConfig Repository ──────────────────────────────────────────────────────
-# Per-user keys: gmail_address, gmail_app_password (encrypted),
-#                automation_enabled, daily_send_cap
+# Per-user keys: sender_name, signature_links, daily_send_cap
 class ConfigRepository:
+    # Legacy: older versions stored the Gmail App Password here (encrypted).
+    # Kept so any pre-existing rows still decrypt instead of returning ciphertext.
     SECRET_KEYS = {"gmail_app_password"}
 
     def __init__(self, db: Session, user_id: int):
@@ -298,13 +248,6 @@ class ConfigRepository:
             self.db.add(AppConfig(user_id=self.user_id, key=key, value=stored))
         self.db.commit()
 
-    def get_gmail_creds(self) -> tuple[str, str]:
-        """Returns (address, app_password) — empty strings if not configured."""
-        return self.get("gmail_address"), self.get("gmail_app_password")
-
-    def automation_enabled(self) -> bool:
-        return self.get("automation_enabled", "false") == "true"
-
 
 # ── Resume Repository ─────────────────────────────────────────────────────────
 class ResumeRepository:
@@ -321,6 +264,18 @@ class ResumeRepository:
         )
 
     def save(self, text: str, filename: str | None = None) -> Resume:
+        """Upsert: overwrite the latest résumé instead of inserting a new row.
+
+        Every 'Save Resume' click used to append a full-text row, growing the
+        table without bound; only get_latest() was ever read back.
+        """
+        existing = self.get_latest()
+        if existing:
+            existing.text = text
+            existing.filename = filename
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
         resume = Resume(user_id=self.user_id, text=text, filename=filename)
         self.db.add(resume)
         self.db.commit()
@@ -445,29 +400,3 @@ def load_known_companies_into_directory(db: Session) -> int:
         if directory.register(kc.name, kc.slug, kc.ats, kc.domain):
             n += 1
     return n
-
-
-# ── Admin helpers for the background scheduler (cross-user, no request scope) ──
-def all_due_scheduled(db: Session, now: datetime) -> list[ScheduledEmail]:
-    return (
-        db.query(ScheduledEmail)
-        .filter(ScheduledEmail.status == "pending", ScheduledEmail.send_at <= now)
-        .order_by(ScheduledEmail.send_at.asc())
-        .all()
-    )
-
-
-def mark_scheduled_sent(db: Session, item_id: int) -> None:
-    item = db.query(ScheduledEmail).filter(ScheduledEmail.id == item_id).first()
-    if item:
-        item.status = "sent"
-        item.sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        db.commit()
-
-
-def mark_scheduled_failed(db: Session, item_id: int, error: str) -> None:
-    item = db.query(ScheduledEmail).filter(ScheduledEmail.id == item_id).first()
-    if item:
-        item.status = "failed"
-        item.error = error[:500]
-        db.commit()

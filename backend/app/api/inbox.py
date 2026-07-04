@@ -3,9 +3,8 @@ Reply detection via Gmail IMAP.
 
 POST /api/inbox/sync
   Connects to the user's Gmail over IMAP, scans the inbox for messages FROM any
-  contact we're awaiting a reply from, and:
-    • marks that contact status='replied' + replied_at
-    • cancels any pending follow-ups for them (no point nudging someone who replied)
+  contact we're awaiting a reply from, and marks that contact
+  status='replied' + replied_at (or 'bounced' for delivery failures).
 
 Uses the same Gmail address + App Password as sending — no extra setup.
 Gmail IMAP must be enabled (it is, by default, for App-Password accounts).
@@ -23,7 +22,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.database import get_db
-from app.db.crud import ContactRepository, ScheduledEmailRepository
+from app.db.crud import ContactRepository
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
@@ -48,11 +47,10 @@ class ReplyHit(BaseModel):
 
 
 class InboxSyncResponse(BaseModel):
-    scanned:           int          # contacts we were awaiting a reply from
-    replies_found:     int
-    bounces_found:     int
-    followups_cancelled: int
-    hits:              list[ReplyHit]
+    scanned:       int          # contacts we were awaiting a reply from
+    replies_found: int
+    bounces_found: int
+    hits:          list[ReplyHit]
 
 
 # Senders that indicate a bounce / non-delivery report
@@ -122,8 +120,7 @@ def _body_text(msg) -> str:
 
 @router.post("/sync", response_model=InboxSyncResponse)
 def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    contact_repo  = ContactRepository(db, user.id)
-    sched_repo    = ScheduledEmailRepository(db, user.id)
+    contact_repo = ContactRepository(db, user.id)
 
     # Contacts we're awaiting a reply from, keyed by their (lowercased) email
     awaiting = {
@@ -132,8 +129,7 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
         if c.status in AWAITING_STATUSES and not c.replied_at
     }
     if not awaiting:
-        return InboxSyncResponse(scanned=0, replies_found=0, bounces_found=0,
-                                 followups_cancelled=0, hits=[])
+        return InboxSyncResponse(scanned=0, replies_found=0, bounces_found=0, hits=[])
 
     # Only scan back as far as the oldest email we sent (cap at 90 days)
     sent_times = [c.last_emailed_at for c in awaiting.values() if c.last_emailed_at]
@@ -205,27 +201,23 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
 
     now = utcnow()
     hits: list[ReplyHit] = []
-    cancelled = 0
 
     # Replies win over bounces if somehow both appear
     reply_addrs = (sender_emails & awaiting_emails) - bounced_emails
     for addr in reply_addrs:
         c = awaiting[addr]
         contact_repo.update(c.id, ContactUpdate(status="replied", replied_at=now))
-        cancelled += sched_repo.cancel_followups_for_contact(c.id)
         hits.append(ReplyHit(contact_id=c.id, name=c.name, email=c.email))
-        log.info(f"Reply detected from {c.email} — marked replied, cancelled follow-ups")
+        log.info(f"Reply detected from {c.email} — marked replied")
 
     for addr in bounced_emails - reply_addrs:
         c = awaiting[addr]
         contact_repo.update(c.id, ContactUpdate(status="bounced", bounced=True))
-        cancelled += sched_repo.cancel_followups_for_contact(c.id)
-        log.info(f"Bounce detected for {c.email} — marked bounced, cancelled follow-ups")
+        log.info(f"Bounce detected for {c.email} — marked bounced")
 
     return InboxSyncResponse(
         scanned=len(awaiting),
         replies_found=len(hits),
         bounces_found=len(bounced_emails - reply_addrs),
-        followups_cancelled=cancelled,
         hits=hits,
     )

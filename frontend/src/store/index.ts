@@ -46,8 +46,11 @@ export const useStore = create<AppState>()(
         set({ token, userEmail: email })
       },
       logout: () => {
-        // Revoke the token server-side (best-effort) before clearing it locally.
-        void authApi.logout()
+        // Revoke the token server-side (best-effort). The token is captured and
+        // sent explicitly because we clear localStorage before the request's
+        // interceptor would read it (see authApi.logout).
+        const token = getToken()
+        if (token) void authApi.logout(token)
         setToken(null)
         set({ token: null, userEmail: '', contacts: [], drafts: {} })
       },

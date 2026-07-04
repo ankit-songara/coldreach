@@ -98,6 +98,8 @@ def seed_demo(db: Session = Depends(get_db), user: User = Depends(get_current_us
     now = utcnow()
     contacts_made = drafts_made = 0
 
+    # Single transaction: flush() assigns contact ids for the drafts without a
+    # round-trip commit per row (matters on serverless + remote Postgres).
     for (name, email, desig, company, source, status, estatus, conf,
          emailed_days, reply_gap, has_draft) in _SEED:
         last_emailed = now - timedelta(days=emailed_days) if emailed_days is not None else None
@@ -110,22 +112,21 @@ def seed_demo(db: Session = Depends(get_db), user: User = Depends(get_current_us
             context=f"Sample lead at {company} — demo data.",
         )
         db.add(contact)
-        db.commit()
-        db.refresh(contact)
+        db.flush()
         contacts_made += 1
 
         if has_draft:
             subject, body = _draft_for(name, company)
             db.add(EmailDraft(user_id=user.id, contact_id=contact.id,
                               subject=subject, body=body, is_followup=False))
-            db.commit()
             drafts_made += 1
 
     # Seed a résumé only if the user doesn't already have one (don't clobber real data).
     has_resume = db.query(Resume).filter(Resume.user_id == user.id).first() is not None
     if not has_resume:
         db.add(Resume(user_id=user.id, text=_SAMPLE_RESUME, filename=RESUME_FILENAME))
-        db.commit()
+
+    db.commit()
 
     log.info(f"[user {user.id}] seeded demo: {contacts_made} contacts, {drafts_made} drafts")
     return {"seeded": True, "contacts": contacts_made, "drafts": drafts_made}

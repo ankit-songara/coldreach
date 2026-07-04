@@ -39,6 +39,17 @@ def _load_or_create_key() -> bytes:
         except Exception:
             log.warning("SECRET_KEY env var is not a valid Fernet key — falling back to file-based key")
 
+    # On serverless every instance would otherwise mint its own ephemeral key:
+    # sessions issued by one instance get rejected by the next (random logouts)
+    # and previously-encrypted secrets become undecryptable. Fail loudly instead
+    # of degrading into behaviour that looks like random auth bugs.
+    if os.environ.get("VERCEL"):
+        raise RuntimeError(
+            "SECRET_KEY is required on Vercel/serverless. Generate one with:\n"
+            '  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"\n'
+            "and set it in the project's environment variables."
+        )
+
     # Local development fallback: persist key in data/.secret_key
     try:
         _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)

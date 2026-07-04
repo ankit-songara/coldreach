@@ -28,3 +28,10 @@ dist/
 
 # OS
 .DS_Store
+
+# Runtime logs
+*.log
+*.err
+
+# Claude Code local config
+.claude/

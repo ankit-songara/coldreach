@@ -9,6 +9,7 @@
 :root {
   /* Canvas & surfaces */
   --bg:          #faf7f2;
+  --header-bg:   rgba(250, 247, 242, 0.92);   /* --bg at 92% for the frosted header */
   --surface-1:   #ffffff;
   --surface-2:   #f5efe6;
   --surface-3:   #efe7d9;

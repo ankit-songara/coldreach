@@ -19,6 +19,12 @@ export const authApi = {
   me: () =>
     api.get<{ id: number; email: string }>('/auth/me').then(r => r.data),
 
-  logout: () =>
-    api.post('/auth/logout').then(r => r.data).catch(() => undefined),
+  // Token is passed explicitly: the store clears localStorage synchronously on
+  // logout, and axios request interceptors run in a microtask AFTER that — so
+  // relying on the interceptor here would send the request unauthenticated and
+  // the server-side revoke would silently never happen.
+  logout: (token: string) =>
+    api.post('/auth/logout', undefined, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.data)
+      .catch(() => undefined),
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, createContext } from 'react'
-import { LogOut, Send as SendIcon, ChevronDown } from 'lucide-react'
+import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useStore } from './store'
 import { resumeApi } from './api/resume'
 import Auth    from './components/Auth'
@@ -20,6 +21,14 @@ const TABS: Array<{ id: TabId; num: string | null; label: string }> = [
   { id: 'compose', num: '03', label: 'Compose' },
   { id: 'send',    num: '04', label: 'Send'    },
 ]
+
+const TAB_IDS = TABS.map(t => t.id)
+const isTabId = (v: string): v is TabId => (TAB_IDS as string[]).includes(v)
+
+// Icons for the mobile bottom tab bar
+const TAB_ICONS: Record<TabId, LucideIcon> = {
+  today: Home, setup: Settings, hunt: Search, compose: Wand2, send: SendIcon,
+}
 
 function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) {
   const [open, setOpen] = useState(false)
@@ -47,7 +56,9 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
         >
           {initials}
         </span>
-        <span className="text-[13px] font-medium hidden sm:inline max-w-[140px] truncate" style={{ color: 'var(--text-muted)' }}>
+        {/* Email label needs a wide viewport — at tablet widths it pushed the
+            header row past the screen edge */}
+        <span className="text-[13px] font-medium hidden lg:inline max-w-[140px] truncate" style={{ color: 'var(--text-muted)' }}>
           {email}
         </span>
         <ChevronDown size={13} style={{ color: 'var(--text-dim)' }} />
@@ -85,6 +96,25 @@ export default function App() {
     return () => window.removeEventListener('coldreach:logout', onLogout)
   }, [logout])
 
+  // ── Tab ↔ URL hash sync ──────────────────────────────────────────────────
+  // Gives every tab a shareable URL (#hunt), makes refresh keep your place,
+  // and lets the browser back button move between tabs.
+  useEffect(() => {
+    const fromHash = () => {
+      const h = window.location.hash.replace('#', '')
+      if (isTabId(h)) setActiveTab(h)
+    }
+    fromHash()                                        // apply the initial URL
+    window.addEventListener('hashchange', fromHash)
+    return () => window.removeEventListener('hashchange', fromHash)
+  }, [setActiveTab])
+
+  useEffect(() => {
+    if (window.location.hash.replace('#', '') !== activeTab) {
+      window.location.hash = activeTab
+    }
+  }, [activeTab])
+
   // On login from a fresh browser the local store has no résumé, but the backend
   // may. Hydrate it so Compose works without forcing a re-upload.
   // Track readiness so Compose doesn't flash "no resume" while the fetch is in-flight.
@@ -103,10 +133,10 @@ export default function App() {
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
       {/* ── Frosted premium header ───────────────────────────────────────────── */}
       <header
-        className="sticky top-0 z-40 flex items-center gap-4"
+        className="sticky top-0 z-40 flex items-center gap-3 sm:gap-4"
         style={{
-          height: 64, padding: '0 28px',
-          background: 'rgba(250,247,242,0.92)', backdropFilter: 'blur(12px)',
+          height: 64, padding: '0 clamp(12px, 3vw, 28px)',
+          background: 'var(--header-bg)', backdropFilter: 'blur(12px)',
           borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow-xs)',
         }}
       >
@@ -118,18 +148,19 @@ export default function App() {
           >
             <SendIcon size={15} color="#fff" />
           </div>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--accent)', lineHeight: 1 }}>
+          {/* Wordmark hides on narrow phones so the tab nav keeps room */}
+          <span className="hidden min-[480px]:inline" style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--accent)', lineHeight: 1 }}>
             Cold<span style={{ color: 'var(--text)' }}>Reach</span>
           </span>
         </div>
 
         <div className="flex-1" />
 
-        {/* Segmented pill nav — scrolls horizontally on narrow screens instead
-            of overflowing the fixed-height header */}
+        {/* Segmented pill nav — desktop/tablet only; phones get the bottom tab
+            bar instead (a hidden-scrollbar overflow here made tabs invisible) */}
         <nav
-          className="inline-flex gap-0.5 max-w-full overflow-x-auto"
-          style={{ padding: 3, background: 'var(--surface-2)', borderRadius: 'var(--radius-full)', border: '1px solid var(--border)', scrollbarWidth: 'none' }}
+          className="hidden md:inline-flex gap-0.5 max-w-full"
+          style={{ padding: 3, background: 'var(--surface-2)', borderRadius: 'var(--radius-full)', border: '1px solid var(--border)' }}
         >
           {TABS.map(tab => {
             const active = activeTab === tab.id
@@ -167,10 +198,11 @@ export default function App() {
 
         <div className="flex-1" />
 
-        {/* Right cluster */}
+        {/* Right cluster — the contacts pill needs a wide viewport so the five
+            nav tabs always win the space fight at tablet widths */}
         <div className="flex items-center gap-2.5 flex-shrink-0">
           <div
-            className="hidden md:flex items-center gap-1.5 text-[13px] font-medium"
+            className="hidden lg:flex items-center gap-1.5 text-[13px] font-medium"
             style={{ padding: '4px 10px', borderRadius: 'var(--radius-full)', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
           >
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)' }} />
@@ -181,7 +213,17 @@ export default function App() {
       </header>
 
       {/* ── Content ──────────────────────────────────────────────────────────── */}
-      <main className="flex-1 w-full mx-auto" style={{ maxWidth: 960, padding: '36px 28px 60px' }}>
+      {/* Bottom padding comes from classes (not the inline style) so mobile can
+          reserve extra room for the fixed bottom tab bar. */}
+      <main
+        className="flex-1 w-full mx-auto pb-24 md:pb-16"
+        style={{
+          maxWidth: 960,
+          paddingTop: 'clamp(20px, 4vw, 36px)',
+          paddingLeft: 'clamp(14px, 3.5vw, 28px)',
+          paddingRight: 'clamp(14px, 3.5vw, 28px)',
+        }}
+      >
         <ResumeReadyCtx.Provider value={resumeReady}>
           {activeTab === 'today'   && <Today />}
           {activeTab === 'setup'   && <Setup />}
@@ -190,6 +232,53 @@ export default function App() {
           {activeTab === 'send'    && <Send />}
         </ResumeReadyCtx.Provider>
       </main>
+
+      {/* ── Mobile bottom tab bar (< md) ─────────────────────────────────────── */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex"
+        aria-label="Primary"
+        style={{
+          background: 'var(--header-bg)', backdropFilter: 'blur(12px)',
+          borderTop: '1px solid var(--border)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
+      >
+        {TABS.map(tab => {
+          const Icon = TAB_ICONS[tab.id]
+          const active = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              aria-current={active ? 'page' : undefined}
+              className="flex-1 flex flex-col items-center gap-1 relative"
+              style={{
+                padding: '10px 0 8px', background: 'none', border: 'none', cursor: 'pointer',
+                color: active ? 'var(--accent)' : 'var(--text-dim)',
+              }}
+            >
+              <Icon size={18} strokeWidth={active ? 2.4 : 2} />
+              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, letterSpacing: '0.01em' }}>
+                {tab.label}
+              </span>
+              {tab.id === 'hunt' && contacts.length > 0 && (
+                <span
+                  className="absolute"
+                  style={{
+                    top: 4, right: '50%', marginRight: -20,
+                    minWidth: 15, height: 15, padding: '0 4px',
+                    borderRadius: 'var(--radius-full)', background: 'var(--accent)',
+                    color: '#fff', fontSize: 9, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+                  }}
+                >
+                  {contacts.length > 99 ? '99+' : contacts.length}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </nav>
     </div>
   )
 }

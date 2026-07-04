@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import re
 import time
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,7 +41,9 @@ router = APIRouter(prefix="/hunt", tags=["hunt"])
 
 # Upper bound on the email-resolution phase so hunts stay responsive even when
 # outbound port 25 is blocked (every SMTP probe then burns its full timeout).
-_RESOLVE_BUDGET_SECONDS = 45
+# Serverless functions have a hard wall-clock limit (~60s incl. scraping), so
+# the budget shrinks there; SMTP probes are skipped entirely on Vercel anyway.
+_RESOLVE_BUDGET_SECONDS = 15 if os.environ.get("VERCEL") else 45
 _ROLE_ADDRESSES = ("talent", "recruiting", "careers", "jobs", "hr", "people", "team")
 
 # Minimum confidence to persist a resolver-generated email. Direct scraper emails

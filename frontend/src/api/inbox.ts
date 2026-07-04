@@ -7,11 +7,10 @@ export interface ReplyHit {
 }
 
 export interface InboxSyncResponse {
-  scanned:             number
-  replies_found:       number
-  bounces_found:       number
-  followups_cancelled: number
-  hits:                ReplyHit[]
+  scanned:       number
+  replies_found: number
+  bounces_found: number
+  hits:          ReplyHit[]
 }
 
 export const inboxApi = {

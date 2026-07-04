@@ -8,6 +8,7 @@ How to get an App Password:
   3. Create a new app password — use that 16-char string here
 """
 
+import os
 import time
 import random
 import smtplib
@@ -22,17 +23,21 @@ from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.db.crud import (
-    ContactRepository, DraftRepository, ScheduledEmailRepository, ConfigRepository,
+    ContactRepository, DraftRepository, ConfigRepository,
     already_first_touched,
 )
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
-from app.timeutil import to_naive_utc
 from app.mailer import normalize_app_password
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/send", tags=["send"])
+
+# Serverless functions have a hard wall-clock limit, so the human-like pauses
+# between sends must shrink to fit. The frontend compensates by sending in
+# small chunks (one request per chunk) instead of one giant request.
+_SERVERLESS = bool(os.environ.get("VERCEL"))
 
 
 class BulkSendRequest(BaseModel):
@@ -52,7 +57,7 @@ class SendResult(BaseModel):
 class BulkSendResponse(BaseModel):
     sent:     int
     failed:   int
-    deferred: int = 0      # held back by the daily cap — try again later / schedule
+    deferred: int = 0      # held back by the daily cap — try again tomorrow
     results:  list[SendResult]
 
 
@@ -108,8 +113,8 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         log.info(f"Daily cap {daily_cap}: sending {len(queue)}, deferring {deferred}")
     if not queue:
         raise HTTPException(429,
-            f"Daily send cap reached ({daily_cap}/24h). {deferred} emails held back. "
-            f"Try again later or schedule them.")
+            f"You've hit today's sending limit of {daily_cap} emails — it protects your "
+            f"Gmail account from being flagged. {deferred} emails are waiting; try again tomorrow.")
 
     # Normalize once: Gmail App Passwords are often pasted with the display spaces.
     gmail_address = req.gmail_address.strip()
@@ -153,7 +158,9 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         try:
             for contact, draft in batch:
                 try:
-                    time.sleep(random.uniform(0.2, 1.2))   # tiny human-like jitter
+                    # Tiny human-like jitter — trimmed on serverless to stay
+                    # inside the function's execution limit.
+                    time.sleep(random.uniform(0.1, 0.4) if _SERVERLESS else random.uniform(0.2, 1.2))
                     msg = MIMEMultipart("alternative")
                     msg["From"]    = gmail_address
                     msg["To"]      = contact.email
@@ -183,7 +190,7 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
 
     for batch_idx, batch in enumerate(batches):
         if batch_idx > 0:
-            time.sleep(random.uniform(1.5, 4.0))   # jittered cooldown
+            time.sleep(random.uniform(0.5, 1.0) if _SERVERLESS else random.uniform(1.5, 4.0))
 
         batch_results = send_batch(batch)
         for result in batch_results:
@@ -198,55 +205,6 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     failed = sum(1 for r in results if r.status == "failed")
 
     return BulkSendResponse(sent=sent, failed=failed, deferred=deferred, results=results)
-
-
-class ScheduleSendRequest(BaseModel):
-    contact_ids: list[int] = []     # empty = all drafted, unsent contacts
-    send_at:     datetime           # ISO datetime (UTC) to deliver at
-
-
-class ScheduleSendResponse(BaseModel):
-    scheduled: int
-    skipped:   int
-
-
-@router.post("/schedule", response_model=ScheduleSendResponse)
-def schedule_send(req: ScheduleSendRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """
-    Queue first-touch emails for future delivery (e.g. tomorrow 9am).
-    Requires server-side Gmail creds (saved via /config/gmail) — the background
-    scheduler does the actual sending.
-    """
-    cfg = ConfigRepository(db, user.id)
-    addr, pw = cfg.get_gmail_creds()
-    if not (addr and pw):
-        raise HTTPException(400,
-            "Save Gmail credentials for automation (enable it in the Send tab) "
-            "before scheduling sends.")
-
-    contact_repo = ContactRepository(db, user.id)
-    draft_repo   = DraftRepository(db, user.id)
-    sched_repo   = ScheduledEmailRepository(db, user.id)
-
-    if req.contact_ids:
-        targets = [contact_repo.get_by_id(cid) for cid in req.contact_ids]
-        targets = [c for c in targets if c]
-    else:
-        targets = contact_repo.get_all()
-
-    scheduled, skipped = 0, 0
-    for contact in targets:
-        if already_first_touched(contact) or sched_repo.pending_for_contact(contact.id):
-            skipped += 1
-            continue
-        draft = next((d for d in draft_repo.get_for_contact(contact.id) if not d.is_followup), None)
-        if not draft:
-            skipped += 1
-            continue
-        sched_repo.create(contact.id, draft.subject, draft.body, to_naive_utc(req.send_at), is_followup=False)
-        scheduled += 1
-
-    return ScheduleSendResponse(scheduled=scheduled, skipped=skipped)
 
 
 @router.post("/test")

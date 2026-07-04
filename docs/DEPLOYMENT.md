@@ -1,6 +1,45 @@
 # Deployment Guide
 
-ColdReach can be deployed on any platform that runs Docker. Below are instructions for the three most common options.
+ColdReach can be deployed on any platform that runs Docker, or serverless on Vercel. Below are instructions for the most common options.
+
+---
+
+## Option 0 — Vercel (serverless, two projects)
+
+Deploy **backend** and **frontend** as two separate Vercel projects.
+
+### Backend (`backend/` as project root)
+
+`backend/vercel.json` already configures the Python function (entry `api/index.py`,
+`maxDuration: 60`). Set these environment variables — the first two are **required**:
+
+| Variable | Value | Why |
+|---|---|---|
+| `SECRET_KEY` | a Fernet key (see below) | Sessions/secrets break without it — the app refuses to boot on Vercel if missing |
+| `DATABASE_URL` | `postgresql://…` (Neon/Supabase) | Vercel's filesystem is ephemeral — SQLite won't persist |
+| `LLM_PROVIDER` | `groq` | Ollama can't run on serverless |
+| `LLM_API_KEY` | `gsk_…` | Groq API key |
+| `CORS_ORIGINS` | `https://your-frontend.vercel.app` | Exact frontend origin |
+| `GOOGLE_CLIENT_ID` | (optional) | Enables "Sign in with Google" |
+| `GITHUB_TOKEN` | (optional) | Better email-pattern detection |
+
+Generate the key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+
+### Frontend (`frontend/` as project root)
+
+| Variable | Value |
+|---|---|
+| `VITE_API_URL` | `https://your-backend.vercel.app/api` |
+| `VITE_GOOGLE_CLIENT_ID` | (optional) same client ID as the backend |
+
+### Serverless caveats
+
+- **SMTP from Vercel is unreliable**: Gmail often rejects logins from datacenter
+  IPs (`5.7.14`). The "open in Gmail" per-contact button always works; bulk SMTP
+  sending may not. Use a VM/container host if bulk sending matters.
+- SMTP email-verification probes are disabled automatically (port 25 is blocked);
+  hunts fall back to pattern heuristics + MX checks.
+- There is no background worker — sending happens only from the browser session.
 
 ---
 

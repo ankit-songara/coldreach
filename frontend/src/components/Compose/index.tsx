@@ -6,30 +6,16 @@ import { useStore } from '../../store'
 import { composeApi } from '../../api/compose'
 import { STATUS_META } from '../../types'
 import type { Contact, Draft } from '../../types'
+import EmailBadge from '../shared/EmailBadge'
 import { ResumeReadyCtx } from '../../App'
 
 const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
-
-function EmailBadge({ status, confidence }: { status?: string; confidence?: number }) {
-  if (!status || status === 'unknown') return null
-  const meta: Record<string, { label: string; color: string; bg: string; sym: string }> = {
-    valid:   { label: 'verified', sym: '✓', color: '#3f8f43', bg: 'rgba(63,143,67,.12)'  },
-    risky:   { label: 'risky',    sym: '~', color: '#c47d1e', bg: 'rgba(196,125,30,.12)' },
-    invalid: { label: 'invalid',  sym: '✗', color: '#d2483a', bg: 'rgba(210,72,58,.12)'  },
-  }
-  const m = meta[status] ?? { label: status, sym: '?', color: '#8a7f70', bg: 'rgba(138,127,112,.12)' }
-  return (
-    <span className="badge inline-flex items-center gap-0.5" style={{ background: m.bg, color: m.color, fontSize: '9px', whiteSpace: 'nowrap' }}>
-      {m.sym} {m.label}{confidence != null ? ` · ${confidence}%` : ''}
-    </span>
-  )
-}
 
 export default function Compose() {
   const { contacts, resume, drafts, setDrafts, setActiveTab } = useStore()
   const resumeReady = useContext(ResumeReadyCtx)
   const [showSent, setShowSent] = useState(false)
-  const [bulkGenerating, setBulkGenerating] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
 
   // Restore drafts from backend on mount — ONE request for all contacts.
   // (Previously one request per contact: N contacts = N API calls + N DB hits.)
@@ -70,18 +56,19 @@ export default function Compose() {
   // in a tight burst) trips 429 rate limits, and the provider's auto-retries then
   // amplify the storm. Sequential + a throttle gap keeps us safely under the cap.
   const generateAll = async (targets: Contact[]) => {
-    setBulkGenerating(true)
+    setBulkProgress({ done: 0, total: targets.length })
     try {
-      for (const c of targets) {
+      for (let i = 0; i < targets.length; i++) {
         try {
-          await composeMutation.mutateAsync({ contact_id: c.id, resume })
+          await composeMutation.mutateAsync({ contact_id: targets[i].id, resume })
         } catch {
           // onError already surfaces a toast; keep going with the rest.
         }
-        await new Promise(r => setTimeout(r, 2000))
+        setBulkProgress({ done: i + 1, total: targets.length })
+        if (i < targets.length - 1) await new Promise(r => setTimeout(r, 2000))
       }
     } finally {
-      setBulkGenerating(false)
+      setBulkProgress(null)
     }
   }
 
@@ -134,11 +121,11 @@ export default function Compose() {
         {ungenerated.length > 0 && (
           <button
             onClick={() => generateAll(ungenerated)}
-            disabled={pending || bulkGenerating}
+            disabled={pending || bulkProgress !== null}
             className="btn btn-primary text-xs flex items-center gap-2"
           >
-            {bulkGenerating ? (
-              <><RefreshCw size={13} className="animate-spin" /> Generating…</>
+            {bulkProgress ? (
+              <><RefreshCw size={13} className="animate-spin" /> Generating {Math.min(bulkProgress.done + 1, bulkProgress.total)}/{bulkProgress.total}…</>
             ) : (
               <><Wand2 size={13} /> Generate all ({ungenerated.length})</>
             )}
@@ -236,7 +223,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
       setEditing(false)
       toast.success('Draft updated')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
+      toast.error(e.message)
     } finally {
       setSaving(false)
     }
@@ -258,7 +245,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
       setEditingFollowup(false)
       toast.success('Follow-up updated')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
+      toast.error(e.message)
     } finally {
       setSavingFollowup(false)
     }

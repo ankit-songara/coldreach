@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for ColdReach."""
 
 from datetime import datetime
-from sqlalchemy import String, Text, DateTime, Boolean, Float, UniqueConstraint, func
+from sqlalchemy import String, Text, DateTime, Boolean, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.database import Base
 
@@ -88,9 +88,8 @@ class Resume(Base):
 
 class AppConfig(Base):
     """
-    Per-user key/value store for configuration the background scheduler needs —
-    chiefly the Gmail credentials used for automated follow-ups. The App Password
-    is stored encrypted (see app.security). Primary key is (user_id, key).
+    Per-user key/value store for small configuration values — the signature
+    name/links and the daily send cap. Primary key is (user_id, key).
     """
     __tablename__ = "app_config"
 
@@ -121,24 +120,3 @@ class KnownCompany(Base):
     domain:     Mapped[str]      = mapped_column(String(255), default="")
     source:     Mapped[str]      = mapped_column(String(20), default="user")  # user | discovered
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class ScheduledEmail(Base):
-    """
-    A queued email — either a first-touch or a follow-up — to be delivered at
-    `send_at`. The scheduler worker picks up rows where status='pending' and
-    send_at <= now. Follow-ups are auto-cancelled when a reply is detected.
-    """
-    __tablename__ = "scheduled_emails"
-
-    id:          Mapped[int]      = mapped_column(primary_key=True, index=True)
-    user_id:     Mapped[int]      = mapped_column(index=True)
-    contact_id:  Mapped[int]      = mapped_column(index=True)
-    subject:     Mapped[str]      = mapped_column(Text)
-    body:        Mapped[str]      = mapped_column(Text)
-    is_followup: Mapped[bool]     = mapped_column(Boolean, default=False)
-    send_at:     Mapped[datetime] = mapped_column(DateTime, index=True)
-    status:      Mapped[str]      = mapped_column(String(20), default="pending")  # pending|sent|cancelled|failed
-    error:       Mapped[str|None] = mapped_column(Text, nullable=True)
-    created_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    sent_at:     Mapped[datetime|None] = mapped_column(DateTime, nullable=True)

@@ -74,7 +74,7 @@ export default function Setup() {
       setGmailCreds(localAddress.trim(), localPassword.trim())
       toast.success(res.message)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
+      toast.error(e.message)
     } finally {
       setTesting(false)
     }
@@ -88,7 +88,7 @@ export default function Setup() {
       setSignatureLinks(cfg.signature_links || '')
       toast.success('Signature saved')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
+      toast.error(e.message)
     } finally {
       setSavingName(false)
     }
@@ -101,7 +101,7 @@ export default function Setup() {
       await resumeApi.save(resume)
       toast.success('Resume saved')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
+      toast.error(e.message)
     } finally {
       setSavingResume(false)
     }
@@ -181,6 +181,10 @@ export default function Setup() {
             >
               Open App Passwords <ExternalLink size={10} />
             </a>
+            <p className="pt-1" style={{ color: 'var(--text-dim)' }}>
+              🔒 Kept only for this session — never saved to this browser or our servers,
+              so you'll re-enter it after a page refresh.
+            </p>
           </div>
 
           <div className="flex gap-2">

@@ -20,7 +20,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <App />
         <Toaster position="bottom-right" toastOptions={{
-          style: { background: '#0b0f1a', color: '#e2e8f0', border: '1px solid #1a2535' },
+          // Match the app's warm light theme instead of a stock dark toast.
+          style: {
+            background: 'var(--surface-1)',
+            color: 'var(--text)',
+            border: '1px solid var(--border-strong)',
+            boxShadow: 'var(--shadow-md)',
+          },
         }} />
       </QueryClientProvider>
     </GoogleOAuthProvider>

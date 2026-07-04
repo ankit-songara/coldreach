@@ -29,10 +29,4 @@ export const sendApi = {
       gmail_address:      gmailAddress,
       gmail_app_password: gmailAppPassword,
     }).then(r => r.data),
-
-  schedule: (contactIds: number[], sendAtISO: string) =>
-    api.post<{ scheduled: number; skipped: number }>('/send/schedule', {
-      contact_ids: contactIds,
-      send_at:     sendAtISO,
-    }).then(r => r.data),
 }
