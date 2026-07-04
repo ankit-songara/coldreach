@@ -87,6 +87,15 @@ class ContactRepository:
     def get_all(self) -> list[Contact]:
         return self._scoped().order_by(Contact.created_at.desc()).all()
 
+    def count_emailed_since(self, since: datetime) -> int:
+        """SQL-side count of contacts emailed after `since` — used for the daily
+        send cap. Replaces fetching every row and counting in Python."""
+        return (
+            self._scoped()
+            .filter(Contact.last_emailed_at.isnot(None), Contact.last_emailed_at >= since)
+            .count()
+        )
+
     def get_by_id(self, contact_id: int) -> Contact | None:
         return self._scoped().filter(Contact.id == contact_id).first()
 
@@ -165,6 +174,11 @@ class DraftRepository:
             .order_by(EmailDraft.created_at.desc())
             .all()
         )
+
+    def get_all(self) -> list[EmailDraft]:
+        """Every draft for this user, newest first — lets the frontend hydrate
+        all contacts' drafts in ONE request instead of one request per contact."""
+        return self._scoped().order_by(EmailDraft.created_at.desc()).all()
 
     def get_by_id(self, draft_id: int) -> EmailDraft | None:
         return self._scoped().filter(EmailDraft.id == draft_id).first()

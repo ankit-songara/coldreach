@@ -3,9 +3,11 @@ SQLAlchemy database engine and session management.
 Uses SQLite by default; swap to PostgreSQL via DATABASE_URL env var.
 """
 
+import os
 import logging
 from pathlib import Path
 from sqlalchemy import create_engine, inspect, text, event
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from app.config import settings
 
@@ -30,11 +32,17 @@ connect_args = (
     else {}
 )
 
-engine = create_engine(
-    settings.database_url,
-    connect_args=connect_args,
-    echo=settings.debug,
-)
+_engine_kwargs: dict = {"connect_args": connect_args, "echo": settings.debug}
+if not _is_sqlite:
+    # Recycle dead connections transparently (Supabase pooler drops idle ones).
+    _engine_kwargs["pool_pre_ping"] = True
+    if os.environ.get("VERCEL"):
+        # Serverless: each invocation may freeze/thaw with the process. Holding a
+        # client-side pool leaks connections against the pgbouncer pooler — open
+        # per-use and close immediately instead.
+        _engine_kwargs["poolclass"] = NullPool
+
+engine = create_engine(settings.database_url, **_engine_kwargs)
 
 
 # ── SQLite concurrency hardening ──────────────────────────────────────────────
@@ -75,6 +83,31 @@ def create_tables() -> None:
     _ensure_columns()
     _fix_contact_email_index()
     _ensure_google_sub_index()
+    _ensure_perf_indexes()
+
+
+# Composite indexes matching the hot query paths. create_all() only builds
+# indexes when it creates a table, so pre-existing tables need these added by
+# hand. IF NOT EXISTS makes this an idempotent no-op on every later startup.
+# Works on both SQLite and Postgres.
+_PERF_INDEXES = (
+    # GET /contacts — list scoped to user, ordered by created_at desc
+    "CREATE INDEX IF NOT EXISTS ix_contacts_user_created ON contacts (user_id, created_at)",
+    # status filters (compose/send tab splits, scheduler guards)
+    "CREATE INDEX IF NOT EXISTS ix_contacts_user_status ON contacts (user_id, status)",
+    # daily send-cap count: last_emailed_at >= now-24h per user
+    "CREATE INDEX IF NOT EXISTS ix_contacts_user_last_emailed ON contacts (user_id, last_emailed_at)",
+    # drafts hydration + per-contact draft lookups
+    "CREATE INDEX IF NOT EXISTS ix_drafts_user_contact ON email_drafts (user_id, contact_id)",
+    # scheduler due-item scan: status='pending' AND send_at <= now
+    "CREATE INDEX IF NOT EXISTS ix_sched_status_send_at ON scheduled_emails (status, send_at)",
+)
+
+
+def _ensure_perf_indexes() -> None:
+    with engine.begin() as conn:
+        for ddl in _PERF_INDEXES:
+            conn.execute(text(ddl))
 
 
 # ── Minimal SQLite migration ──────────────────────────────────────────────────

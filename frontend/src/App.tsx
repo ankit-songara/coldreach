@@ -125,10 +125,11 @@ export default function App() {
 
         <div className="flex-1" />
 
-        {/* Segmented pill nav */}
+        {/* Segmented pill nav — scrolls horizontally on narrow screens instead
+            of overflowing the fixed-height header */}
         <nav
-          className="inline-flex gap-0.5"
-          style={{ padding: 3, background: 'var(--surface-2)', borderRadius: 'var(--radius-full)', border: '1px solid var(--border)' }}
+          className="inline-flex gap-0.5 max-w-full overflow-x-auto"
+          style={{ padding: 3, background: 'var(--surface-2)', borderRadius: 'var(--radius-full)', border: '1px solid var(--border)', scrollbarWidth: 'none' }}
         >
           {TABS.map(tab => {
             const active = activeTab === tab.id

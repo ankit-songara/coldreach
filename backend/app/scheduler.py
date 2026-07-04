@@ -167,11 +167,7 @@ class FollowUpScheduler:
 
     @staticmethod
     def _sent_today(contacts: ContactRepository) -> int:
-        since = utcnow() - timedelta(hours=24)
-        return sum(
-            1 for c in contacts.get_all()
-            if c.last_emailed_at and c.last_emailed_at >= since
-        )
+        return contacts.count_emailed_since(utcnow() - timedelta(hours=24))
 
 
 scheduler = FollowUpScheduler()

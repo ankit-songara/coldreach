@@ -1,16 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { CheckCircle2, XCircle, Send as SendIcon, Settings, ExternalLink, RefreshCw, Clock } from 'lucide-react'
+import { CheckCircle2, XCircle, Send as SendIcon, Settings, ExternalLink, RefreshCw } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { composeApi } from '../../api/compose'
 import { sendApi } from '../../api/send'
 import { inboxApi } from '../../api/inbox'
-import AutomationPanel from './AutomationPanel'
 import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
-import type { ContactStatus } from '../../types'
+import type { ContactStatus, Draft } from '../../types'
 
 // A contact that has received a first-touch email — eligible for outcome capture.
 const CONTACTED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
@@ -39,18 +38,17 @@ export default function Send() {
   const [results, setResults] = useState<SendResult[] | null>(null)
   const [sending, setSending] = useState(false)
   const [checkingReplies, setCheckingReplies] = useState(false)
-  const [showSchedule, setShowSchedule] = useState(false)
-  const [scheduleAt, setScheduleAt] = useState('')
 
-  // Sync drafts from backend on mount so Send tab works even after refresh
+  // Sync drafts from backend on mount so Send tab works even after refresh —
+  // ONE request for all contacts (was one request per contact).
   useEffect(() => {
-    const contactsWithoutDrafts = contacts.filter(c => !(drafts[c.id]?.length))
-    if (contactsWithoutDrafts.length === 0) return
-    contactsWithoutDrafts.forEach(c => {
-      composeApi.getDrafts(c.id).then(d => {
-        if (d.length > 0) setDrafts(c.id, d)
-      }).catch(() => {})
-    })
+    if (contacts.length === 0) return
+    if (contacts.every(c => drafts[c.id]?.length)) return
+    composeApi.getAllDrafts().then(all => {
+      const grouped: Record<number, Draft[]> = {}
+      for (const d of all) (grouped[d.contact_id] ??= []).push(d)
+      Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
+    }).catch(() => {})
   }, [contacts.length])
 
   const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
@@ -130,24 +128,6 @@ export default function Send() {
     }
   }
 
-  const handleSchedule = async () => {
-    if (!scheduleAt) { toast.error('Pick a date & time'); return }
-    const iso = new Date(scheduleAt).toISOString()
-    if (new Date(scheduleAt).getTime() <= Date.now()) { toast.error('Pick a future time'); return }
-    try {
-      const res = await sendApi.schedule([], iso)
-      if (res.scheduled === 0) {
-        toast(`Nothing scheduled (${res.skipped} skipped)`, { icon: '📭' })
-      } else {
-        toast.success(`Scheduled ${res.scheduled} emails for ${new Date(scheduleAt).toLocaleString()}`)
-      }
-      setShowSchedule(false)
-      setScheduleAt('')
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? e.message)
-    }
-  }
-
   const noCredentials = !gmailAddress || !gmailAppPassword
 
   if (contacts.length === 0) return (
@@ -186,71 +166,30 @@ export default function Send() {
           </button>
 
           {unsent.length > 0 && (
-            <>
-              <button
-                onClick={() => setShowSchedule(s => !s)}
-                disabled={sending}
-                title="Schedule these emails for a future time"
-                className="btn flex items-center gap-2 text-sm font-medium"
-                style={{
-                  background: 'rgba(196,125,30,0.10)',
-                  borderColor: 'rgba(196,125,30,0.30)',
-                  color: '#c47d1e',
-                  padding: '8px 14px',
-                }}
-              >
-                <Clock size={14} /> Schedule
-              </button>
-              <button
-                onClick={() => {
-                  noCredentials ? toast.error('Add Gmail credentials in Setup first') : setShowConfirm(true)
-                }}
-                disabled={sending}
-                className="btn flex items-center gap-2 text-sm font-semibold"
-                style={{
-                  background: noCredentials ? 'rgba(138,127,112,0.10)' : 'rgba(226,96,63,0.12)',
-                  borderColor: noCredentials ? 'var(--border)' : 'rgba(226,96,63,0.35)',
-                  color: noCredentials ? 'var(--text-dim)' : 'var(--accent)',
-                  padding: '8px 16px',
-                }}
-              >
-                <SendIcon size={14} />
-                {sending ? 'Sending…' : `Send All (${unsent.length})`}
-              </button>
-            </>
+            <button
+              onClick={() => {
+                noCredentials ? toast.error('Add Gmail credentials in Setup first') : setShowConfirm(true)
+              }}
+              disabled={sending}
+              className="btn flex items-center gap-2 text-sm font-semibold"
+              style={{
+                background: noCredentials ? 'rgba(138,127,112,0.10)' : 'rgba(226,96,63,0.12)',
+                borderColor: noCredentials ? 'var(--border)' : 'rgba(226,96,63,0.35)',
+                color: noCredentials ? 'var(--text-dim)' : 'var(--accent)',
+                padding: '8px 16px',
+              }}
+            >
+              <SendIcon size={14} />
+              {sending ? 'Sending…' : `Send All (${unsent.length})`}
+            </button>
           )}
         </div>
       </div>
 
-      {/* ── Schedule send popover ───────────────────────────────────────────── */}
-      {showSchedule && (
-        <div className="card flex items-end gap-3 flex-wrap" style={{ border: '1px solid rgba(196,125,30,0.25)' }}>
-          <div className="flex-1 min-w-[220px]">
-            <div className="text-xs font-bold font-mono mb-1.5" style={{ color: '#c47d1e' }}>
-              SCHEDULE {unsent.length} EMAILS
-            </div>
-            <input
-              type="datetime-local"
-              value={scheduleAt}
-              onChange={e => setScheduleAt(e.target.value)}
-              className="input text-sm w-full"
-            />
-            <p className="text-xs mt-1.5" style={{ color: 'var(--text-dim)' }}>
-              Requires automation enabled below (stores Gmail creds so the scheduler can send).
-            </p>
-          </div>
-          <button onClick={handleSchedule} className="btn text-sm font-semibold"
-            style={{ background: 'rgba(196,125,30,0.12)', borderColor: 'rgba(196,125,30,0.35)', color: '#c47d1e' }}>
-            Schedule
-          </button>
-          <button onClick={() => setShowSchedule(false)} className="btn btn-ghost text-sm" style={{ color: 'var(--text-muted)' }}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* ── Follow-up automation ────────────────────────────────────────────── */}
-      <AutomationPanel />
+      {/* NOTE: scheduled sends + follow-up automation UI removed for the
+          serverless deployment (no background worker to deliver them). The
+          backend endpoints and AutomationPanel component are kept — restore
+          this section when the API moves to a persistent host. */}
 
       {/* ── No credentials banner ───────────────────────────────────────────── */}
       {noCredentials && withDraft.length > 0 && (

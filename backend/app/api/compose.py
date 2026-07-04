@@ -112,6 +112,14 @@ def edit_draft(draft_id: int, req: DraftEdit, db: Session = Depends(get_db), use
     return updated
 
 
+@router.get("/drafts/all", response_model=list[DraftOut])
+def get_all_drafts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """All drafts for the current user in one query. The frontend groups them by
+    contact_id client-side — replaces the old one-request-per-contact hydration
+    (N contacts = N serverless invocations + N DB sessions)."""
+    return DraftRepository(db, user.id).get_all()
+
+
 @router.get("/{contact_id}", response_model=list[DraftOut])
 def get_drafts(contact_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """List all email drafts for a contact."""

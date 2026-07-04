@@ -86,7 +86,7 @@ function OnboardingFlow({ resume, gmailAddress, contacts, onTab, onSeedDemo, see
     {
       n: 5, done: false,
       title: 'Send & track',
-      body: 'Send via Gmail SMTP, check replies automatically, and schedule follow-ups so no lead goes cold.',
+      body: 'Send via Gmail SMTP, check replies in one click, and track every outcome from first touch to offer.',
       cta: 'Send', tab: 'send' as const, color: '#3f8f43', bg: 'rgba(63,143,67,.10)',
     },
   ]

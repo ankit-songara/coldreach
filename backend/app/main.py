@@ -7,6 +7,7 @@ Startup sequence:
   3. Register routers
 """
 
+import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -51,8 +52,13 @@ async def lifespan(_: FastAPI):
     except RuntimeError as e:
         log.warning(str(e))      # non-fatal — compose routes will error if called
 
-    scheduler.start()           # background follow-up delivery
-    log.info("✓ Follow-up scheduler running")
+    if os.environ.get("VERCEL"):
+        # Serverless: no persistent process, so a polling loop can never run.
+        # Don't start it — avoids a dangling task per cold start.
+        log.info("Serverless environment — background scheduler disabled")
+    else:
+        scheduler.start()       # background follow-up delivery (local / VM hosts)
+        log.info("✓ Follow-up scheduler running")
 
     yield
     # ── Shutdown ──────────────────────────────────────────────────────────────

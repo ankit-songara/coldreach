@@ -99,10 +99,7 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     cfg = ConfigRepository(db, user.id)
     daily_cap = int(cfg.get("daily_send_cap", "50") or 50)
     since_24h = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
-    sent_last_24h = sum(
-        1 for c in contact_repo.get_all()
-        if c.last_emailed_at and c.last_emailed_at >= since_24h
-    )
+    sent_last_24h = contact_repo.count_emailed_since(since_24h)
     budget = max(0, daily_cap - sent_last_24h)
     deferred = 0
     if len(queue) > budget:

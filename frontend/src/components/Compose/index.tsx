@@ -5,7 +5,7 @@ import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, 
 import { useStore } from '../../store'
 import { composeApi } from '../../api/compose'
 import { STATUS_META } from '../../types'
-import type { Contact } from '../../types'
+import type { Contact, Draft } from '../../types'
 import { ResumeReadyCtx } from '../../App'
 
 const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
@@ -31,15 +31,16 @@ export default function Compose() {
   const [showSent, setShowSent] = useState(false)
   const [bulkGenerating, setBulkGenerating] = useState(false)
 
-  // Restore drafts from backend on mount
+  // Restore drafts from backend on mount — ONE request for all contacts.
+  // (Previously one request per contact: N contacts = N API calls + N DB hits.)
   useEffect(() => {
-    contacts
-      .filter(c => !(drafts[c.id]?.length))
-      .forEach(c => {
-        composeApi.getDrafts(c.id).then(d => {
-          if (d.length > 0) setDrafts(c.id, d)
-        }).catch(() => {})
-      })
+    if (contacts.length === 0) return
+    if (contacts.every(c => drafts[c.id]?.length)) return
+    composeApi.getAllDrafts().then(all => {
+      const grouped: Record<number, Draft[]> = {}
+      for (const d of all) (grouped[d.contact_id] ??= []).push(d)
+      Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
+    }).catch(() => {})
   }, [contacts.length])
 
   const composeMutation = useMutation({
