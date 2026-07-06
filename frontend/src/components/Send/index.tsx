@@ -7,6 +7,7 @@ import { contactsApi } from '../../api/contacts'
 import { composeApi } from '../../api/compose'
 import { sendApi } from '../../api/send'
 import { inboxApi } from '../../api/inbox'
+import { automationApi } from '../../api/automation'
 import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
@@ -35,6 +36,14 @@ export default function Send() {
   const [sendingId, setSendingId] = useState<number | null>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [checkingReplies, setCheckingReplies] = useState(false)
+  const [serverGmail, setServerGmail] = useState({ has: false, address: '' })
+
+  // Creds saved server-side (encrypted) mean sending works with no local input.
+  useEffect(() => {
+    automationApi.getConfig()
+      .then(cfg => setServerGmail({ has: cfg.has_gmail, address: cfg.gmail_address }))
+      .catch(() => {})
+  }, [])
 
   // Sync drafts from backend on mount so Send tab works even after refresh —
   // ONE request for all contacts.
@@ -192,7 +201,8 @@ export default function Send() {
     }
   }
 
-  const noCredentials = !gmailAddress || !gmailAppPassword
+  const noCredentials = !serverGmail.has && (!gmailAddress || !gmailAppPassword)
+  const sendingFrom = gmailAddress || serverGmail.address || 'your connected Gmail'
 
   if (contacts.length === 0) return (
     <div className="text-center py-20">
@@ -262,8 +272,8 @@ export default function Send() {
           <div>
             <p className="text-sm font-medium" style={{ color: '#c47d1e' }}>Gmail not connected</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Add your Gmail address and App Password in Setup to send. For your security we
-              never store the App Password in this browser, so you'll re-enter it after a refresh.
+              Connect your Gmail in Setup once — credentials are verified, stored
+              encrypted, and sending works from then on without re-entering them.
             </p>
           </div>
           <button
@@ -285,7 +295,7 @@ export default function Send() {
           onCancel={() => setShowConfirm(false)}
         >
           <p>
-            Sending from <strong style={{ color: 'var(--text)' }}>{gmailAddress}</strong> via Gmail.
+            Sending from <strong style={{ color: 'var(--text)' }}>{sendingFrom}</strong> via Gmail.
             Each contact will be marked as <em>Emailed</em>.
           </p>
           <div className="space-y-1 max-h-40 overflow-y-auto">

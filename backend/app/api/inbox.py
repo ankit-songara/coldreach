@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.database import get_db
-from app.db.crud import ContactRepository
+from app.db.crud import ContactRepository, ConfigRepository
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
@@ -36,8 +36,9 @@ AWAITING_STATUSES = {"emailed", "followed_up"}
 
 
 class InboxSyncRequest(BaseModel):
-    gmail_address:      str
-    gmail_app_password: str
+    # Optional: when empty, the server-stored (encrypted) creds are used.
+    gmail_address:      str = ""
+    gmail_app_password: str = ""
 
 
 class ReplyHit(BaseModel):
@@ -137,9 +138,16 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
     since_date = max(since_date, utcnow() - timedelta(days=90))
     since_str  = since_date.strftime("%d-%b-%Y")
 
+    address, password = req.gmail_address.strip(), req.gmail_app_password
+    if not (address and password):
+        address, password = ConfigRepository(db, user.id).get_gmail_creds()
+    if not (address and password):
+        raise HTTPException(400,
+            "Gmail isn't connected. Add your Gmail address and App Password in Setup first.")
+
     try:
         imap = imaplib.IMAP4_SSL(IMAP_HOST)
-        imap.login(req.gmail_address, req.gmail_app_password)
+        imap.login(address, password)
     except imaplib.IMAP4.error:
         raise HTTPException(401,
             "Gmail IMAP login failed. Use your App Password (not your normal "

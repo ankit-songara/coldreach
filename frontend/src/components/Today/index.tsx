@@ -13,6 +13,7 @@ import { demoApi, DEMO_SENTINEL } from '../../api/demo'
 import { contactsApi } from '../../api/contacts'
 import { composeApi } from '../../api/compose'
 import { resumeApi } from '../../api/resume'
+import { automationApi } from '../../api/automation'
 import type { Draft } from '../../types'
 
 function greeting() {
@@ -60,9 +61,9 @@ function LLMBanner({ label }: { label: string }) {
 }
 
 // ── Onboarding flow (shown to brand-new users) ───────────────────────────────
-function OnboardingFlow({ resume, gmailAddress, contacts, onTab, onSeedDemo, seeding }: {
+function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, seeding }: {
   resume: string
-  gmailAddress: string
+  gmailConnected: boolean
   contacts: number
   onTab: (t: 'setup' | 'hunt' | 'compose' | 'send') => void
   onSeedDemo: () => void
@@ -76,7 +77,7 @@ function OnboardingFlow({ resume, gmailAddress, contacts, onTab, onSeedDemo, see
       cta: 'Go to Setup', tab: 'setup' as const, color: '#e2603f', bg: 'var(--accent-tint)',
     },
     {
-      n: 2, done: !!gmailAddress,
+      n: 2, done: gmailConnected,
       title: 'Connect Gmail (optional)',
       body: 'Lets ColdReach send for you and track replies automatically. Skip it — you can always send each email from your own Gmail with one click.',
       cta: 'Connect Gmail', tab: 'setup' as const, color: '#c47d1e', bg: 'rgba(196,125,30,.10)',
@@ -312,6 +313,12 @@ export default function Today() {
   const [llmLabel, setLlmLabel] = useState('')
   const [seeding, setSeeding] = useState(false)
   const [contactsLoaded, setContactsLoaded] = useState(false)
+  const [gmailLinked, setGmailLinked] = useState(false)
+
+  // Server-stored Gmail connection (survives refresh, unlike session creds)
+  useEffect(() => {
+    automationApi.getConfig().then(cfg => setGmailLinked(cfg.has_gmail)).catch(() => {})
+  }, [])
 
   // Check LLM health once on mount
   useEffect(() => {
@@ -523,7 +530,7 @@ export default function Today() {
       {isNewUser ? (
         <OnboardingFlow
           resume={resume}
-          gmailAddress={gmailAddress}
+          gmailConnected={gmailLinked || !!gmailAddress}
           contacts={total}
           onTab={(t) => setActiveTab(t)}
           onSeedDemo={loadDemo}

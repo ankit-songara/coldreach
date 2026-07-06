@@ -214,10 +214,9 @@ class DraftRepository:
 
 
 # ── AppConfig Repository ──────────────────────────────────────────────────────
-# Per-user keys: sender_name, signature_links, daily_send_cap
+# Per-user keys: sender_name, signature_links, daily_send_cap,
+#                gmail_address, gmail_app_password (encrypted at rest)
 class ConfigRepository:
-    # Legacy: older versions stored the Gmail App Password here (encrypted).
-    # Kept so any pre-existing rows still decrypt instead of returning ciphertext.
     SECRET_KEYS = {"gmail_app_password"}
 
     def __init__(self, db: Session, user_id: int):
@@ -238,6 +237,11 @@ class ConfigRepository:
         if key in self.SECRET_KEYS and row.value:
             return security.decrypt(row.value)
         return row.value
+
+    def get_gmail_creds(self) -> tuple[str, str]:
+        """(address, app_password) — empty strings if not connected.
+        Password decrypts via SECRET_KEY; stored value never leaves the server."""
+        return self.get("gmail_address"), self.get("gmail_app_password")
 
     def set(self, key: str, value: str) -> None:
         stored = security.encrypt(value) if key in self.SECRET_KEYS and value else value

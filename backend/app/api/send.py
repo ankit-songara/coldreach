@@ -42,8 +42,9 @@ _SERVERLESS = bool(os.environ.get("VERCEL"))
 
 class BulkSendRequest(BaseModel):
     contact_ids:        list[int] = []   # empty = all contacts that have drafts
-    gmail_address:      str
-    gmail_app_password: str
+    # Optional: when empty, the server-stored (encrypted) creds are used.
+    gmail_address:      str = ""
+    gmail_app_password: str = ""
 
 
 class SendResult(BaseModel):
@@ -119,6 +120,12 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     # Normalize once: Gmail App Passwords are often pasted with the display spaces.
     gmail_address = req.gmail_address.strip()
     gmail_app_password = normalize_app_password(req.gmail_app_password)
+    # Fall back to the server-stored (encrypted) creds saved in Setup.
+    if not (gmail_address and gmail_app_password):
+        gmail_address, gmail_app_password = cfg.get_gmail_creds()
+    if not (gmail_address and gmail_app_password):
+        raise HTTPException(400,
+            "Gmail isn't connected. Add your Gmail address and App Password in Setup first.")
 
     # Verify credentials once before sending anything
     try:
