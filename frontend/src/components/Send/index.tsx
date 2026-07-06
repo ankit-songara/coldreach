@@ -213,7 +213,9 @@ export default function Send() {
   return (
     <div className="space-y-5">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4">
+      {/* flex-wrap: on narrow phones the action buttons drop below the title
+          instead of pushing the page into horizontal scroll */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Send</h1>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -221,7 +223,7 @@ export default function Send() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleCheckReplies}
             disabled={checkingReplies || noCredentials}

@@ -111,7 +111,7 @@ export default function Compose() {
   return (
     <div className="space-y-5">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Compose</h1>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>

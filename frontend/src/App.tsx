@@ -3,6 +3,7 @@ import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2 } 
 import type { LucideIcon } from 'lucide-react'
 import { useStore } from './store'
 import { resumeApi } from './api/resume'
+import { authApi } from './api/auth'
 import Auth    from './components/Auth'
 import Setup   from './components/Setup'
 import Hunt    from './components/Hunt'
@@ -86,8 +87,15 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, contacts, token, userEmail, logout, resume, setResume } = useStore()
+  const { activeTab, setActiveTab, contacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
   const [resumeReady, setResumeReady] = useState(false)
+
+  // Self-heal: a valid token with no cached email (cleared storage, imported
+  // session) would greet the user as "there" — recover it from the API.
+  useEffect(() => {
+    if (!token || userEmail) return
+    authApi.me().then(u => setAuth(token, u.email)).catch(() => {})
+  }, [token, userEmail]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // React to a global 401 (token expired) fired by the axios interceptor
   useEffect(() => {
