@@ -18,7 +18,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <GoogleOAuthProvider clientId={googleClientId}>
       <QueryClientProvider client={queryClient}>
         <App />
-        <Toaster position="bottom-right" toastOptions={{
+        <Toaster
+          position="bottom-right"
+          // On phones the fixed bottom tab bar would cover toasts — the CSS
+          // var lifts them above it (see index.css media query).
+          containerStyle={{ bottom: 'var(--toast-bottom, 16px)' }}
+          toastOptions={{
           // Match the app's warm light theme instead of a stock dark toast.
           style: {
             background: 'var(--surface-1)',

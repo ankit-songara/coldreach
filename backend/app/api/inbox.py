@@ -149,7 +149,8 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
         imap = imaplib.IMAP4_SSL(IMAP_HOST)
         imap.login(address, password)
     except imaplib.IMAP4.error:
-        raise HTTPException(401,
+        # 400, not 401 — 401 would force-log-out the ColdReach session.
+        raise HTTPException(400,
             "Gmail IMAP login failed. Use your App Password (not your normal "
             "password), and make sure IMAP is enabled in Gmail settings.")
     except Exception as e:

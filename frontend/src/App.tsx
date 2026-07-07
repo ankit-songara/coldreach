@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useStore } from './store'
 import { resumeApi } from './api/resume'
 import { authApi } from './api/auth'
+import { contactsApi } from './api/contacts'
 import Auth    from './components/Auth'
 import Setup   from './components/Setup'
 import Hunt    from './components/Hunt'
@@ -87,8 +88,16 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, contacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
+  const { activeTab, setActiveTab, contacts, setContacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
   const [resumeReady, setResumeReady] = useState(false)
+
+  // Hydrate contacts once at the top level. Without this, refreshing straight
+  // into Compose/Send showed "No contacts yet" — those tabs read the store and
+  // only Today/Hunt happened to fill it.
+  useEffect(() => {
+    if (!token) return
+    contactsApi.list().then(setContacts).catch(() => {})
+  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Self-heal: a valid token with no cached email (cleared storage, imported
   // session) would greet the user as "there" — recover it from the API.

@@ -127,14 +127,16 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         raise HTTPException(400,
             "Gmail isn't connected. Add your Gmail address and App Password in Setup first.")
 
-    # Verify credentials once before sending anything
+    # Verify credentials once before sending anything.
+    # 400 (not 401) on failure: 401 means "session expired" to the frontend and
+    # would log the user out over a bad Gmail password.
     try:
         test_smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
         test_smtp.starttls()
         test_smtp.login(gmail_address, gmail_app_password)
         test_smtp.quit()
     except smtplib.SMTPAuthenticationError:
-        raise HTTPException(401,
+        raise HTTPException(400,
             "Gmail authentication failed. Check your address and App Password. "
             "Make sure 2-Step Verification is on and you're using an App Password "
             "(not your regular Gmail password)."
@@ -233,13 +235,14 @@ def test_connection(req: BulkSendRequest, user: User = Depends(get_current_user)
         detail = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
         detail = " ".join(detail.split())
         log.warning(f"Gmail auth rejected [{code}]: {detail}")
+        # 400, not 401 — see bulk_send: 401 would end the user's session.
         if "5.7.14" in detail or "5.7.9" in detail or "web browser" in detail.lower():
-            raise HTTPException(401,
+            raise HTTPException(400,
                 f"Gmail blocked this login from the server's IP [{code}]. Your App "
                 f"Password is likely fine — Gmail distrusts logins from cloud/datacenter "
                 f"IPs. Gmail said: {detail}"
             )
-        raise HTTPException(401,
+        raise HTTPException(400,
             f"Gmail rejected the credentials [{code}]. Make sure 2-Step Verification "
             f"is ON and you pasted a 16-char App Password (not your normal password). "
             f"Gmail said: {detail}"

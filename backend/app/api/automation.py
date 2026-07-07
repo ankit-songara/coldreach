@@ -70,7 +70,9 @@ def save_gmail(req: GmailConfigRequest, db: Session = Depends(get_db), user: Use
     try:
         mailer.verify_credentials(address, app_password)
     except smtplib.SMTPAuthenticationError:
-        raise HTTPException(401,
+        # 400, NOT 401: the frontend treats 401 as "session expired" and force
+        # logs the user out — a typo'd App Password must not end their session.
+        raise HTTPException(400,
             "Gmail rejected the credentials. Make sure 2-Step Verification is ON "
             "and you pasted a 16-character App Password (not your normal password).")
     except Exception as e:

@@ -74,7 +74,8 @@ export default function Auth() {
                   onError={() => toast.error('Google sign-in failed')}
                   text="continue_with"
                   shape="rectangular"
-                  width="304"
+                  // Fixed 304px overflowed 320px phones (288px available)
+                  width={String(Math.min(304, window.innerWidth - 64))}
                 />
               </div>
               <div className="flex items-center gap-3">
