@@ -8,12 +8,17 @@ import { STATUS_META, type Contact, type ContactStatus } from '../../types'
 interface Props { contact: Contact }
 
 export default function ContactCard({ contact: c }: Props) {
-  const { upsertContact, removeContact } = useStore()
+  const { upsertContact, removeContact, removeHuntResult, updateHuntResult } = useStore()
   const qc = useQueryClient()
 
+  // Cards can render from the hunt-results list (fresh hunt) OR the saved
+  // contacts list — both must be updated or the change looks like it failed.
   const statusMutation = useMutation({
     mutationFn: (status: ContactStatus) => contactsApi.setStatus(c.id, status),
-    onSuccess: (updated) => upsertContact(updated),
+    onSuccess: (updated) => {
+      upsertContact(updated)
+      updateHuntResult(updated)
+    },
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -21,7 +26,9 @@ export default function ContactCard({ contact: c }: Props) {
     mutationFn: () => contactsApi.delete(c.id),
     onSuccess: () => {
       removeContact(c.id)
+      removeHuntResult(c.id)
       qc.invalidateQueries({ queryKey: ['contacts'] })
+      toast('Contact removed', { icon: '🗑️' })
     },
     onError: (e: Error) => toast.error(e.message),
   })

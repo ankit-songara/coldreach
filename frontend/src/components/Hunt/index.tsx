@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Search, Trash2, Download, ShieldCheck } from 'lucide-react'
 import { useStore } from '../../store'
-import { huntApi } from '../../api/hunt'
 import { contactsApi } from '../../api/contacts'
 import { verifyApi } from '../../api/verify'
 import ContactCard from './ContactCard'
@@ -12,16 +11,6 @@ import type { ContactStatus } from '../../types'
 
 const STATUS_FILTERS: Array<ContactStatus | 'all'> = [
   'all', 'new', 'emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced',
-]
-
-// Staged status shown while a hunt runs — hunts take 30–60s and a silent
-// button label is not enough feedback. Timings roughly mirror the real phases
-// without naming the places we look.
-const HUNT_STAGES = [
-  { after: 0,      label: 'Searching for companies hiring right now…' },
-  { after: 12_000, label: 'Matching people to your query…' },
-  { after: 25_000, label: 'Finding and checking email addresses…' },
-  { after: 40_000, label: 'Almost there — putting your results together…' },
 ]
 
 // ── Dynamic query suggestions ────────────────────────────────────────────────
@@ -92,30 +81,16 @@ export default function Hunt() {
   const [verifying, setVerifying] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
-  const [huntResults, setHuntResults] = useState<any[] | null>(null)
-  const [huntInfo, setHuntInfo] = useState<{ found: number; duplicates: number; query: string } | null>(null)
-  const [stageLabel, setStageLabel] = useState('')
-  const stageTimers = useRef<number[]>([])
-  const { setContacts, contacts, clearContacts, upsertContact, resume } = useStore()
+  // Hunt state lives in the store: switching tabs mid-hunt no longer kills it —
+  // the request finishes in the background and this tab restores progress/results.
+  const {
+    setContacts, contacts, clearContacts, upsertContact, resume,
+    hunting, huntStage, huntResults, huntInfo, runHunt, clearHunt,
+  } = useStore()
   const qc = useQueryClient()
 
   // Suggestions personalised from the résumé, stable for this visit.
   const chips = useMemo(() => buildChips(resume), [resume])
-
-  // Clean up any pending stage timers on unmount
-  useEffect(() => () => { stageTimers.current.forEach(clearTimeout) }, [])
-
-  const startStages = () => {
-    stageTimers.current.forEach(clearTimeout)
-    stageTimers.current = HUNT_STAGES.map(s =>
-      window.setTimeout(() => setStageLabel(s.label), s.after)
-    )
-  }
-  const stopStages = () => {
-    stageTimers.current.forEach(clearTimeout)
-    stageTimers.current = []
-    setStageLabel('')
-  }
 
   const handleVerify = async () => {
     setVerifying(true)
@@ -143,8 +118,7 @@ export default function Hunt() {
     try {
       await contactsApi.deleteAll()
       clearContacts()
-      setHuntResults(null)
-      setHuntInfo(null)
+      clearHunt()
       qc.invalidateQueries({ queryKey: ['contacts'] })
       setShowClearConfirm(false)
       toast.success('All contacts removed')
@@ -165,32 +139,9 @@ export default function Hunt() {
   }, [remoteContacts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const doHunt = (q: string) => {
-    if (!q.trim() || huntMutation.isPending) return
-    setHuntResults(null)   // clear previous results while hunting
-    setHuntInfo(null)
-    startStages()
-    huntMutation.mutate({ query: q })
+    if (!q.trim() || hunting) return
+    void runHunt(q)   // store-level: keeps running if the user leaves this tab
   }
-
-  const huntMutation = useMutation({
-    mutationFn: huntApi.hunt,
-    onSettled: () => stopStages(),
-    onSuccess: (data, variables) => {
-      setHuntResults(data.contacts)
-      setHuntInfo({ found: data.found ?? 0, duplicates: data.duplicates ?? 0, query: variables.query })
-      qc.invalidateQueries({ queryKey: ['contacts'] })
-      if (data.total > 0) {
-        toast.success(`Found ${data.total} new contact${data.total !== 1 ? 's' : ''}`)
-      } else if ((data.duplicates ?? 0) > 0) {
-        toast('Already in your list', { icon: '✅' })
-      } else if ((data.found ?? 0) > 0) {
-        toast('Found roles, but no direct email — see note below', { icon: '📭' })
-      } else {
-        toast(`No matches for "${variables.query}"`, { icon: '🔍' })
-      }
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
 
   const exportCSV = () => {
     const header = 'Name,Email,Designation,Company,Status'
@@ -219,8 +170,6 @@ export default function Hunt() {
   const filtered = statusFilter === 'all'
     ? displayList
     : displayList.filter((c: any) => c.status === statusFilter)
-
-  const hunting = huntMutation.isPending
 
   return (
     <div className="space-y-5">
@@ -277,7 +226,7 @@ export default function Hunt() {
               className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
               style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--accent)' }}
             />
-            {stageLabel || HUNT_STAGES[0].label}
+            {huntStage || 'Searching…'} <span style={{ color: 'var(--text-dim)' }}>— feel free to browse other tabs, this keeps running</span>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
             <SkeletonCard /><SkeletonCard /><SkeletonCard />
@@ -351,10 +300,21 @@ export default function Hunt() {
 
       {/* ── Result context label ─────────────────────────────────────── */}
       {!hunting && huntResults !== null && huntInfo && (
-        <p className="text-xs" style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          {huntResults.length > 0
-            ? `Showing ${huntResults.length} new contact${huntResults.length !== 1 ? 's' : ''} found for "${huntInfo.query}"`
-            : emptyHuntMessage(huntInfo.query, huntInfo.found, huntInfo.duplicates)}
+        <p className="text-xs flex items-baseline gap-2 flex-wrap" style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          <span>
+            {huntResults.length > 0
+              ? `Showing ${huntResults.length} new contact${huntResults.length !== 1 ? 's' : ''} found for "${huntInfo.query}"`
+              : emptyHuntMessage(huntInfo.query, huntInfo.found, huntInfo.duplicates)}
+          </span>
+          {contacts.length > 0 && (
+            <button
+              onClick={clearHunt}
+              className="font-semibold flex-shrink-0"
+              style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}
+            >
+              Show all {contacts.length} contacts →
+            </button>
+          )}
         </p>
       )}
 

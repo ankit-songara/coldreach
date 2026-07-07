@@ -1,8 +1,20 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import toast from 'react-hot-toast'
 import type { Contact, Draft } from '../types'
 import { getToken, setToken } from '../api/client'
 import { authApi } from '../api/auth'
+import { huntApi } from '../api/hunt'
+import { contactsApi } from '../api/contacts'
+import { queryClient } from '../lib/queryClient'
+
+// Staged status while a hunt runs — generic on purpose (no source names).
+const HUNT_STAGES = [
+  { after: 0,      label: 'Searching for companies hiring right now…' },
+  { after: 12_000, label: 'Matching people to your query…' },
+  { after: 25_000, label: 'Finding and checking email addresses…' },
+  { after: 40_000, label: 'Almost there — putting your results together…' },
+]
 
 type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send'
 
@@ -42,6 +54,17 @@ interface AppState {
   drafts:    Record<number, Draft[]>  // keyed by contact_id
   setDrafts: (contactId: number, drafts: Draft[]) => void
 
+  // ── Hunt (lives here so it survives tab switches — the request keeps
+  //    running and results/progress are there when the user comes back) ──────
+  hunting:     boolean
+  huntStage:   string
+  huntResults: Contact[] | null   // results of the LAST hunt (null = none yet)
+  huntInfo:    { found: number; duplicates: number; query: string } | null
+  runHunt:          (query: string) => Promise<void>
+  clearHunt:        () => void
+  removeHuntResult: (id: number) => void
+  updateHuntResult: (c: Contact) => void
+
   // ── UI ────────────────────────────────────────────────────────────────────
   activeTab:    TabId
   setActiveTab: (tab: AppState['activeTab']) => void
@@ -49,7 +72,7 @@ interface AppState {
 
 export const useStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       token:     getToken(),
       userEmail: '',
       setAuth: (token, email) => {
@@ -63,7 +86,8 @@ export const useStore = create<AppState>()(
         const token = getToken()
         if (token) void authApi.logout(token)
         setToken(null)
-        set({ token: null, userEmail: '', contacts: [], drafts: {} })
+        set({ token: null, userEmail: '', contacts: [], drafts: {},
+              hunting: false, huntStage: '', huntResults: null, huntInfo: null })
       },
 
       gmailAddress:     '',
@@ -89,6 +113,50 @@ export const useStore = create<AppState>()(
       drafts:    {},
       setDrafts: (contactId, drafts) =>
         set((s) => ({ drafts: { ...s.drafts, [contactId]: drafts } })),
+
+      // ── Hunt ──────────────────────────────────────────────────────────────
+      hunting:     false,
+      huntStage:   '',
+      huntResults: null,
+      huntInfo:    null,
+      runHunt: async (query) => {
+        if (get().hunting) return
+        set({ hunting: true, huntResults: null, huntInfo: null, huntStage: HUNT_STAGES[0].label })
+        const timers = HUNT_STAGES.slice(1).map(s =>
+          setTimeout(() => { if (get().hunting) set({ huntStage: s.label }) }, s.after)
+        )
+        try {
+          const data = await huntApi.hunt({ query })
+          set({
+            huntResults: (data.contacts ?? []) as Contact[],
+            huntInfo: { found: data.found ?? 0, duplicates: data.duplicates ?? 0, query },
+          })
+          try { set({ contacts: await contactsApi.list() }) } catch { /* refetch later */ }
+          queryClient.invalidateQueries({ queryKey: ['contacts'] })
+          // Toasts fire from here so completion is announced on ANY tab.
+          if (data.total > 0) {
+            toast.success(`Found ${data.total} new contact${data.total !== 1 ? 's' : ''} — see the Hunt tab`)
+          } else if ((data.duplicates ?? 0) > 0) {
+            toast('Every match is already in your list', { icon: '✅' })
+          } else if ((data.found ?? 0) > 0) {
+            toast('Found roles, but no direct email — details in the Hunt tab', { icon: '📭' })
+          } else {
+            toast(`No matches for "${query}"`, { icon: '🔍' })
+          }
+        } catch (e: any) {
+          toast.error(e.message)
+        } finally {
+          timers.forEach(clearTimeout)
+          set({ hunting: false, huntStage: '' })
+        }
+      },
+      clearHunt: () => set({ huntResults: null, huntInfo: null }),
+      removeHuntResult: (id) =>
+        set((s) => ({ huntResults: s.huntResults?.filter(c => c.id !== id) ?? null })),
+      updateHuntResult: (contact) =>
+        set((s) => ({
+          huntResults: s.huntResults?.map(c => c.id === contact.id ? { ...c, ...contact } : c) ?? null,
+        })),
 
       activeTab:    initialTab,
       setActiveTab: (activeTab) => set({ activeTab }),
