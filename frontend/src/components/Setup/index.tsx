@@ -80,6 +80,16 @@ export default function Setup() {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
     maxFiles: 1,
+    // Without this, dropping 2+ files (or a wrong file type) rejects
+    // everything and silently fires nothing — onDrop's accepted-files array
+    // is empty and the whole thing looks like the click did nothing at all.
+    onDropRejected: (rejections) => {
+      if (rejections.length > 1) {
+        toast.error('Drop just one file — pick a single PDF or DOCX résumé.')
+      } else {
+        toast.error(rejections[0]?.errors[0]?.message || 'That file type isn\'t supported. Use PDF or DOCX.')
+      }
+    },
   })
 
   // Verify against Gmail, then store server-side (App Password encrypted at
