@@ -154,7 +154,8 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
             "Gmail IMAP login failed. Use your App Password (not your normal "
             "password), and make sure IMAP is enabled in Gmail settings.")
     except Exception as e:
-        raise HTTPException(502, f"Could not connect to Gmail IMAP: {e}")
+        log.warning(f"Gmail IMAP connect failed: {e}")
+        raise HTTPException(502, "Couldn't connect to Gmail right now. Please try again in a moment.")
 
     awaiting_emails = set(awaiting.keys())
     sender_emails: set[str] = set()     # genuine replies

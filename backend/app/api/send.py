@@ -40,6 +40,21 @@ router = APIRouter(prefix="/send", tags=["send"])
 _SERVERLESS = bool(os.environ.get("VERCEL"))
 
 
+def _friendly_send_error(e: Exception) -> str:
+    """Map a per-message SMTP failure to text safe to show in the Send tab.
+
+    smtplib exceptions often stringify to a raw {email: (code, b'...')} dict
+    repr — technical noise, not something a user can act on.
+    """
+    if isinstance(e, smtplib.SMTPRecipientsRefused):
+        return "This address was rejected by Gmail — it may not exist."
+    if isinstance(e, smtplib.SMTPDataError):
+        return "Gmail rejected the message content. Try again or edit the draft."
+    if isinstance(e, smtplib.SMTPServerDisconnected):
+        return "Lost connection to Gmail mid-send. Try again."
+    return "Couldn't send this one. Try again in a moment."
+
+
 class BulkSendRequest(BaseModel):
     contact_ids:        list[int] = []   # empty = all contacts that have drafts
     # Optional: when empty, the server-stored (encrypted) creds are used.
@@ -142,7 +157,10 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
             "(not your regular Gmail password)."
         )
     except Exception as e:
-        raise HTTPException(502, f"Could not connect to Gmail SMTP: {e}")
+        # Raw socket/SSL/DNS exception text is internal noise, not something a
+        # user can act on — log it, show a plain retry message instead.
+        log.warning(f"Gmail SMTP connect failed: {e}")
+        raise HTTPException(502, "Couldn't connect to Gmail right now. Please try again in a moment.")
 
     def send_batch(batch) -> list[SendResult]:
         """Open ONE authenticated SMTP connection and reuse it for the batch.
@@ -161,7 +179,8 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
             log.error(f"SMTP session failed for batch: {e}")
             for contact, _ in batch:
                 out.append(SendResult(contact_id=contact.id, name=contact.name,
-                                      email=contact.email, status="failed", error=str(e)))
+                                      email=contact.email, status="failed",
+                                      error="Couldn't connect to Gmail for this batch. Try again."))
             return out
 
         try:
@@ -182,7 +201,8 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
                 except Exception as e:
                     log.error(f"Failed {contact.email}: {e}")
                     out.append(SendResult(contact_id=contact.id, name=contact.name,
-                                          email=contact.email, status="failed", error=str(e)))
+                                          email=contact.email, status="failed",
+                                          error=_friendly_send_error(e)))
         finally:
             try:
                 smtp.quit()
@@ -248,4 +268,5 @@ def test_connection(req: BulkSendRequest, user: User = Depends(get_current_user)
             f"Gmail said: {detail}"
         )
     except Exception as e:
-        raise HTTPException(502, f"Could not reach Gmail SMTP: {e}")
+        log.warning(f"Gmail SMTP test-connect failed: {e}")
+        raise HTTPException(502, "Couldn't reach Gmail right now. Please try again in a moment.")

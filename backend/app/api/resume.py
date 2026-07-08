@@ -59,8 +59,14 @@ async def extract_resume(
         text = _extract_pdf(raw) if ext == "pdf" else _extract_docx(raw)
         text = _clean(text)
     except Exception as exc:
+        # pymupdf/python-docx exceptions are library-internal detail (parser
+        # state, C-extension messages) — log it, tell the user something they
+        # can act on instead.
         log.warning(f"Extraction failed for {file.filename}: {exc}")
-        raise HTTPException(422, f"Could not extract text: {exc}")
+        raise HTTPException(422,
+            "Couldn't read that file. It may be corrupted, password-protected, "
+            "or a scanned image without selectable text — try re-saving it or "
+            "pasting the text directly.")
 
     if not text.strip():
         raise HTTPException(422, "No readable text found. Try saving as a different format.")
