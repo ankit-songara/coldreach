@@ -11,7 +11,7 @@ from app.db.crud import (
 )
 from app.db.models import User
 from app.deps import get_current_user
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.schemas.email import ComposeRequest, FollowUpRequest, DraftOut, DraftCreate
 from app.llm.generator import generator
 from app.llm.parsing import parse_subject_body
@@ -114,8 +114,10 @@ async def followup(req: FollowUpRequest, db: Session = Depends(get_db), user: Us
 
 
 class DraftEdit(BaseModel):
-    subject: str
-    body:    str
+    # Same caps as DraftCreate so hand-editing can't smuggle a 10MB body past
+    # the create-side validation.
+    subject: str = Field(..., max_length=500)
+    body:    str = Field(..., max_length=20_000)
 
 
 @router.put("/draft/{draft_id}", response_model=DraftOut)

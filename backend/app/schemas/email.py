@@ -1,24 +1,36 @@
 """Pydantic schemas for email composition endpoints."""
 
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+# Length caps deliberately conservative: real cold emails are <5000 chars,
+# subject lines are <200. Anything past these is either an accidental paste of
+# something huge or a malicious payload — rejecting cheaply at the boundary
+# beats storing a 10MB body in the DB or letting a 500k-character query burn
+# the whole serverless function timeout.
+_SUBJECT_MAX  = 500
+_BODY_MAX     = 20_000
+_CONTEXT_MAX  = 5_000
+_QUERY_MAX    = 500
+_RESUME_MAX   = 50_000
 
 
 class ComposeRequest(BaseModel):
     contact_id:      int
-    resume:          str = ""     # empty → fall back to the user's saved résumé
-    company_context: str = ""
+    resume:          str = Field("", max_length=_RESUME_MAX)     # empty → fall back to the user's saved résumé
+    company_context: str = Field("", max_length=_CONTEXT_MAX)
 
 
 class FollowUpRequest(BaseModel):
     contact_id:     int
-    original_email: str          # "SUBJECT: ...\n\nBODY: ..."
+    original_email: str = Field(..., max_length=_BODY_MAX + _SUBJECT_MAX)  # "SUBJECT: ...\n\nBODY: ..."
 
 
 class DraftCreate(BaseModel):
     contact_id:  int
-    subject:     str
-    body:        str
+    subject:     str = Field(..., max_length=_SUBJECT_MAX)
+    body:        str = Field(..., max_length=_BODY_MAX)
     is_followup: bool = False
 
 
@@ -34,8 +46,8 @@ class DraftOut(BaseModel):
 
 
 class HuntRequest(BaseModel):
-    query:          str
-    hunter_api_key: str = ""    # optional — overrides env var for this request
+    query:          str = Field(..., min_length=1, max_length=_QUERY_MAX)
+    hunter_api_key: str = Field("", max_length=200)   # override env var for one request
 
 
 class HuntResult(BaseModel):
