@@ -187,7 +187,10 @@ export default function App() {
                 onClick={() => setActiveTab(tab.id)}
                 className="inline-flex items-center gap-1.5 text-[13px] font-semibold transition-all"
                 style={{
-                  padding: '7px 16px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
+                  // Narrower horizontal padding than the original 16px: at
+                  // exactly 768px (the tablet breakpoint where this nav first
+                  // appears) five tabs at 16px overflowed the header by ~22px.
+                  padding: '7px 12px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
                   background: active ? 'var(--surface-1)' : 'transparent',
                   color: active ? 'var(--text)' : 'var(--text-muted)',
                   boxShadow: active ? 'var(--shadow-sm)' : 'none',
