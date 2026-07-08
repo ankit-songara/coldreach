@@ -86,8 +86,21 @@ export const useStore = create<AppState>()(
         const token = getToken()
         if (token) void authApi.logout(token)
         setToken(null)
-        set({ token: null, userEmail: '', contacts: [], drafts: {},
-              hunting: false, huntStage: '', huntResults: null, huntInfo: null })
+        // Reset EVERY per-user field, not just auth/contacts. `resume` is
+        // persisted (see partialize below) — leaving it out meant the next
+        // person to log in on this browser inherited the previous user's
+        // résumé, and App.tsx's hydration effect skips its own fetch whenever
+        // `resume` is already non-empty, so the wrong résumé stuck around
+        // silently until someone noticed and manually overwrote it.
+        set({
+          token: null, userEmail: '', contacts: [], drafts: {},
+          hunting: false, huntStage: '', huntResults: null, huntInfo: null,
+          resume: '', gmailAddress: '', gmailAppPassword: '',
+        })
+        // Drop cached query results too — ['contacts'] etc. have no user
+        // segment in their key, so within staleTime a fresh login could
+        // otherwise serve the previous account's cached response.
+        queryClient.clear()
       },
 
       gmailAddress:     '',
