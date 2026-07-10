@@ -4,7 +4,6 @@ import toast from 'react-hot-toast'
 import { CheckCircle2, XCircle, Send as SendIcon, Settings, ExternalLink, RefreshCw } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
-import { composeApi } from '../../api/compose'
 import { sendApi } from '../../api/send'
 import { inboxApi } from '../../api/inbox'
 import { automationApi } from '../../api/automation'
@@ -12,8 +11,9 @@ import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
 import ConfirmDialog from '../shared/ConfirmDialog'
-import type { ContactStatus, Draft } from '../../types'
+import type { ContactStatus } from '../../types'
 import { contactDisplayName, isGenericName } from '../../lib/display'
+import { useAllDrafts } from '../../hooks/useAllDrafts'
 
 // A contact that has received a first-touch email — eligible for outcome capture.
 const CONTACTED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
@@ -29,7 +29,7 @@ const SEND_CHUNK_SIZE = 5
 const MAX_GMAIL_URL = 1900
 
 export default function Send() {
-  const { contacts, drafts, upsertContact, setContacts, setDrafts, gmailAddress, gmailAppPassword, setActiveTab } = useStore()
+  const { contacts, drafts, upsertContact, setContacts, gmailAddress, gmailAppPassword, setActiveTab } = useStore()
   const qc = useQueryClient()
   const [showConfirm, setShowConfirm] = useState(false)
   const [results, setResults] = useState<SendResult[] | null>(null)
@@ -38,7 +38,9 @@ export default function Send() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [checkingReplies, setCheckingReplies] = useState(false)
   const [serverGmail, setServerGmail] = useState({ has: false, address: '' })
-  const [draftsLoaded, setDraftsLoaded] = useState(false)
+
+  // Drafts come from a shared query so Compose and Send don't each refetch them.
+  const { draftsLoaded } = useAllDrafts()
 
   // Creds saved server-side (encrypted) mean sending works with no local input.
   useEffect(() => {
@@ -46,18 +48,6 @@ export default function Send() {
       .then(cfg => setServerGmail({ has: cfg.has_gmail, address: cfg.gmail_address }))
       .catch(() => {})
   }, [])
-
-  // Sync drafts from backend on mount so Send tab works even after refresh —
-  // ONE request for all contacts.
-  useEffect(() => {
-    if (contacts.length === 0) { setDraftsLoaded(true); return }
-    if (contacts.every(c => drafts[c.id]?.length)) { setDraftsLoaded(true); return }
-    composeApi.getAllDrafts().then(all => {
-      const grouped: Record<number, Draft[]> = {}
-      for (const d of all) (grouped[d.contact_id] ??= []).push(d)
-      Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
-    }).catch(() => {}).finally(() => setDraftsLoaded(true))
-  }, [contacts.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
   // Mirror the backend guard: a contact already actioned (emailed in any later

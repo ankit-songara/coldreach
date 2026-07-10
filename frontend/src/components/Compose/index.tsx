@@ -1,14 +1,15 @@
-import { useEffect, useState, useContext } from 'react'
+import { useState, useContext } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { composeApi } from '../../api/compose'
 import { STATUS_META } from '../../types'
-import type { Contact, Draft } from '../../types'
+import type { Contact } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
 import { ResumeReadyCtx } from '../../App'
 import { contactDisplayName, isGenericName } from '../../lib/display'
+import { useAllDrafts } from '../../hooks/useAllDrafts'
 
 const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
 
@@ -17,18 +18,9 @@ export default function Compose() {
   const resumeReady = useContext(ResumeReadyCtx)
   const [showSent, setShowSent] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
-  const [draftsLoaded, setDraftsLoaded] = useState(false)
 
-  // Restore drafts from backend on mount — ONE request for all contacts.
-  useEffect(() => {
-    if (contacts.length === 0) { setDraftsLoaded(true); return }
-    if (contacts.every(c => drafts[c.id]?.length)) { setDraftsLoaded(true); return }
-    composeApi.getAllDrafts().then(all => {
-      const grouped: Record<number, Draft[]> = {}
-      for (const d of all) (grouped[d.contact_id] ??= []).push(d)
-      Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
-    }).catch(() => {}).finally(() => setDraftsLoaded(true))
-  }, [contacts.length])
+  // Drafts come from a shared query so Compose and Send don't each refetch them.
+  const { draftsLoaded } = useAllDrafts()
 
   const composeMutation = useMutation({
     mutationFn: composeApi.generate,
