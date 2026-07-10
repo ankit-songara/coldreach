@@ -1,13 +1,19 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { X } from 'lucide-react'
+import { X, Check } from 'lucide-react'
 import { contactsApi } from '../../api/contacts'
 import { useStore } from '../../store'
 import { STATUS_META, type Contact, type ContactStatus } from '../../types'
+import { contactDisplayName, isGenericName } from '../../lib/display'
 
-interface Props { contact: Contact }
+interface Props {
+  contact: Contact
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
+}
 
-export default function ContactCard({ contact: c }: Props) {
+export default function ContactCard({ contact: c, selectable, selected, onToggleSelect }: Props) {
   const { upsertContact, removeContact, removeHuntResult, updateHuntResult } = useStore()
   const qc = useQueryClient()
 
@@ -44,16 +50,25 @@ export default function ContactCard({ contact: c }: Props) {
     return { color: '#8a7f70', label: '' }
   }
 
-  const initials = c.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const displayName = contactDisplayName(c)
+  const generic = isGenericName(c.name)
+  const initials = displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const tier = getDesigTier(c.designation)
   const desigColor = tier.color
 
   return (
-    <div className="card relative group" style={{ transition: 'border-color .15s' }}>
+    <div
+      className="card relative group"
+      style={{
+        transition: 'border-color .15s',
+        ...(selected ? { borderColor: 'var(--accent)', boxShadow: 'var(--glow-accent)' } : {}),
+      }}
+      onClick={selectable ? onToggleSelect : undefined}
+    >
       {/* ── Top-right controls ── */}
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
-          onClick={() => deleteMutation.mutate()}
+          onClick={e => { e.stopPropagation(); deleteMutation.mutate() }}
           title="Remove"
           className="w-5 h-5 flex items-center justify-center rounded"
           style={{ background: 'rgba(210,72,58,.08)', color: '#8a7f70' }}
@@ -62,8 +77,23 @@ export default function ContactCard({ contact: c }: Props) {
         </button>
       </div>
 
+      {/* ── Checkbox (bulk select mode) ── */}
+      {selectable && (
+        <div className="absolute top-2 left-2">
+          <div
+            className="w-5 h-5 rounded flex items-center justify-center transition-colors"
+            style={{
+              border: `2px solid ${selected ? 'var(--accent)' : 'var(--border-strong)'}`,
+              background: selected ? 'var(--accent)' : 'transparent',
+            }}
+          >
+            {selected && <Check size={12} color="#fff" strokeWidth={3} />}
+          </div>
+        </div>
+      )}
+
       {/* ── Avatar + name ── */}
-      <div className="flex items-center gap-3 mb-3 pr-6">
+      <div className="flex items-center gap-3 mb-3 pr-6" style={selectable ? { paddingLeft: 24 } : undefined}>
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
           style={{ background: `${desigColor}18`, color: desigColor, border: `1.5px solid ${desigColor}30` }}
@@ -72,7 +102,7 @@ export default function ContactCard({ contact: c }: Props) {
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <div className="text-sm font-medium truncate">{c.name}</div>
+            <div className="text-sm font-medium truncate">{displayName}</div>
             {tier.label && (
               <span
                 className="badge flex-shrink-0"
@@ -92,9 +122,9 @@ export default function ContactCard({ contact: c }: Props) {
       </div>
 
       {/* ── Company + email ── */}
-      <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>🏢 {c.company}</div>
+      <div className="text-xs mb-1" style={{ color: generic ? 'var(--text)' : 'var(--text-muted)', fontWeight: generic ? 600 : 400 }}>🏢 {c.company}</div>
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="text-xs font-mono truncate" style={{ color: 'var(--text-dim)' }}>{c.email}</span>
+        <span className="text-xs font-mono truncate" style={{ color: generic ? 'var(--text-muted)' : 'var(--text-dim)' }}>{c.email}</span>
         {c.email_status && c.email_status !== 'unknown' && (
           <span
             className="badge flex-shrink-0"

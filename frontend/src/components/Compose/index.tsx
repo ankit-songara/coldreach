@@ -8,6 +8,7 @@ import { STATUS_META } from '../../types'
 import type { Contact, Draft } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
 import { ResumeReadyCtx } from '../../App'
+import { contactDisplayName, isGenericName } from '../../lib/display'
 
 const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
 
@@ -16,17 +17,17 @@ export default function Compose() {
   const resumeReady = useContext(ResumeReadyCtx)
   const [showSent, setShowSent] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
+  const [draftsLoaded, setDraftsLoaded] = useState(false)
 
   // Restore drafts from backend on mount — ONE request for all contacts.
-  // (Previously one request per contact: N contacts = N API calls + N DB hits.)
   useEffect(() => {
-    if (contacts.length === 0) return
-    if (contacts.every(c => drafts[c.id]?.length)) return
+    if (contacts.length === 0) { setDraftsLoaded(true); return }
+    if (contacts.every(c => drafts[c.id]?.length)) { setDraftsLoaded(true); return }
     composeApi.getAllDrafts().then(all => {
       const grouped: Record<number, Draft[]> = {}
       for (const d of all) (grouped[d.contact_id] ??= []).push(d)
       Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setDraftsLoaded(true))
   }, [contacts.length])
 
   const composeMutation = useMutation({
@@ -74,8 +75,18 @@ export default function Compose() {
 
   if (!resume.trim()) {
     if (!resumeReady) return (
-      <div className="text-center py-20">
-        <div className="w-6 h-6 mx-auto rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }} />
+      <div className="space-y-4 animate-pulse" aria-hidden>
+        <div className="h-8 rounded w-40" style={{ background: 'var(--surface-3)' }} />
+        <div className="h-4 rounded w-64" style={{ background: 'var(--surface-2)' }} />
+        {[0, 1, 2].map(i => (
+          <div key={i} className="card" style={{ padding: 20 }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="h-4 rounded w-1/3" style={{ background: 'var(--surface-3)' }} />
+              <div className="h-3 rounded w-16" style={{ background: 'var(--surface-2)' }} />
+            </div>
+            <div className="h-3 rounded w-2/3" style={{ background: 'var(--surface-2)' }} />
+          </div>
+        ))}
       </div>
     )
     return (
@@ -96,6 +107,28 @@ export default function Compose() {
       <button onClick={() => setActiveTab('hunt')} className="btn btn-primary text-sm">
         Hunt for contacts →
       </button>
+    </div>
+  )
+
+  if (!draftsLoaded) return (
+    <div className="space-y-4 animate-pulse" aria-hidden>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="h-8 rounded w-40 mb-2" style={{ background: 'var(--surface-3)' }} />
+          <div className="h-4 rounded w-56" style={{ background: 'var(--surface-2)' }} />
+        </div>
+        <div className="h-9 rounded-lg w-36" style={{ background: 'var(--surface-3)' }} />
+      </div>
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} className="card" style={{ padding: 20 }}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="h-4 rounded w-1/3" style={{ background: 'var(--surface-3)' }} />
+            <div className="h-3 rounded w-16" style={{ background: 'var(--surface-2)' }} />
+          </div>
+          <div className="h-3 rounded w-2/3 mb-2" style={{ background: 'var(--surface-2)' }} />
+          <div className="h-20 rounded-lg" style={{ background: 'var(--surface-2)' }} />
+        </div>
+      ))}
     </div>
   )
 
@@ -261,7 +294,10 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm">{c.name}</span>
+            <span className="font-medium text-sm">{contactDisplayName(c)}</span>
+            {isGenericName(c.name) && (
+              <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
+            )}
             <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
               {st.label}
             </span>

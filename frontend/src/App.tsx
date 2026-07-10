@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef, createContext } from 'react'
-import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2 } from 'lucide-react'
+import { useEffect, useState, useRef, createContext, type ReactNode } from 'react'
+import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2, Sun, Moon, Monitor } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useStore } from './store'
 import { resumeApi } from './api/resume'
 import { authApi } from './api/auth'
 import { contactsApi } from './api/contacts'
+import { getStoredTheme, cycleTheme, type Theme } from './lib/theme'
 import Auth    from './components/Auth'
 import Setup   from './components/Setup'
 import Hunt    from './components/Hunt'
@@ -32,8 +33,12 @@ const TAB_ICONS: Record<TabId, LucideIcon> = {
   today: Home, setup: Settings, hunt: Search, compose: Wand2, send: SendIcon,
 }
 
+const THEME_ICON: Record<Theme, typeof Sun> = { light: Sun, dark: Moon, system: Monitor }
+const THEME_LABEL: Record<Theme, string> = { light: 'Light', dark: 'Dark', system: 'System' }
+
 function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) {
   const [open, setOpen] = useState(false)
+  const [theme, setTheme] = useState<Theme>(getStoredTheme)
   const ref = useRef<HTMLDivElement>(null)
   const initials = (email.split('@')[0] || '?').slice(0, 2).toUpperCase()
 
@@ -75,6 +80,14 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
           }}
         >
           <button
+            onClick={() => setTheme(cycleTheme())}
+            className="flex items-center gap-2 w-full text-sm font-medium"
+            style={{ padding: '11px 16px', color: 'var(--text)', background: 'none', border: 'none', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+          >
+            {(() => { const Icon = THEME_ICON[theme]; return <Icon size={14} style={{ color: 'var(--text-muted)' }} /> })()}
+            {THEME_LABEL[theme]}
+          </button>
+          <button
             onClick={() => { setOpen(false); onLogout() }}
             className="flex items-center gap-2 w-full text-sm font-medium"
             style={{ padding: '11px 16px', color: 'var(--text)', background: 'none', border: 'none', cursor: 'pointer' }}
@@ -90,6 +103,17 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
 export default function App() {
   const { activeTab, setActiveTab, contacts, setContacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
   const [resumeReady, setResumeReady] = useState(false)
+
+  // Keep-alive tabs: a tab mounts the first time it's visited and then STAYS
+  // mounted (hidden with CSS) instead of unmounting on tab switch. Without this,
+  // switching away from Compose/Send mid-operation unmounted the component and
+  // killed the in-progress work — the bulk-generate loop, the send loop, their
+  // progress state, and the React Query observers that persist results all died.
+  // Now those operations keep running in the background while you're on another tab.
+  const [mountedTabs, setMountedTabs] = useState<Set<TabId>>(() => new Set([activeTab]))
+  useEffect(() => {
+    setMountedTabs(prev => (prev.has(activeTab) ? prev : new Set(prev).add(activeTab)))
+  }, [activeTab])
 
   // Hydrate contacts once at the top level. Without this, refreshing straight
   // into Compose/Send showed "No contacts yet" — those tabs read the store and
@@ -245,11 +269,23 @@ export default function App() {
         }}
       >
         <ResumeReadyCtx.Provider value={resumeReady}>
-          {activeTab === 'today'   && <Today />}
-          {activeTab === 'setup'   && <Setup />}
-          {activeTab === 'hunt'    && <Hunt />}
-          {activeTab === 'compose' && <Compose />}
-          {activeTab === 'send'    && <Send />}
+          {(() => {
+            const views: Record<TabId, ReactNode> = {
+              today: <Today />, setup: <Setup />, hunt: <Hunt />, compose: <Compose />, send: <Send />,
+            }
+            return TABS.map(tab => {
+              // Skip tabs never visited yet — lazy first mount keeps initial load light.
+              if (!mountedTabs.has(tab.id)) return null
+              const active = activeTab === tab.id
+              return (
+                // display:none (not unmount) keeps the tab's state and any in-flight
+                // work alive while it's in the background.
+                <div key={tab.id} style={{ display: active ? 'block' : 'none' }} aria-hidden={!active}>
+                  {views[tab.id]}
+                </div>
+              )
+            })
+          })()}
         </ResumeReadyCtx.Provider>
       </main>
 

@@ -13,6 +13,7 @@ import { STATUS_META } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
 import ConfirmDialog from '../shared/ConfirmDialog'
 import type { ContactStatus, Draft } from '../../types'
+import { contactDisplayName, isGenericName } from '../../lib/display'
 
 // A contact that has received a first-touch email — eligible for outcome capture.
 const CONTACTED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
@@ -37,6 +38,7 @@ export default function Send() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [checkingReplies, setCheckingReplies] = useState(false)
   const [serverGmail, setServerGmail] = useState({ has: false, address: '' })
+  const [draftsLoaded, setDraftsLoaded] = useState(false)
 
   // Creds saved server-side (encrypted) mean sending works with no local input.
   useEffect(() => {
@@ -48,13 +50,13 @@ export default function Send() {
   // Sync drafts from backend on mount so Send tab works even after refresh —
   // ONE request for all contacts.
   useEffect(() => {
-    if (contacts.length === 0) return
-    if (contacts.every(c => drafts[c.id]?.length)) return
+    if (contacts.length === 0) { setDraftsLoaded(true); return }
+    if (contacts.every(c => drafts[c.id]?.length)) { setDraftsLoaded(true); return }
     composeApi.getAllDrafts().then(all => {
       const grouped: Record<number, Draft[]> = {}
       for (const d of all) (grouped[d.contact_id] ??= []).push(d)
       Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setDraftsLoaded(true))
   }, [contacts.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
@@ -207,6 +209,40 @@ export default function Send() {
   if (contacts.length === 0) return (
     <div className="text-center py-20">
       <p className="text-sm font-mono" style={{ color: 'var(--text-dim)' }}>No contacts yet</p>
+    </div>
+  )
+
+  if (!draftsLoaded) return (
+    <div className="space-y-4 animate-pulse" aria-hidden>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="h-8 rounded w-28 mb-2" style={{ background: 'var(--surface-3)' }} />
+          <div className="h-4 rounded w-48" style={{ background: 'var(--surface-2)' }} />
+        </div>
+        <div className="flex gap-2">
+          <div className="h-9 rounded-lg w-32" style={{ background: 'var(--surface-3)' }} />
+          <div className="h-9 rounded-lg w-28" style={{ background: 'var(--surface-3)' }} />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {[0, 1, 2].map(i => (
+          <div key={i} className="card text-center" style={{ padding: 16 }}>
+            <div className="h-8 rounded w-12 mx-auto mb-2" style={{ background: 'var(--surface-3)' }} />
+            <div className="h-3 rounded w-16 mx-auto" style={{ background: 'var(--surface-2)' }} />
+          </div>
+        ))}
+      </div>
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} className="card" style={{ padding: 16 }}>
+          <div className="flex items-center justify-between">
+            <div className="space-y-2 flex-1">
+              <div className="h-4 rounded w-1/3" style={{ background: 'var(--surface-3)' }} />
+              <div className="h-3 rounded w-1/2" style={{ background: 'var(--surface-2)' }} />
+            </div>
+            <div className="h-8 rounded-lg w-20" style={{ background: 'var(--surface-2)' }} />
+          </div>
+        </div>
+      ))}
     </div>
   )
 
@@ -369,14 +405,17 @@ export default function Send() {
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium">{c.name}</span>
+                    <span className="text-sm font-medium">{contactDisplayName(c)}</span>
+                    {isGenericName(c.name) && (
+                      <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
+                    )}
                     <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
                       {st.label}
                     </span>
                     <EmailBadge status={c.email_status} confidence={c.confidence} />
                   </div>
                   <div className="text-xs font-mono truncate mt-0.5" style={{ color: 'var(--text-dim)' }}>
-                    {c.email} · {c.company}
+                    {isGenericName(c.name) ? c.company : `${c.email} · ${c.company}`}
                   </div>
                 </div>
 

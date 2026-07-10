@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Search, Trash2, Download, ShieldCheck } from 'lucide-react'
+import { Search, Trash2, Download, ShieldCheck, CheckSquare, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { verifyApi } from '../../api/verify'
 import ContactCard from './ContactCard'
 import ConfirmDialog from '../shared/ConfirmDialog'
-import type { ContactStatus } from '../../types'
+import { STATUS_META, type ContactStatus } from '../../types'
 
 const STATUS_FILTERS: Array<ContactStatus | 'all'> = [
   'all', 'new', 'emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced',
@@ -81,11 +81,14 @@ export default function Hunt() {
   const [verifying, setVerifying] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
   // Hunt state lives in the store: switching tabs mid-hunt no longer kills it —
   // the request finishes in the background and this tab restores progress/results.
   const {
-    setContacts, contacts, clearContacts, upsertContact, resume,
-    hunting, huntStage, huntResults, huntInfo, runHunt, clearHunt,
+    setContacts, contacts, clearContacts, upsertContact, removeContact, resume,
+    hunting, huntStage, huntResults, huntInfo, runHunt, clearHunt, removeHuntResult,
   } = useStore()
   const qc = useQueryClient()
 
@@ -162,6 +165,56 @@ export default function Hunt() {
     a.download = `coldreach-${new Date().toISOString().slice(0,10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => setSelectedIds(new Set(filtered.map(c => c.id)))
+  const deselectAll = () => setSelectedIds(new Set())
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  const bulkSetStatus = async (status: ContactStatus) => {
+    setBulkBusy(true)
+    let ok = 0
+    for (const id of selectedIds) {
+      try {
+        const updated = await contactsApi.setStatus(id, status)
+        upsertContact(updated)
+        ok++
+      } catch { /* skip */ }
+    }
+    qc.invalidateQueries({ queryKey: ['contacts'] })
+    toast.success(`Updated ${ok} contact${ok !== 1 ? 's' : ''} to ${STATUS_META[status].label}`)
+    exitSelectMode()
+    setBulkBusy(false)
+  }
+
+  const bulkDelete = async () => {
+    setBulkBusy(true)
+    let ok = 0
+    for (const id of selectedIds) {
+      try {
+        await contactsApi.delete(id)
+        removeContact(id)
+        removeHuntResult(id)
+        ok++
+      } catch { /* skip */ }
+    }
+    qc.invalidateQueries({ queryKey: ['contacts'] })
+    toast.success(`Removed ${ok} contact${ok !== 1 ? 's' : ''}`)
+    exitSelectMode()
+    setBulkBusy(false)
   }
 
   // After a hunt: show only results for that query.
@@ -259,6 +312,14 @@ export default function Hunt() {
           </div>
           <div className="flex gap-2">
             <button
+              onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
+              className="btn btn-ghost flex items-center gap-1 text-xs"
+              style={selectMode ? { color: 'var(--accent)', borderColor: 'var(--accent)', background: 'var(--accent-dim)' } : {}}
+            >
+              {selectMode ? <X size={12} /> : <CheckSquare size={12} />}
+              {selectMode ? 'Cancel' : 'Select'}
+            </button>
+            <button
               onClick={handleVerify}
               disabled={verifying}
               title="Re-check whether each email address can actually receive mail"
@@ -278,6 +339,47 @@ export default function Hunt() {
               <Trash2 size={12} /> Clear all
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Bulk actions bar ─────────────────────────────────────────── */}
+      {selectMode && selectedIds.size > 0 && (
+        <div
+          className="flex items-center gap-3 flex-wrap rounded-xl"
+          style={{ padding: '10px 16px', background: 'var(--accent-dim)', border: '1px solid var(--accent)' }}
+        >
+          <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>
+            {selectedIds.size} selected
+          </span>
+          <button
+            onClick={() => selectedIds.size === filtered.length ? deselectAll() : selectAll()}
+            className="text-xs font-semibold"
+            style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            {selectedIds.size === filtered.length ? 'Deselect all' : 'Select all'}
+          </button>
+          <div className="flex-1" />
+          <div className="flex gap-1.5 flex-wrap">
+            {(Object.entries(STATUS_META) as [ContactStatus, typeof STATUS_META[ContactStatus]][]).map(([key, meta]) => (
+              <button
+                key={key}
+                onClick={() => bulkSetStatus(key)}
+                disabled={bulkBusy}
+                className="text-[10px] px-2 py-0.5 rounded-full font-bold font-mono transition-all"
+                style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}50`, cursor: 'pointer' }}
+              >
+                {meta.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={bulkDelete}
+            disabled={bulkBusy}
+            className="btn text-xs flex items-center gap-1"
+            style={{ color: '#d2483a', borderColor: 'rgba(210,72,58,0.3)', background: 'rgba(210,72,58,0.08)' }}
+          >
+            <Trash2 size={11} /> Delete
+          </button>
         </div>
       )}
 
@@ -321,7 +423,15 @@ export default function Hunt() {
       {/* ── Contact grid ─────────────────────────────────────────────── */}
       {!hunting && (filtered.length > 0 ? (
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-          {filtered.map(c => <ContactCard key={c.id} contact={c} />)}
+          {filtered.map(c => (
+            <ContactCard
+              key={c.id}
+              contact={c}
+              selectable={selectMode}
+              selected={selectedIds.has(c.id)}
+              onToggleSelect={() => toggleSelect(c.id)}
+            />
+          ))}
         </div>
       ) : displayList.length === 0 ? (
         <div

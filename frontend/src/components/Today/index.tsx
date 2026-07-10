@@ -314,10 +314,14 @@ export default function Today() {
   const [seeding, setSeeding] = useState(false)
   const [contactsLoaded, setContactsLoaded] = useState(false)
   const [gmailLinked, setGmailLinked] = useState(false)
+  const [senderName, setSenderName] = useState('')
 
-  // Server-stored Gmail connection (survives refresh, unlike session creds)
+  // Server-stored config: Gmail connection + sender name for greeting
   useEffect(() => {
-    automationApi.getConfig().then(cfg => setGmailLinked(cfg.has_gmail)).catch(() => {})
+    automationApi.getConfig().then(cfg => {
+      setGmailLinked(cfg.has_gmail)
+      if (cfg.sender_name) setSenderName(cfg.sender_name)
+    }).catch(() => {})
   }, [])
 
   // Check LLM health once on mount
@@ -460,7 +464,7 @@ export default function Today() {
     })
   }
 
-  const name = firstName(userEmail)
+  const name = senderName ? senderName.split(' ')[0] : firstName(userEmail)
   // Brand-new user: no contacts and no resume uploaded yet
   const isNewUser = total === 0 && !resume.trim()
 

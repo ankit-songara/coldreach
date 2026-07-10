@@ -6,7 +6,10 @@ import { Toaster } from 'react-hot-toast'
 import App from './App'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 import { queryClient } from './lib/queryClient'
+import { initTheme } from './lib/theme'
 import './styles/index.css'
+
+initTheme()
 
 // Empty string is fine: with no client ID the Auth screen hides the Google
 // button and falls back to email/password. The provider is harmless when unused.
