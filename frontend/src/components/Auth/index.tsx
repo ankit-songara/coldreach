@@ -137,6 +137,21 @@ export default function Auth() {
             {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
           </button>
 
+          {/* Honest interim until an email-based reset exists — better than a
+              dead end with no guidance at all. */}
+          {mode === 'login' && (
+            <details className="text-xs" style={{ color: 'var(--text-dim)' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+                Forgot password?
+              </summary>
+              <p className="mt-1.5" style={{ lineHeight: 1.6 }}>
+                {GOOGLE_ENABLED && 'If you signed up with Google, use the "Continue with Google" button above — no password needed. '}
+                Automated password reset isn't available yet; contact whoever runs
+                this ColdReach server to reset your account.
+              </p>
+            </details>
+          )}
+
           <p className="text-xs text-center" style={{ color: 'var(--text-dim)' }}>
             Your data is private to your account.
           </p>

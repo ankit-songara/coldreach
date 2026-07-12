@@ -8,6 +8,10 @@ import { huntApi } from '../api/hunt'
 import { contactsApi } from '../api/contacts'
 import { queryClient } from '../lib/queryClient'
 
+// In-flight hunt request — module scope (not state) so it never persists and
+// aborting it doesn't re-render anything.
+let huntAbort: AbortController | null = null
+
 // Staged status while a hunt runs — generic on purpose (no source names).
 const HUNT_STAGES = [
   { after: 0,      label: 'Searching for companies hiring right now…' },
@@ -61,6 +65,7 @@ interface AppState {
   huntResults: Contact[] | null   // results of the LAST hunt (null = none yet)
   huntInfo:    { found: number; duplicates: number; query: string; roleFiltered: number } | null
   runHunt:          (query: string, roleFilter?: string) => Promise<void>
+  cancelHunt:       () => void
   clearHunt:        () => void
   removeHuntResult: (id: number) => void
   updateHuntResult: (c: Contact) => void
@@ -134,12 +139,14 @@ export const useStore = create<AppState>()(
       huntInfo:    null,
       runHunt: async (query, roleFilter = '') => {
         if (get().hunting) return
+        huntAbort = new AbortController()
+        const signal = huntAbort.signal
         set({ hunting: true, huntResults: null, huntInfo: null, huntStage: HUNT_STAGES[0].label })
         const timers = HUNT_STAGES.slice(1).map(s =>
           setTimeout(() => { if (get().hunting) set({ huntStage: s.label }) }, s.after)
         )
         try {
-          const data = await huntApi.hunt({ query, role_filter: roleFilter || undefined })
+          const data = await huntApi.hunt({ query, role_filter: roleFilter || undefined }, signal)
           set({
             huntResults: (data.contacts ?? []) as Contact[],
             huntInfo: { found: data.found ?? 0, duplicates: data.duplicates ?? 0, query, roleFiltered: data.role_filtered ?? 0 },
@@ -157,12 +164,21 @@ export const useStore = create<AppState>()(
             toast(`No matches for "${query}"`, { icon: '🔍' })
           }
         } catch (e: any) {
-          toast.error(e.message)
+          if (signal.aborted) {
+            // User pressed Cancel — the server may still finish and save what it
+            // found; the next contacts refetch will pick those up.
+            toast('Hunt cancelled — anything already found will appear shortly', { icon: '⏹️' })
+            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+          } else {
+            toast.error(e.message)
+          }
         } finally {
+          huntAbort = null
           timers.forEach(clearTimeout)
           set({ hunting: false, huntStage: '' })
         }
       },
+      cancelHunt: () => { huntAbort?.abort() },
       clearHunt: () => set({ huntResults: null, huntInfo: null }),
       removeHuntResult: (id) =>
         set((s) => ({ huntResults: s.huntResults?.filter(c => c.id !== id) ?? null })),

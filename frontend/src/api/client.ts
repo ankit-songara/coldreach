@@ -31,6 +31,7 @@ api.interceptors.request.use(config => {
 function friendlyMessage(err: AxiosError<any>): string {
   // No response at all — network down, server unreachable, CORS, timeout.
   if (!err.response) {
+    if (err.code === 'ERR_CANCELED') return 'Request cancelled.'
     if (err.code === 'ECONNABORTED') return 'The request timed out. Please try again.'
     return "Can't reach the server. Check your connection and try again."
   }

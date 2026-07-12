@@ -1,9 +1,10 @@
-import { useState, useContext } from 'react'
+import { useState, useContext, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, X } from 'lucide-react'
+import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, X, Search, StopCircle } from 'lucide-react'
 import { useStore } from '../../store'
 import { composeApi } from '../../api/compose'
+import api from '../../api/client'
 import { STATUS_META } from '../../types'
 import type { Contact } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
@@ -17,7 +18,10 @@ export default function Compose() {
   const { contacts, resume, drafts, setDrafts, setActiveTab } = useStore()
   const resumeReady = useContext(ResumeReadyCtx)
   const [showSent, setShowSent] = useState(false)
+  const [search, setSearch] = useState('')
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
+  // Set by the Stop button; checked between iterations of the bulk loop.
+  const bulkStopRef = useRef(false)
 
   // Drafts come from a shared query so Compose and Send don't each refetch them.
   const { draftsLoaded } = useAllDrafts()
@@ -49,13 +53,35 @@ export default function Compose() {
   // in a tight burst) trips 429 rate limits, and the provider's auto-retries then
   // amplify the storm. Sequential + a throttle gap keeps us safely under the cap.
   const generateAll = async (targets: Contact[]) => {
+    // Don't start a 20-email run the health endpoint already knows will fail —
+    // that would be one error toast every 2s for the whole batch.
+    try {
+      const { data } = await api.get<{ llm_ok?: boolean }>('/health')
+      if (data.llm_ok === false) {
+        toast.error('Email writing is unavailable right now — try again in a few minutes.')
+        return
+      }
+    } catch { /* health being unreachable shouldn't block the attempt */ }
+
+    bulkStopRef.current = false
     setBulkProgress({ done: 0, total: targets.length })
+    let consecutiveFailures = 0
     try {
       for (let i = 0; i < targets.length; i++) {
+        if (bulkStopRef.current) {
+          toast(`Stopped after ${i} of ${targets.length}`, { icon: '⏹️' })
+          break
+        }
         try {
           await composeMutation.mutateAsync({ contact_id: targets[i].id, resume })
+          consecutiveFailures = 0
         } catch {
-          // onError already surfaces a toast; keep going with the rest.
+          // onError already surfaced a toast for this contact. If the provider
+          // is clearly down, stop instead of raining errors for the whole batch.
+          if (++consecutiveFailures >= 3) {
+            toast.error('Stopped — generation keeps failing. Try again in a few minutes.')
+            break
+          }
         }
         setBulkProgress({ done: i + 1, total: targets.length })
         if (i < targets.length - 1) await new Promise(r => setTimeout(r, 2000))
@@ -128,10 +154,19 @@ export default function Compose() {
   const newContacts  = contacts.filter(c => !SENT_STATUSES.includes(c.status))
   const sentContacts = contacts.filter(c => SENT_STATUSES.includes(c.status))
 
-  // Only count truly new + no draft as needing generation
+  // Only count truly new + no draft as needing generation.
+  // Computed from the UNFILTERED list so "Generate all (N)" stays honest
+  // while a search filter is active.
   const ungenerated = newContacts.filter(
     c => !(drafts[c.id] ?? []).some(d => !d.is_followup)
   )
+
+  // Text filter over both lists — long pipelines shouldn't mean scrolling.
+  const q = search.trim().toLowerCase()
+  const matches = (c: Contact) =>
+    !q || [c.name, c.company, c.email, c.designation].some(v => (v || '').toLowerCase().includes(q))
+  const visibleNew  = newContacts.filter(matches)
+  const visibleSent = sentContacts.filter(matches)
 
   return (
     <div className="space-y-5">
@@ -144,19 +179,46 @@ export default function Compose() {
           </p>
         </div>
         {ungenerated.length > 0 && (
-          <button
-            onClick={() => generateAll(ungenerated)}
-            disabled={pending || bulkProgress !== null}
-            className="btn btn-primary text-xs flex items-center gap-2"
-          >
-            {bulkProgress ? (
-              <><RefreshCw size={13} className="animate-spin" /> Generating {Math.min(bulkProgress.done + 1, bulkProgress.total)}/{bulkProgress.total}…</>
-            ) : (
-              <><Wand2 size={13} /> Generate all ({ungenerated.length})</>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => generateAll(ungenerated)}
+              disabled={pending || bulkProgress !== null}
+              className="btn btn-primary text-xs flex items-center gap-2"
+            >
+              {bulkProgress ? (
+                <><RefreshCw size={13} className="animate-spin" /> Generating {Math.min(bulkProgress.done + 1, bulkProgress.total)}/{bulkProgress.total}…</>
+              ) : (
+                <><Wand2 size={13} /> Generate all ({ungenerated.length})</>
+              )}
+            </button>
+            {bulkProgress && (
+              <button
+                onClick={() => { bulkStopRef.current = true }}
+                className="btn btn-ghost text-xs flex items-center gap-1"
+                style={{ color: 'var(--text-muted)' }}
+                title="Finish the current email, then stop"
+              >
+                <StopCircle size={13} /> Stop
+              </button>
             )}
-          </button>
+          </div>
         )}
       </div>
+
+      {/* ── Search (only useful once the list is long) ────────────────────── */}
+      {contacts.length > 5 && (
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Filter by name, company, or email…"
+            className="input text-sm w-full"
+            style={{ paddingLeft: 32 }}
+            aria-label="Filter contacts"
+          />
+        </div>
+      )}
 
       {/* ── New contacts ────────────────────────────────────────────────── */}
       {newContacts.length === 0 ? (
@@ -168,14 +230,18 @@ export default function Compose() {
             Hunt for more contacts or write follow-ups below
           </p>
         </div>
+      ) : visibleNew.length === 0 && q ? (
+        <p className="text-sm text-center py-8" style={{ color: 'var(--text-dim)' }}>
+          No new contacts match “{search.trim()}”
+        </p>
       ) : (
         <div className="space-y-4">
-          {newContacts.map(c => <ContactCard key={c.id} contact={c} drafts={drafts} composeMutation={composeMutation} followupMutation={followupMutation} resume={resume} />)}
+          {visibleNew.map(c => <ContactCard key={c.id} contact={c} drafts={drafts} composeMutation={composeMutation} followupMutation={followupMutation} resume={resume} />)}
         </div>
       )}
 
       {/* ── Already sent (collapsible) ───────────────────────────────────── */}
-      {sentContacts.length > 0 && (
+      {visibleSent.length > 0 && (
         <div>
           <button
             onClick={() => setShowSent(s => !s)}
@@ -183,13 +249,13 @@ export default function Compose() {
             style={{ color: 'var(--text-dim)' }}
           >
             {showSent ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            ALREADY SENT ({sentContacts.length})
+            ALREADY SENT ({visibleSent.length})
             <span className="flex-1 border-t ml-2" style={{ borderColor: 'var(--border)' }} />
           </button>
 
           {showSent && (
             <div className="space-y-4 mt-2">
-              {sentContacts.map(c => (
+              {visibleSent.map(c => (
                 <ContactCard
                   key={c.id}
                   contact={c}
@@ -301,7 +367,10 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
         </div>
 
         <div className="flex gap-2 flex-shrink-0">
-          {latest && (
+          {/* A follow-up only makes sense once the first email actually went
+              out — for un-emailed contacts the button would generate a "just
+              checking in" to someone who never got anything. */}
+          {latest && SENT_STATUSES.includes(c.status) && (
             <button
               onClick={() => followupMutation.mutate({
                 contact_id: c.id,

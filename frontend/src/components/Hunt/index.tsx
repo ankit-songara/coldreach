@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Search, Trash2, Download, ShieldCheck, CheckSquare, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
+import { useContacts } from '../../hooks/useContacts'
 import { verifyApi } from '../../api/verify'
 import ContactCard from './ContactCard'
 import ConfirmDialog from '../shared/ConfirmDialog'
@@ -105,8 +106,8 @@ export default function Hunt() {
   // Hunt state lives in the store: switching tabs mid-hunt no longer kills it —
   // the request finishes in the background and this tab restores progress/results.
   const {
-    setContacts, contacts, clearContacts, upsertContact, removeContact, resume,
-    hunting, huntStage, huntResults, huntInfo, runHunt, clearHunt, removeHuntResult,
+    contacts, clearContacts, upsertContact, removeContact, resume,
+    hunting, huntStage, huntResults, huntInfo, runHunt, cancelHunt, clearHunt, removeHuntResult,
   } = useStore()
   const qc = useQueryClient()
 
@@ -150,14 +151,9 @@ export default function Hunt() {
     }
   }
 
-  // TanStack Query v5 — useEffect for side effects on query data
-  const { data: remoteContacts } = useQuery({
-    queryKey: ['contacts'],
-    queryFn:  contactsApi.list,
-  })
-  useEffect(() => {
-    if (remoteContacts) setContacts(remoteContacts)
-  }, [remoteContacts]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Contacts come from the shared query (also used by App and Today) — one
+  // fetch serves every tab instead of each firing its own.
+  useContacts()
 
   const doHunt = (q: string) => {
     if (!q.trim() || hunting) return
@@ -304,12 +300,19 @@ export default function Hunt() {
       {/* ── Live hunt progress ───────────────────────────────────────── */}
       {hunting && (
         <div className="space-y-3" aria-live="polite">
-          <div className="flex items-center gap-2.5 text-sm" style={{ color: 'var(--text-muted)' }}>
+          <div className="flex items-center gap-2.5 text-sm flex-wrap" style={{ color: 'var(--text-muted)' }}>
             <span
               className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
               style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--accent)' }}
             />
             {huntStage || 'Searching…'} <span style={{ color: 'var(--text-dim)' }}>— feel free to browse other tabs, this keeps running</span>
+            <button
+              onClick={cancelHunt}
+              className="btn btn-ghost text-xs flex items-center gap-1 ml-auto"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <X size={11} /> Cancel
+            </button>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
             <SkeletonCard /><SkeletonCard /><SkeletonCard />

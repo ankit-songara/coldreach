@@ -4,7 +4,9 @@ import type { LucideIcon } from 'lucide-react'
 import { useStore } from './store'
 import { resumeApi } from './api/resume'
 import { authApi } from './api/auth'
-import { contactsApi } from './api/contacts'
+import { useContacts } from './hooks/useContacts'
+import { useAutomationConfig } from './hooks/useAutomationConfig'
+import { useAutoReplyCheck } from './hooks/useAutoReplyCheck'
 import { getStoredTheme, cycleTheme, type Theme } from './lib/theme'
 import Auth    from './components/Auth'
 import Setup   from './components/Setup'
@@ -101,8 +103,19 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, contacts, setContacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
+  const { activeTab, setActiveTab, contacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
   const [resumeReady, setResumeReady] = useState(false)
+
+  // Hydrate contacts once at the top level via the SHARED query (Today and Hunt
+  // reuse the same cache instead of firing their own fetches). Without this,
+  // refreshing straight into Compose/Send showed "No contacts yet".
+  useContacts(!!token)
+
+  // Server config (Gmail connection) powers the background reply check: when
+  // creds are stored server-side, quietly sync the inbox on app open (throttled)
+  // so "new replies" alerts are fresh without pressing "Check Replies".
+  const { data: appConfig } = useAutomationConfig(!!token)
+  useAutoReplyCheck(!!token && !!appConfig?.has_gmail)
 
   // Keep-alive tabs: a tab mounts the first time it's visited and then STAYS
   // mounted (hidden with CSS) instead of unmounting on tab switch. Without this,
@@ -114,14 +127,6 @@ export default function App() {
   useEffect(() => {
     setMountedTabs(prev => (prev.has(activeTab) ? prev : new Set(prev).add(activeTab)))
   }, [activeTab])
-
-  // Hydrate contacts once at the top level. Without this, refreshing straight
-  // into Compose/Send showed "No contacts yet" — those tabs read the store and
-  // only Today/Hunt happened to fill it.
-  useEffect(() => {
-    if (!token) return
-    contactsApi.list().then(setContacts).catch(() => {})
-  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Self-heal: a valid token with no cached email (cleared storage, imported
   // session) would greet the user as "there" — recover it from the API.

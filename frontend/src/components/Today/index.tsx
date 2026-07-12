@@ -7,14 +7,15 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../../store'
 import api from '../../api/client'
 import { demoApi, DEMO_SENTINEL } from '../../api/demo'
 import { contactsApi } from '../../api/contacts'
-import { composeApi } from '../../api/compose'
 import { resumeApi } from '../../api/resume'
-import { automationApi } from '../../api/automation'
-import type { Draft } from '../../types'
+import { useContacts } from '../../hooks/useContacts'
+import { useAllDrafts } from '../../hooks/useAllDrafts'
+import { useAutomationConfig } from '../../hooks/useAutomationConfig'
 
 function greeting() {
   const h = new Date().getHours()
@@ -23,9 +24,12 @@ function greeting() {
   return 'Good evening'
 }
 function firstName(email: string) {
-  // "ankitsongara2003@…" → "Ankitsongara" (digits and separators are noise)
+  // "priya.n@…" → "Priya" (digits and separators are noise). Long mashed-up
+  // locals ("ankitsongara2003" → "Ankitsongara") read like a bot wrote them —
+  // greet generically instead; the résumé-detected name takes over once known.
   const raw = (email || '').split('@')[0].split(/[._\-]/)[0].replace(/\d+/g, '')
-  return raw ? raw[0].toUpperCase() + raw.slice(1) : 'there'
+  if (!raw || raw.length > 10) return 'there'
+  return raw[0].toUpperCase() + raw.slice(1)
 }
 
 // Show at most `max` names, then "+ N more" — an alert card must never grow
@@ -61,13 +65,14 @@ function LLMBanner({ label }: { label: string }) {
 }
 
 // ── Onboarding flow (shown to brand-new users) ───────────────────────────────
-function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, seeding }: {
+function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, seeding, onSkipGmail }: {
   resume: string
   gmailConnected: boolean
   contacts: number
   onTab: (t: 'setup' | 'hunt' | 'compose' | 'send') => void
   onSeedDemo: () => void
   seeding: boolean
+  onSkipGmail: () => void
 }) {
   const steps = [
     {
@@ -165,13 +170,26 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
                     {step.title}
                   </span>
                   {!step.done && (
-                    <button
-                      onClick={e => { e.stopPropagation(); onTab(step.tab) }}
-                      className="flex items-center gap-1.5 text-xs font-semibold flex-shrink-0"
-                      style={{ color: step.color, background: step.bg, border: `1px solid ${step.color}35`, borderRadius: 'var(--radius-full)', padding: '5px 12px', cursor: 'pointer' }}
-                    >
-                      {step.cta} <ArrowRight size={11} />
-                    </button>
+                    <span className="flex items-center gap-2 flex-shrink-0">
+                      {/* Optional step: let the user dismiss it instead of the
+                          active-step ring nagging on it forever. */}
+                      {step.n === 2 && (
+                        <button
+                          onClick={e => { e.stopPropagation(); onSkipGmail() }}
+                          className="text-xs font-semibold"
+                          style={{ color: 'var(--text-dim)', background: 'none', border: 'none', cursor: 'pointer' }}
+                        >
+                          Skip for now
+                        </button>
+                      )}
+                      <button
+                        onClick={e => { e.stopPropagation(); onTab(step.tab) }}
+                        className="flex items-center gap-1.5 text-xs font-semibold"
+                        style={{ color: step.color, background: step.bg, border: `1px solid ${step.color}35`, borderRadius: 'var(--radius-full)', padding: '5px 12px', cursor: 'pointer' }}
+                      >
+                        {step.cta} <ArrowRight size={11} />
+                      </button>
+                    </span>
                   )}
                 </div>
                 {!step.done && (
@@ -307,52 +325,38 @@ function StatTile({ label, value, sub, color, icon: Icon, iconBg }: {
   )
 }
 
+const llmOk = (h?: { llm_ok?: boolean; llm?: string }) =>
+  // Prefer the explicit flag; fall back to label sniffing for older backends.
+  h ? (h.llm_ok ?? !(h.llm || '').includes('unavailable')) : undefined
+
 export default function Today() {
-  const { contacts, drafts, setDrafts, userEmail, resume, gmailAddress, setActiveTab, setContacts, setResume } = useStore()
-  const [llmReady, setLlmReady] = useState<boolean | null>(null)
-  const [llmLabel, setLlmLabel] = useState('')
+  const { contacts, drafts, userEmail, resume, gmailAddress, setActiveTab, setContacts, setResume } = useStore()
   const [seeding, setSeeding] = useState(false)
-  const [contactsLoaded, setContactsLoaded] = useState(false)
-  const [gmailLinked, setGmailLinked] = useState(false)
-  const [senderName, setSenderName] = useState('')
+  const [gmailSkipped, setGmailSkipped] = useState(
+    () => localStorage.getItem('coldreach-gmail-skipped') === '1'
+  )
 
-  // Server-stored config: Gmail connection + sender name for greeting
-  useEffect(() => {
-    automationApi.getConfig().then(cfg => {
-      setGmailLinked(cfg.has_gmail)
-      if (cfg.sender_name) setSenderName(cfg.sender_name)
-    }).catch(() => {})
-  }, [])
+  // Contacts + drafts come from the shared queries (also used by App, Hunt,
+  // Compose, Send) — one fetch each per load instead of one per tab.
+  const { contactsLoaded } = useContacts()
+  useAllDrafts()
 
-  // Check LLM health once on mount
-  useEffect(() => {
-    api.get<{ llm_ok?: boolean; llm: string }>('/health')
-      .then(r => {
-        setLlmLabel(r.data.llm || '')
-        // Prefer the explicit flag; fall back to label sniffing for older backends.
-        setLlmReady(r.data.llm_ok ?? !(r.data.llm || '').includes('unavailable'))
-      })
-      .catch(() => { setLlmReady(false); setLlmLabel('unreachable') })
-  }, [])
+  // Server-stored config: Gmail connection + sender name for greeting (shared
+  // query — Setup and Send read the same cache).
+  const { data: cfg } = useAutomationConfig()
+  const gmailLinked = cfg?.has_gmail ?? false
+  const senderName  = cfg?.sender_name ?? ''
 
-  // Load contacts so the dashboard is accurate even when Today is the first tab opened.
-  useEffect(() => {
-    contactsApi.list()
-      .then(setContacts)
-      .catch(() => {})
-      .finally(() => setContactsLoaded(true))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Hydrate drafts too — the "Drafted" funnel stage and "needs a draft" alert
-  // read from the drafts store, which is otherwise only filled when the user
-  // visits Compose or Send first.
-  useEffect(() => {
-    composeApi.getAllDrafts().then(all => {
-      const grouped: Record<number, Draft[]> = {}
-      for (const d of all) (grouped[d.contact_id] ??= []).push(d)
-      Object.entries(grouped).forEach(([cid, ds]) => setDrafts(Number(cid), ds))
-    }).catch(() => {})
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // LLM health. While it's down, re-check every 60s so the banner clears itself
+  // when the provider recovers instead of sticking until a hard refresh.
+  const { data: health, isError: healthUnreachable } = useQuery({
+    queryKey: ['health'],
+    queryFn: () => api.get<{ llm_ok?: boolean; llm: string }>('/health').then(r => r.data),
+    refetchInterval: q => (llmOk(q.state.data) === true ? false : 60_000),
+    refetchOnWindowFocus: true,
+  })
+  const llmReady = healthUnreachable ? false : (llmOk(health) ?? null)
+  const llmLabel = healthUnreachable ? 'unreachable' : (health?.llm ?? '')
 
   const refreshAll = async () => {
     try { setContacts(await contactsApi.list()) } catch { /* ignore */ }
@@ -534,11 +538,15 @@ export default function Today() {
       {isNewUser ? (
         <OnboardingFlow
           resume={resume}
-          gmailConnected={gmailLinked || !!gmailAddress}
+          gmailConnected={gmailLinked || !!gmailAddress || gmailSkipped}
           contacts={total}
           onTab={(t) => setActiveTab(t)}
           onSeedDemo={loadDemo}
           seeding={seeding}
+          onSkipGmail={() => {
+            localStorage.setItem('coldreach-gmail-skipped', '1')
+            setGmailSkipped(true)
+          }}
         />
       ) : (
         <>

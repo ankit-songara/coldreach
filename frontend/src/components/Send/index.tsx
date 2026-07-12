@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { CheckCircle2, XCircle, Send as SendIcon, Settings, ExternalLink, RefreshCw } from 'lucide-react'
+import { CheckCircle2, XCircle, Send as SendIcon, Settings, ExternalLink, RefreshCw, Search } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { sendApi } from '../../api/send'
 import { inboxApi } from '../../api/inbox'
-import { automationApi } from '../../api/automation'
+import { useAutomationConfig } from '../../hooks/useAutomationConfig'
 import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
@@ -37,17 +37,15 @@ export default function Send() {
   const [sendingId, setSendingId] = useState<number | null>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [checkingReplies, setCheckingReplies] = useState(false)
-  const [serverGmail, setServerGmail] = useState({ has: false, address: '' })
+  const [search, setSearch] = useState('')
 
   // Drafts come from a shared query so Compose and Send don't each refetch them.
   const { draftsLoaded } = useAllDrafts()
 
   // Creds saved server-side (encrypted) mean sending works with no local input.
-  useEffect(() => {
-    automationApi.getConfig()
-      .then(cfg => setServerGmail({ has: cfg.has_gmail, address: cfg.gmail_address }))
-      .catch(() => {})
-  }, [])
+  // Shared config query — same cache as Today and Setup.
+  const { data: cfg } = useAutomationConfig()
+  const serverGmail = { has: cfg?.has_gmail ?? false, address: cfg?.gmail_address ?? '' }
 
   const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
   // Mirror the backend guard: a contact already actioned (emailed in any later
@@ -196,6 +194,13 @@ export default function Send() {
   const noCredentials = !serverGmail.has && (!gmailAddress || !gmailAppPassword)
   const sendingFrom = gmailAddress || serverGmail.address || 'your connected Gmail'
 
+  // Text filter over the visible rows — at 100+ contacts, finding one person
+  // to send/re-check shouldn't mean scrolling the whole list.
+  const q = search.trim().toLowerCase()
+  const visibleContacts = !q ? contacts : contacts.filter(c =>
+    [c.name, c.company, c.email, c.designation].some(v => (v || '').toLowerCase().includes(q))
+  )
+
   if (contacts.length === 0) return (
     <div className="text-center py-20">
       <p className="text-sm font-mono" style={{ color: 'var(--text-dim)' }}>No contacts yet</p>
@@ -253,7 +258,9 @@ export default function Send() {
           <button
             onClick={handleCheckReplies}
             disabled={checkingReplies || noCredentials}
-            title="Scan your Gmail inbox for replies and update statuses"
+            title={noCredentials
+              ? 'Connect Gmail in Setup to check replies'
+              : 'Scan your Gmail inbox for replies and update statuses'}
             className="btn flex items-center gap-2 text-sm font-medium"
             style={{
               background: 'rgba(111,90,224,0.10)',
@@ -379,9 +386,29 @@ export default function Send() {
         ))}
       </div>
 
+      {/* ── Search (only useful once the list is long) ──────────────────────── */}
+      {contacts.length > 5 && (
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Filter by name, company, or email…"
+            className="input text-sm w-full"
+            style={{ paddingLeft: 32 }}
+            aria-label="Filter contacts"
+          />
+        </div>
+      )}
+
       {/* ── Contact rows ────────────────────────────────────────────────────── */}
       <div className="space-y-2">
-        {contacts.map(c => {
+        {visibleContacts.length === 0 && search.trim() && (
+          <p className="text-sm text-center py-8" style={{ color: 'var(--text-dim)' }}>
+            No contacts match “{search.trim()}”
+          </p>
+        )}
+        {visibleContacts.map(c => {
           const first    = (drafts[c.id] ?? []).find(d => !d.is_followup)
           const followup = (drafts[c.id] ?? []).find(d => d.is_followup)
           // Already contacted + a follow-up draft exists → the Gmail button

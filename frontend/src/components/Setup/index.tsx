@@ -1,10 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Eye, EyeOff, CheckCircle2, ExternalLink, ArrowRight, Save, Pencil } from 'lucide-react'
 import { useStore } from '../../store'
 import { resumeApi } from '../../api/resume'
 import { automationApi } from '../../api/automation'
+import { useAutomationConfig } from '../../hooks/useAutomationConfig'
 import api from '../../api/client'
 
 // The backend stores the signature links as ONE line ("a · b · c").
@@ -37,21 +39,23 @@ export default function Setup() {
   const [gmailConnected, setGmailConnected] = useState(false)
   const [updatingCreds, setUpdatingCreds]   = useState(false)  // show form while connected
 
-  const loadSignature = () =>
-    automationApi.getConfig()
-      .then(cfg => {
-        setSenderName(cfg.sender_name || '')
-        setLinks(splitLinks(cfg.signature_links || ''))
-        setGmailConnected(cfg.has_gmail)
-        if (cfg.gmail_address && !localAddress) setLocalAddress(cfg.gmail_address)
-      })
-      .catch(() => {})
+  const qc = useQueryClient()
+  // Server config comes from the shared query (same cache as Today and Send).
+  const { data: cfg } = useAutomationConfig()
 
-  // Load the resolved signature (explicit override → auto-detected from résumé).
-  useEffect(() => { loadSignature() }, [])
+  // Populate the local form state from the resolved signature (explicit
+  // override → auto-detected from résumé). Guarded by !editingSig so a
+  // background refetch never stomps on text the user is typing.
+  useEffect(() => {
+    if (!cfg || editingSig) return
+    setSenderName(cfg.sender_name || '')
+    setLinks(splitLinks(cfg.signature_links || ''))
+    setGmailConnected(cfg.has_gmail)
+    setLocalAddress(prev => prev || cfg.gmail_address || '')
+  }, [cfg, editingSig])
 
   // Re-detect after the résumé changes — a new upload may carry new links/name.
-  const refreshSignatureFromResume = () => { if (!editingSig) loadSignature() }
+  const refreshSignatureFromResume = () => { qc.invalidateQueries({ queryKey: ['config'] }) }
 
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0]
@@ -102,8 +106,9 @@ export default function Setup() {
     }
     setTesting(true)
     try {
-      const cfg = await automationApi.saveGmail(localAddress.trim(), localPassword.trim())
-      setGmailConnected(cfg.has_gmail)
+      const fresh = await automationApi.saveGmail(localAddress.trim(), localPassword.trim())
+      qc.setQueryData(['config'], fresh)   // Today + Send update instantly
+      setGmailConnected(fresh.has_gmail)
       setGmailCreds(localAddress.trim(), localPassword.trim())
       setLocalPassword('')
       setUpdatingCreds(false)
@@ -117,8 +122,9 @@ export default function Setup() {
 
   const handleDisconnect = async () => {
     try {
-      const cfg = await automationApi.deleteGmail()
-      setGmailConnected(cfg.has_gmail)
+      const fresh = await automationApi.deleteGmail()
+      qc.setQueryData(['config'], fresh)
+      setGmailConnected(fresh.has_gmail)
       setGmailCreds('', '')
       setLocalPassword('')
       toast('Gmail disconnected', { icon: '🔌' })
@@ -130,9 +136,10 @@ export default function Setup() {
   const handleSaveName = async () => {
     setSavingName(true)
     try {
-      const cfg = await automationApi.setProfile(senderName.trim(), joinLinks(links))
-      setSenderName(cfg.sender_name || '')
-      setLinks(splitLinks(cfg.signature_links || ''))
+      const fresh = await automationApi.setProfile(senderName.trim(), joinLinks(links))
+      qc.setQueryData(['config'], fresh)
+      setSenderName(fresh.sender_name || '')
+      setLinks(splitLinks(fresh.signature_links || ''))
       setEditingSig(false)
       toast.success('Signature saved')
     } catch (e: any) {
@@ -315,7 +322,9 @@ export default function Setup() {
                 {savingName ? 'Saving…' : 'Save signature'}
               </button>
               <button
-                onClick={() => { setEditingSig(false); loadSignature() }}
+                // Leaving edit mode lets the populate-effect restore the saved
+                // values from the shared config cache — no refetch needed.
+                onClick={() => setEditingSig(false)}
                 disabled={savingName}
                 className="btn text-sm"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
