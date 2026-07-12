@@ -168,147 +168,59 @@ export default function Setup() {
         </p>
       </div>
 
-      {/* ── Gmail Credentials (optional) ──────────────────────────────────── */}
+      {/* ── Resume ────────────────────────────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
-            GMAIL CREDENTIALS
-            <span
-              className="ml-2 px-1.5 py-0.5 rounded font-sans font-semibold"
-              style={{ background: 'var(--surface-2)', color: 'var(--text-dim)', fontSize: 9, letterSpacing: '0.02em' }}
-            >
-              OPTIONAL
-            </span>
+            RESUME
           </span>
-          {gmailConnected && (
-            <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
-              <CheckCircle2 size={12} /> Connected
+          {resume && (
+            <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>
+              ✓ {resume.length.toLocaleString()} chars
             </span>
           )}
         </div>
 
-        {!showCredsForm ? (
-          /* ── Connected state ── */
-          <div className="card space-y-3">
-            <div
-              className="flex items-center gap-2.5 rounded-lg p-3 text-sm"
-              style={{ background: 'rgba(63,143,67,0.08)', border: '1px solid rgba(63,143,67,0.2)' }}
-            >
-              <CheckCircle2 size={16} color="#3f8f43" style={{ flexShrink: 0 }} />
-              <div>
-                <span className="font-medium">Sending as {localAddress}</span>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  Saved securely — Send All, per-contact Send, and reply checks work
-                  without re-entering anything, even after a refresh.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setUpdatingCreds(true)}
-                className="btn text-sm"
-                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
-              >
-                Update credentials
-              </button>
-              <button
-                onClick={handleDisconnect}
-                className="btn text-sm"
-                style={{ color: '#d2483a', borderColor: 'rgba(210,72,58,0.3)' }}
-              >
-                Disconnect
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* ── Connect / update form ── */
-          <div className="card space-y-3">
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Without Gmail connected you can still hunt contacts, generate emails, and
-              send each one from your own Gmail with one click. Connecting enables
-              in-app sending ("Send All" and per-contact Send) plus reply tracking.
-            </p>
-            <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Gmail address</label>
-              <input
-                type="email"
-                value={localAddress}
-                onChange={e => setLocalAddress(e.target.value)}
-                placeholder="you@gmail.com"
-                className="input text-sm w-full"
-              />
-            </div>
+        <div
+          {...getRootProps()}
+          className="rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors"
+          style={{
+            borderColor: isDragActive ? 'var(--accent)' : 'var(--border)',
+            background: isDragActive ? 'var(--accent-dim)' : 'var(--surface-1)',
+          }}
+        >
+          <input {...getInputProps()} />
+          <p className="text-sm font-medium">
+            {extracting ? '⏳ Extracting...' : isDragActive ? 'Drop it!' : 'Drop PDF or DOCX — or click to browse'}
+          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>Max 15 MB</p>
+        </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>App Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={localPassword}
-                  onChange={e => setLocalPassword(e.target.value)}
-                  placeholder="xxxx xxxx xxxx xxxx"
-                  className="input text-sm w-full pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(p => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                  style={{ color: 'var(--text-dim)' }}
-                >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
+        <textarea
+          value={resume}
+          onChange={e => setResume(e.target.value)}
+          placeholder="Paste your resume text here, or upload a file above..."
+          rows={14}
+          className="input font-mono text-xs resize-none"
+          style={{ lineHeight: '1.7' }}
+        />
 
-            {/* Instructions */}
-            <div className="rounded-lg p-3 text-xs space-y-1"
-              style={{ background: 'rgba(226,96,63,0.05)', border: '1px solid rgba(226,96,63,0.12)', color: 'var(--text-muted)' }}>
-              <p className="font-semibold" style={{ color: 'var(--text)' }}>How to get an App Password:</p>
-              <p>1. Enable 2-Step Verification on your Google account</p>
-              <p>2. Go to <span style={{ color: 'var(--accent)' }}>myaccount.google.com/apppasswords</span></p>
-              <p>3. Create a new app → copy the 16-character password</p>
-              <a
-                href="https://myaccount.google.com/apppasswords"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 mt-1"
-                style={{ color: 'var(--accent)' }}
-              >
-                Open App Passwords <ExternalLink size={10} />
-              </a>
-              <p className="pt-1" style={{ color: 'var(--text-dim)' }}>
-                🔒 Verified with Gmail, then stored encrypted on the server — never in
-                this browser. Remove it anytime with Disconnect.
-              </p>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleConnect}
-                disabled={testing || !localAddress || !localPassword}
-                className="btn text-sm flex-1"
-                style={{
-                  background: 'rgba(226,96,63,0.10)',
-                  borderColor: 'rgba(226,96,63,0.25)',
-                  color: 'var(--accent)',
-                  opacity: testing || !localAddress || !localPassword ? 0.5 : 1,
-                }}
-              >
-                {testing ? 'Verifying…' : 'Verify & Save'}
-              </button>
-              {updatingCreds && (
-                <button
-                  onClick={() => { setUpdatingCreds(false); setLocalPassword('') }}
-                  disabled={testing}
-                  className="btn text-sm"
-                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={handleSaveResume}
+            disabled={savingResume || !resume.trim()}
+            className="btn text-sm flex items-center gap-1.5"
+            style={{
+              background: 'rgba(63,143,67,0.10)',
+              borderColor: 'rgba(63,143,67,0.25)',
+              color: '#3f8f43',
+              opacity: savingResume || !resume.trim() ? 0.5 : 1,
+            }}
+          >
+            <Save size={13} />
+            {savingResume ? 'Saving…' : 'Save Resume'}
+          </button>
+        </div>
       </div>
 
       {/* ── Signature (auto-detected; preview-first, edit on demand) ──────── */}
@@ -415,59 +327,156 @@ export default function Setup() {
         )}
       </div>
 
-      {/* ── Resume ────────────────────────────────────────────────────────── */}
+      {/* ── Gmail Credentials (optional) ──────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
-            RESUME
+            GMAIL CREDENTIALS
+            <span
+              className="ml-2 px-1.5 py-0.5 rounded font-sans font-semibold"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-dim)', fontSize: 9, letterSpacing: '0.02em' }}
+            >
+              OPTIONAL
+            </span>
           </span>
-          {resume && (
-            <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>
-              ✓ {resume.length.toLocaleString()} chars
+          {gmailConnected && (
+            <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
+              <CheckCircle2 size={12} /> Connected
             </span>
           )}
         </div>
 
-        <div
-          {...getRootProps()}
-          className="rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors"
-          style={{
-            borderColor: isDragActive ? 'var(--accent)' : 'var(--border)',
-            background: isDragActive ? 'var(--accent-dim)' : 'var(--surface-1)',
-          }}
-        >
-          <input {...getInputProps()} />
-          <p className="text-sm font-medium">
-            {extracting ? '⏳ Extracting...' : isDragActive ? 'Drop it!' : 'Drop PDF or DOCX — or click to browse'}
-          </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>Max 15 MB</p>
-        </div>
+        {!showCredsForm ? (
+          /* ── Connected state ── */
+          <div className="card space-y-3">
+            <div
+              className="flex items-center gap-2.5 rounded-lg p-3 text-sm"
+              style={{ background: 'rgba(63,143,67,0.08)', border: '1px solid rgba(63,143,67,0.2)' }}
+            >
+              <CheckCircle2 size={16} color="#3f8f43" style={{ flexShrink: 0 }} />
+              <div>
+                <span className="font-medium">Sending as {localAddress}</span>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Saved securely — Send All, per-contact Send, and reply checks work
+                  without re-entering anything, even after a refresh.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setUpdatingCreds(true)}
+                className="btn text-sm"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+              >
+                Update credentials
+              </button>
+              <button
+                onClick={handleDisconnect}
+                className="btn text-sm"
+                style={{ color: '#d2483a', borderColor: 'rgba(210,72,58,0.3)' }}
+              >
+                Disconnect
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── Connect / update form ── */
+          <div className="card space-y-3">
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Without Gmail connected you can still hunt contacts, generate emails, and
+              send each one from your own Gmail with one click. Connecting enables
+              in-app sending ("Send All" and per-contact Send) plus reply tracking.
+            </p>
+            <div className="space-y-1">
+              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Gmail address</label>
+              <input
+                type="email"
+                value={localAddress}
+                onChange={e => setLocalAddress(e.target.value)}
+                placeholder="you@gmail.com"
+                className="input text-sm w-full"
+              />
+            </div>
 
-        <textarea
-          value={resume}
-          onChange={e => setResume(e.target.value)}
-          placeholder="Paste your resume text here, or upload a file above..."
-          rows={14}
-          className="input font-mono text-xs resize-none"
-          style={{ lineHeight: '1.7' }}
-        />
+            <div className="space-y-1">
+              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>App Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={localPassword}
+                  onChange={e => setLocalPassword(e.target.value)}
+                  placeholder="xxxx xxxx xxxx xxxx"
+                  className="input text-sm w-full pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2"
+                  style={{ color: 'var(--text-dim)' }}
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
 
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={handleSaveResume}
-            disabled={savingResume || !resume.trim()}
-            className="btn text-sm flex items-center gap-1.5"
-            style={{
-              background: 'rgba(63,143,67,0.10)',
-              borderColor: 'rgba(63,143,67,0.25)',
-              color: '#3f8f43',
-              opacity: savingResume || !resume.trim() ? 0.5 : 1,
-            }}
-          >
-            <Save size={13} />
-            {savingResume ? 'Saving…' : 'Save Resume'}
-          </button>
-        </div>
+            {/* Instructions */}
+            <div className="rounded-lg p-3 text-xs space-y-1"
+              style={{ background: 'rgba(226,96,63,0.05)', border: '1px solid rgba(226,96,63,0.12)', color: 'var(--text-muted)' }}>
+              <p className="font-semibold" style={{ color: 'var(--text)' }}>How to get an App Password:</p>
+              <p>1. Enable 2-Step Verification on your Google account</p>
+              <p>2. Go to{' '}
+                <a
+                  href="https://myaccount.google.com/apppasswords"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+                >
+                  myaccount.google.com/apppasswords
+                </a>
+              </p>
+              <p>3. Create a new app → copy the 16-character password</p>
+              <a
+                href="https://myaccount.google.com/apppasswords"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 mt-1"
+                style={{ color: 'var(--accent)' }}
+              >
+                Open App Passwords <ExternalLink size={10} />
+              </a>
+              <p className="pt-1" style={{ color: 'var(--text-dim)' }}>
+                🔒 Verified with Gmail, then stored encrypted on the server — never in
+                this browser. Remove it anytime with Disconnect.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleConnect}
+                disabled={testing || !localAddress || !localPassword}
+                className="btn text-sm flex-1"
+                style={{
+                  background: 'rgba(226,96,63,0.10)',
+                  borderColor: 'rgba(226,96,63,0.25)',
+                  color: 'var(--accent)',
+                  opacity: testing || !localAddress || !localPassword ? 0.5 : 1,
+                }}
+              >
+                {testing ? 'Verifying…' : 'Verify & Save'}
+              </button>
+              {updatingCreds && (
+                <button
+                  onClick={() => { setUpdatingCreds(false); setLocalPassword('') }}
+                  disabled={testing}
+                  className="btn text-sm"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Next step ─────────────────────────────────────────────────────── */}
