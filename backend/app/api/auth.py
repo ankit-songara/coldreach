@@ -27,6 +27,43 @@ from app.config import settings
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# ── Google ID-token verification (cached transport) ───────────────────────────
+# verify_oauth2_token fetches Google's signing certs over HTTPS on every call.
+# With a fresh Request() each time that's an uncached round-trip per sign-in —
+# the dominant cost of Google login, and worst on serverless cold starts. We
+# reuse ONE Request backed by a persistent session (keep-alive connection reuse)
+# and cache the certs in-process for their advertised lifetime, so a warm process
+# verifies subsequent logins with no network hop. Built lazily so the app still
+# boots if google-auth isn't installed yet, and rebuilt per-process (thread-safe
+# enough: the worst race just refetches certs once).
+_google_request = None
+
+
+def _get_google_request():
+    global _google_request
+    if _google_request is None:
+        import requests as _requests
+        from google.auth.transport import requests as google_requests
+        # cachecontrol is a declared dependency (see requirements.txt); if it's
+        # somehow missing we fall back to a plain session — still gets keep-alive
+        # connection reuse, just no cert caching.
+        session = _requests.Session()
+        try:
+            import cachecontrol
+            session = cachecontrol.CacheControl(session)
+        except Exception:
+            log.debug("cachecontrol unavailable — Google certs won't be cached")
+        _google_request = google_requests.Request(session=session)
+    return _google_request
+
+
+def _verify_google_token(credential: str, client_id: str) -> dict:
+    """Verify a Google ID token against our client ID, reusing a cached transport."""
+    from google.oauth2 import id_token as google_id_token
+    return google_id_token.verify_oauth2_token(
+        credential, _get_google_request(), client_id
+    )
+
 # ── Login throttle (in-memory, per-process) ───────────────────────────────────
 # Simple sliding-window limiter keyed by client IP. Good enough for a
 # single-process deployment; swap for Redis if you scale horizontally.
@@ -154,14 +191,8 @@ def google_login(payload: GoogleCredential, db: Session = Depends(get_db)):
     if not client_id:
         raise HTTPException(503, "Google sign-in is not configured on this server.")
 
-    # Imported lazily so the app still boots if google-auth isn't installed yet.
-    from google.oauth2 import id_token as google_id_token
-    from google.auth.transport import requests as google_requests
-
     try:
-        idinfo = google_id_token.verify_oauth2_token(
-            payload.credential, google_requests.Request(), client_id
-        )
+        idinfo = _verify_google_token(payload.credential, client_id)
     except ValueError:
         # Bad signature, wrong audience, or expired token.
         raise HTTPException(401, "Invalid or expired Google credential.")

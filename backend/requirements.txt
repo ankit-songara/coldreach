@@ -11,6 +11,8 @@ psycopg2-binary>=2.9.0       # PostgreSQL driver (used when DATABASE_URL is post
 # ── Auth & secrets ───────────────────────────────────────────────────────────
 cryptography>=42.0.0        # at-rest encryption + session tokens (no JWT lib needed)
 google-auth>=2.28.0         # verify "Sign in with Google" ID tokens (uses requests, already present)
+requests>=2.31.0            # transport for google-auth token verification
+cachecontrol>=0.14.0        # cache Google's signing certs in-process → fast repeat logins
 
 # ── Email verification ───────────────────────────────────────────────────────
 dnspython>=2.6.0            # MX-record lookups for deliverability checks
