@@ -125,3 +125,47 @@ class TestResumeExtract:
         )
         # Either extracts empty (422) or parses it
         assert r.status_code in (200, 422)
+
+
+class TestRoleFilter:
+    """Query-relevance role classification (hunt.py)."""
+
+    @pytest.mark.parametrize("designation, expected", [
+        ("Software Engineer",     {"engineering"}),
+        ("Backend Engineer",      {"engineering"}),
+        ("Engineering Manager",   {"engineering", "management"}),
+        ("Head of Engineering",   {"engineering", "management"}),
+        ("Founder",               {"founder_exec"}),
+        ("CTO",                   {"founder_exec"}),
+        ("Technical Recruiter",   {"recruiting"}),
+        ("People Ops",            {"recruiting"}),
+        ("Product Manager",       {"product", "management"}),
+        ("UX Designer",           {"design"}),
+        ("Data Scientist",        {"data"}),
+        ("",                      set()),
+    ])
+    def test_role_families(self, designation, expected):
+        from app.api.hunt import _role_families
+        assert _role_families(designation) == expected
+
+    @pytest.mark.parametrize("designation, expected_rank", [
+        ("Engineering Manager", 0),   # matches management
+        ("Hiring Manager",      0),   # matches management
+        ("VP of Sales",         0),   # "vp" → management
+        ("Founder",             1),   # gatekeeper
+        ("Technical Recruiter", 1),   # gatekeeper
+        ("",                    2),   # unknown → kept, ranked last
+        ("Software Engineer",   None),  # off-target IC → dropped
+        ("Backend Engineer",    None),  # off-target IC → dropped
+        ("UX Designer",         None),  # off-target → dropped
+    ])
+    def test_management_search_ranks_and_drops(self, designation, expected_rank):
+        from app.api.hunt import _role_match_rank
+        assert _role_match_rank(designation, "management") == expected_rank
+
+    def test_engineering_search_keeps_engineers_and_gatekeepers(self):
+        from app.api.hunt import _role_match_rank
+        assert _role_match_rank("Software Engineer", "engineering") == 0
+        assert _role_match_rank("Engineering Manager", "engineering") == 0
+        assert _role_match_rank("Founder", "engineering") == 1          # gatekeeper kept
+        assert _role_match_rank("Product Manager", "engineering") is None  # off-target dropped

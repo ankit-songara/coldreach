@@ -96,6 +96,52 @@ def _desig_priority(designation: str) -> int:
     return 4
 
 
+# ── Query-relevance role filtering ────────────────────────────────────────────
+# A contact's designation can belong to SEVERAL families (an "Engineering Manager"
+# is both engineering and management), so membership is a set, not a single label.
+# When the user picks a target role in the Hunt UI, we keep only the leads that
+# match it — plus "gatekeepers" (founders/execs and recruiters), who are who you
+# actually pitch regardless of the role — and drop clearly off-target individual
+# contributors (e.g. a plain Software Engineer when you searched for management).
+# Leads with no recognizable family are kept (we can't say they're off-target).
+_FAMILY_PATTERNS: dict[str, "re.Pattern"] = {
+    "founder_exec": re.compile(r"\b(founders?|co-?founders?|founding|ceo|cto|coo|cfo|cmo|cpo|chief|president|owner)\b", re.I),
+    "recruiting":   re.compile(r"\b(recruit\w*|talent|sourcers?|people\s+(?:ops|partner|team)|human\s+resources?|hr|staffing)\b", re.I),
+    "management":   re.compile(r"\b(managers?|management|managing|heads?|directors?|vp|vice\s+president|leads?|leadership)\b", re.I),
+    "product":      re.compile(r"\b(product)\b", re.I),
+    "design":       re.compile(r"\b(designers?|design|ux|ui|user\s+experience)\b", re.I),
+    "data":         re.compile(r"\b(data|machine\s+learning|ml|ai|analytics|scientist)\b", re.I),
+    "engineering":  re.compile(r"\b(engineer\w*|develop\w*|swe|software|backend|back-end|frontend|front-end|fullstack|full-?stack|devops|sre|site\s+reliability|platform|infrastructure|programmer|architect)\b", re.I),
+}
+# Always kept when a role filter is active — the universal outreach targets.
+_GATEKEEPER_FAMILIES = frozenset({"founder_exec", "recruiting"})
+# Valid values the API accepts for role_filter (anything else → treated as "any").
+ROLE_FILTERS = frozenset(_FAMILY_PATTERNS.keys())
+
+
+def _role_families(designation: str) -> set[str]:
+    """Every role family a designation plausibly belongs to (may be empty)."""
+    d = designation or ""
+    return {fam for fam, pat in _FAMILY_PATTERNS.items() if pat.search(d)}
+
+
+def _role_match_rank(designation: str, target: str) -> int | None:
+    """Ranking/keep decision for a lead under an active role filter.
+    Returns the sort rank (lower = more relevant), or None to DROP the lead:
+      0 = designation matches the target family
+      1 = a gatekeeper (founder/exec or recruiter)
+      2 = no recognizable family (unknown — kept, but ranked last)
+    """
+    fams = _role_families(designation)
+    if not fams:
+        return 2                      # unknown role — don't assume it's off-target
+    if target in fams:
+        return 0
+    if fams & _GATEKEEPER_FAMILIES:
+        return 1
+    return None                       # has a family, all off-target → drop
+
+
 def _build_scrapers(hunter_key: str) -> list:
     scrapers = [
         HackerNewsScraper(),
@@ -417,15 +463,35 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     if dropped_invalid:
         log.info(f"Hunt: dropped {dropped_invalid} undeliverable addresses")
 
-    # ── Sort: Founders → HR/TA → Engineers → rest; within each tier, verified
-    #    emails before risky/unknown, then higher resolver confidence first, so
-    #    the leads a user emails first are the ones most likely to land. ────────
+    # ── Query relevance: when the user picked a target role, keep only leads
+    #    that match it (plus gatekeepers), dropping off-target ICs. Ranked leads
+    #    then sort by that relevance first. ─────────────────────────────────────
     _status_rank = {"valid": 0, "unknown": 1, "risky": 2}
-    with_email.sort(key=lambda r: (
-        _desig_priority(r.get("designation") or ""),
-        _status_rank.get(r.get("email_status") or "unknown", 1),
-        -(r.get("confidence") or 0),
-    ))
+    target = (req.role_filter or "").strip().lower()
+    role_filtered = 0
+    if target in ROLE_FILTERS:
+        ranked: list[tuple[int, dict]] = []
+        for r in with_email:
+            rank = _role_match_rank(r.get("designation") or "", target)
+            if rank is not None:
+                ranked.append((rank, r))
+        role_filtered = len(with_email) - len(ranked)
+        if role_filtered:
+            log.info(f"Hunt: role filter '{target}' dropped {role_filtered} off-target leads")
+        ranked.sort(key=lambda pr: (
+            pr[0],                                                     # role relevance
+            _status_rank.get(pr[1].get("email_status") or "unknown", 1),
+            -(pr[1].get("confidence") or 0),
+        ))
+        with_email = [r for _, r in ranked]
+    else:
+        # No role filter: Founders → HR/TA → Engineers → rest; within each tier,
+        # verified emails before risky/unknown, then higher confidence first.
+        with_email.sort(key=lambda r: (
+            _desig_priority(r.get("designation") or ""),
+            _status_rank.get(r.get("email_status") or "unknown", 1),
+            -(r.get("confidence") or 0),
+        ))
 
     # ── Persist ────────────────────────────────────────────────────────────────
     # "Unknown" company leaks straight into generated emails ("at Unknown") — when
@@ -470,4 +536,5 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         total=len(saved),
         found=found,
         duplicates=duplicates,
+        role_filtered=role_filtered,
     )

@@ -48,12 +48,16 @@ class DraftOut(BaseModel):
 class HuntRequest(BaseModel):
     query:          str = Field(..., min_length=1, max_length=_QUERY_MAX)
     hunter_api_key: str = Field("", max_length=200)   # override env var for one request
+    # Optional target-role family ("engineering", "management", "recruiting", …).
+    # Empty = no filtering (return every reachable lead, current behaviour).
+    role_filter:    str = Field("", max_length=32)
 
 
 class HuntResult(BaseModel):
     # Per-source breakdowns deliberately stay server-side: where the leads come
     # from is our pipeline detail, not something the product surfaces to users.
-    contacts:   list[dict]
-    total:      int                # new contacts saved this hunt
-    found:      int = 0            # leads discovered (pre-resolution)
-    duplicates: int = 0            # resolved contacts already in the user's list
+    contacts:      list[dict]
+    total:         int             # new contacts saved this hunt
+    found:         int = 0         # leads discovered (pre-resolution)
+    duplicates:    int = 0         # resolved contacts already in the user's list
+    role_filtered: int = 0         # reachable leads dropped by the role filter

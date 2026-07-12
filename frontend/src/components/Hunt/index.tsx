@@ -38,6 +38,20 @@ const GENERAL_QUERIES = [
   'startup hiring engineers', 'platform engineer hiring', 'sre hiring',
 ]
 
+// Target-role filter. Value maps to the backend's role families; '' = no filter.
+// When set, the hunt keeps that family + gatekeepers (founders, recruiters) and
+// drops off-target people (e.g. no plain engineers on a management search).
+const ROLE_OPTIONS: Array<[value: string, label: string]> = [
+  ['',             'Any role'],
+  ['engineering',  'Engineering'],
+  ['management',   'Management / Leadership'],
+  ['founder_exec', 'Founder / Exec'],
+  ['recruiting',   'Recruiting / Talent'],
+  ['product',      'Product'],
+  ['design',       'Design'],
+  ['data',         'Data / ML'],
+]
+
 function buildChips(resume: string): string[] {
   const matched = SKILL_QUERIES.filter(([re]) => re.test(resume)).map(([, q]) => q)
   // Shuffle the general pool so returning users see variety
@@ -51,9 +65,12 @@ function buildChips(resume: string): string[] {
 }
 
 // Honest, specific empty-state copy based on what the hunt actually found.
-function emptyHuntMessage(query: string, found: number, duplicates: number): string {
+function emptyHuntMessage(query: string, found: number, duplicates: number, roleFiltered: number): string {
   if (duplicates > 0)
     return `Every match for "${query}" is already in your list (${duplicates} contact${duplicates > 1 ? 's' : ''}). Try a different query.`
+  // Role filter accounted for the misses — don't blame "no reachable email".
+  if (roleFiltered > 0)
+    return `Found ${roleFiltered} reachable lead${roleFiltered > 1 ? 's' : ''} for "${query}", but none matched your role filter (founders & recruiters are always kept). Switch to "Any role" or pick a different role to see them.`
   if (found > 0)
     return `Found ${found} lead${found > 1 ? 's' : ''} hiring for "${query}", but no reachable email address — larger companies route everything through application portals. Startup names ("Linear", "Supabase") and specific roles ("react engineer remote") work best.`
   return `No matches for "${query}". Try a role query like "react engineer remote", or a specific startup name (e.g. "Linear", "Supabase").`
@@ -77,6 +94,7 @@ function SkeletonCard() {
 
 export default function Hunt() {
   const [query, setQuery] = useState('')
+  const [role, setRole]   = useState('')   // target-role filter ('' = any)
   const [statusFilter, setStatusFilter] = useState<ContactStatus | 'all'>('all')
   const [verifying, setVerifying] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -143,7 +161,7 @@ export default function Hunt() {
 
   const doHunt = (q: string) => {
     if (!q.trim() || hunting) return
-    void runHunt(q)   // store-level: keeps running if the user leaves this tab
+    void runHunt(q, role)   // store-level: keeps running if the user leaves this tab
   }
 
   const exportCSV = () => {
@@ -237,7 +255,7 @@ export default function Hunt() {
       </div>
 
       {/* ── Search bar ──────────────────────────────────────────────── */}
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
@@ -246,10 +264,22 @@ export default function Hunt() {
           className="input flex-1"
           aria-label="Hunt query"
         />
+        <select
+          value={role}
+          onChange={e => setRole(e.target.value)}
+          disabled={hunting}
+          className="input sm:w-auto"
+          aria-label="Target role"
+          title="Only show people in this role (plus founders & recruiters)"
+        >
+          {ROLE_OPTIONS.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
         <button
           onClick={() => doHunt(query)}
           disabled={!query.trim() || hunting}
-          className="btn btn-primary flex items-center gap-2"
+          className="btn btn-primary flex items-center gap-2 justify-center"
         >
           <Search size={14} />
           {hunting ? 'Hunting…' : 'Hunt'}
@@ -406,7 +436,7 @@ export default function Hunt() {
           <span>
             {huntResults.length > 0
               ? `Showing ${huntResults.length} new contact${huntResults.length !== 1 ? 's' : ''} found for "${huntInfo.query}"`
-              : emptyHuntMessage(huntInfo.query, huntInfo.found, huntInfo.duplicates)}
+              : emptyHuntMessage(huntInfo.query, huntInfo.found, huntInfo.duplicates, huntInfo.roleFiltered)}
           </span>
           {contacts.length > 0 && (
             <button

@@ -59,8 +59,8 @@ interface AppState {
   hunting:     boolean
   huntStage:   string
   huntResults: Contact[] | null   // results of the LAST hunt (null = none yet)
-  huntInfo:    { found: number; duplicates: number; query: string } | null
-  runHunt:          (query: string) => Promise<void>
+  huntInfo:    { found: number; duplicates: number; query: string; roleFiltered: number } | null
+  runHunt:          (query: string, roleFilter?: string) => Promise<void>
   clearHunt:        () => void
   removeHuntResult: (id: number) => void
   updateHuntResult: (c: Contact) => void
@@ -132,17 +132,17 @@ export const useStore = create<AppState>()(
       huntStage:   '',
       huntResults: null,
       huntInfo:    null,
-      runHunt: async (query) => {
+      runHunt: async (query, roleFilter = '') => {
         if (get().hunting) return
         set({ hunting: true, huntResults: null, huntInfo: null, huntStage: HUNT_STAGES[0].label })
         const timers = HUNT_STAGES.slice(1).map(s =>
           setTimeout(() => { if (get().hunting) set({ huntStage: s.label }) }, s.after)
         )
         try {
-          const data = await huntApi.hunt({ query })
+          const data = await huntApi.hunt({ query, role_filter: roleFilter || undefined })
           set({
             huntResults: (data.contacts ?? []) as Contact[],
-            huntInfo: { found: data.found ?? 0, duplicates: data.duplicates ?? 0, query },
+            huntInfo: { found: data.found ?? 0, duplicates: data.duplicates ?? 0, query, roleFiltered: data.role_filtered ?? 0 },
           })
           try { set({ contacts: await contactsApi.list() }) } catch { /* refetch later */ }
           queryClient.invalidateQueries({ queryKey: ['contacts'] })

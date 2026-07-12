@@ -40,13 +40,15 @@ export interface Draft {
 export interface HuntRequest {
   query:           string
   hunter_api_key?: string
+  role_filter?:    string   // target role family: '' = any (no filtering)
 }
 
 export interface HuntResult {
-  contacts:    Partial<Contact>[]
-  total:       number
-  found?:      number   // leads discovered (pre-resolution)
-  duplicates?: number   // resolved contacts already in the user's list
+  contacts:       Partial<Contact>[]
+  total:          number
+  found?:         number   // leads discovered (pre-resolution)
+  duplicates?:    number   // resolved contacts already in the user's list
+  role_filtered?: number   // reachable leads dropped by the role filter
 }
 
 export interface ComposeRequest {
