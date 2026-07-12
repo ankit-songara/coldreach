@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.database import get_db
-from app.db.crud import ContactRepository, ConfigRepository
+from app.db.crud import ContactRepository, ConfigRepository, record_pattern_bounce
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
@@ -223,6 +223,12 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
     for addr in bounced_emails - reply_addrs:
         c = awaiting[addr]
         contact_repo.update(c.id, ContactUpdate(status="bounced", bounced=True))
+        # Feed the bounce back into pattern memory: a strike against the stored
+        # email format for this domain, so bad patterns demote themselves.
+        try:
+            record_pattern_bounce(db, c.email)
+        except Exception:
+            pass
         log.info(f"Bounce detected for {c.email} — marked bounced")
 
     return InboxSyncResponse(

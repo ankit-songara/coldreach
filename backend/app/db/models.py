@@ -99,6 +99,30 @@ class AppConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class EmailPattern(Base):
+    """
+    Learned email format per company domain ("acme.com uses first.last").
+
+    Resolving a domain's pattern costs real work every hunt (GitHub commit
+    search, SMTP probes) and the per-hunt ResolutionCache forgets it all when
+    the hunt ends. Persisting the verdict makes every future hunt guess right
+    on the first candidate — and bounces feed back as strikes so a pattern
+    that stops working demotes itself instead of misleading forever.
+
+    Global (not user-scoped), like KnownCompany: a company's email format is a
+    fact about the company. A pattern is trusted while verified_count >
+    bounced_count.
+    """
+    __tablename__ = "email_patterns"
+
+    id:             Mapped[int]      = mapped_column(primary_key=True, index=True)
+    domain:         Mapped[str]      = mapped_column(String(255), unique=True, index=True)
+    pattern:        Mapped[str]      = mapped_column(String(32))   # e.g. "first.last"
+    verified_count: Mapped[int]      = mapped_column(default=1)    # confirmations (SMTP/observed)
+    bounced_count:  Mapped[int]      = mapped_column(default=0)    # strikes from bounce reports
+    updated_at:     Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class KnownCompany(Base):
     """
     Runtime-extensible company → ATS directory entries (the CSV is the curated

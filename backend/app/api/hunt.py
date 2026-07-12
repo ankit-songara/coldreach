@@ -9,12 +9,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.crud import ContactRepository, add_known_company
+from app.db.crud import (
+    ContactRepository, add_known_company,
+    get_domain_patterns, record_domain_pattern,
+)
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactCreate
 from app.schemas.email import HuntRequest, HuntResult
-from app.scrapers.base import is_valid_email, person_name_from_email, ROLE_LOCALS
+from app.scrapers.base import (
+    is_valid_email, person_name_from_email, ROLE_LOCALS,
+    is_test_identity, plausible_person_name,
+)
 from app.scrapers.hn import HackerNewsScraper, HNJobsScraper
 from app.scrapers.github import GitHubScraper
 from app.scrapers.enricher import HunterEnricher
@@ -237,7 +243,11 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
         if not resolved:
             return None
         out = {**raw, "email": resolved.email, "confidence": resolved.confidence,
-               "_domain": None}
+               "_domain": None,
+               # Pattern provenance — harvested after the hunt into the
+               # persistent pattern memory (underscore keys never persist).
+               "_pattern": resolved.pattern,
+               "_pattern_verified": resolved.verified}
         if resolved.catch_all:
             out["email_status"] = "risky"   # deliverable but unprovable
         return out
@@ -341,9 +351,15 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     needs_resolve: list[dict] = []
     source_counts: dict[str, int] = {}
 
+    dropped_junk = 0
     for scraper, results in zip(scrapers, results_per_scraper):
         count = 0
         for r in results:
+            # Test fixtures masquerading as people ("Test User", "John Doe",
+            # "root") are junk regardless of how good their email looks.
+            if is_test_identity(r.get("name") or ""):
+                dropped_junk += 1
+                continue
             email = (r.get("email") or "").lower().strip()
             if email:
                 if email not in seen_emails and is_valid_email(email):
@@ -354,6 +370,8 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 needs_resolve.append(r)
                 count += 1
         source_counts[scraper.name] = count
+    if dropped_junk:
+        log.info(f"Hunt: dropped {dropped_junk} test-identity leads")
 
     log.info(f"Hunt: {len(with_email)} direct emails, {len(needs_resolve)} identity-only leads")
 
@@ -400,6 +418,20 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         key=lambda r: 0 if " " in (r.get("name") or "").strip() else 1,
     )
 
+    # ── Pattern memory: seed the cache with formats learned in PREVIOUS hunts
+    #    (one DB query) so those domains guess right on the first candidate
+    #    instead of re-learning via GitHub search / SMTP probes. ────────────────
+    try:
+        stored = get_domain_patterns(db, [
+            (r.get("_domain") or "").lower() for r in needs_resolve
+        ])
+        for dom, patt in stored.items():
+            cache.seed_pattern(dom, patt)
+        if stored:
+            log.info(f"Hunt: seeded {len(stored)} domain patterns from memory")
+    except Exception as e:
+        log.debug(f"Hunt: pattern preload skipped: {e}")
+
     # ── Resolve identity-only leads — concurrency-limited, with a time budget so
     #    a blocked port 25 can't make the hunt hang. ─────────────────────────────
     semaphore = asyncio.Semaphore(6)
@@ -435,6 +467,23 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             if email and email not in seen_emails and is_valid_email(email):
                 seen_emails.add(email)
                 with_email.append(r)
+
+    # ── Persist pattern memory for future hunts: SMTP-verified resolutions are
+    #    strong confirmations, everything else the cache learned is a weak
+    #    observation. Best-effort — never breaks a hunt. ─────────────────────────
+    try:
+        recorded: set[str] = set()
+        for r in with_email:
+            patt = r.get("_pattern")
+            if patt and r.get("email"):
+                dom = r["email"].rsplit("@", 1)[-1].lower()
+                record_domain_pattern(db, dom, patt, bool(r.get("_pattern_verified")))
+                recorded.add(dom)
+        for dom, patt in cache.learned_patterns().items():
+            if dom not in recorded:
+                record_domain_pattern(db, dom, patt, verified=False)
+    except Exception as e:
+        log.debug(f"Hunt: pattern persistence skipped: {e}")
 
     # ── Verify deliverability inline (syntax + MX + disposable/role heuristics).
     #    Drop invalid addresses entirely so they never reach the user or hurt the
@@ -496,23 +545,40 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # ── Persist ────────────────────────────────────────────────────────────────
     # "Unknown" company leaks straight into generated emails ("at Unknown") — when
     # the scraper couldn't name the company, derive it from the email's domain.
+    # Names get the same treatment: scrapers return git author strings, handles,
+    # and org names — anything that isn't plausibly a person is replaced by a
+    # name derived from the email ("sarah.chen@…" → "Sarah Chen") or the
+    # "Contact" sentinel, so the UI and the email greeting never treat
+    # "dev4life" or "Acme Careers" as somebody's name.
+    def _clean_identity(r: dict) -> tuple[str, str]:
+        company = (
+            (c if (c := (r.get("company") or "").strip()) and c != "Unknown" else "")
+            or _company_from_email(r["email"]) or "Unknown"
+        )
+        raw_name = (r.get("name") or "").strip()
+        if plausible_person_name(raw_name, company):
+            name = raw_name
+        else:
+            name = person_name_from_email(r["email"], company) or "Contact"
+            # The email-derived guess must clear the same bar (e.g. 'acmehr@…').
+            if name != "Contact" and not plausible_person_name(name, company):
+                name = "Contact"
+        return name, company
+
     repo = ContactRepository(db, user.id)
-    contacts_to_save = [
-        ContactCreate(
-            name         = r.get("name") or "Contact",
+    contacts_to_save = []
+    for r in with_email:
+        name, company = _clean_identity(r)
+        contacts_to_save.append(ContactCreate(
+            name         = name,
             email        = r["email"],
             designation  = r.get("designation") or "Hiring Manager",
-            company      = (
-                (c if (c := (r.get("company") or "").strip()) and c != "Unknown" else "")
-                or _company_from_email(r["email"]) or "Unknown"
-            ),
+            company      = company,
             source       = r.get("source") or "",
             context      = r.get("context") or None,
             confidence   = r.get("confidence") or 0,
             email_status = r.get("email_status") or "unknown",
-        )
-        for r in with_email
-    ]
+        ))
     saved = repo.bulk_create(contacts_to_save)
     log.info(f"Hunt complete: {len(saved)} new contacts saved")
 

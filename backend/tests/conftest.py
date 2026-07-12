@@ -55,13 +55,14 @@ def client(test_engine):
     app.dependency_overrides.clear()
 
     # Wipe all rows between tests (keep schema)
-    from app.db.models import Contact, EmailDraft, Resume, User, AppConfig, KnownCompany
+    from app.db.models import Contact, EmailDraft, Resume, User, AppConfig, KnownCompany, EmailPattern
     db = SessionTest()
     db.query(EmailDraft).delete()
     db.query(AppConfig).delete()
     db.query(Contact).delete()
     db.query(Resume).delete()
     db.query(KnownCompany).delete()
+    db.query(EmailPattern).delete()
     db.query(User).delete()
     db.commit()
     db.close()
@@ -70,6 +71,19 @@ def client(test_engine):
     # companies registered in one test don't leak into the next.
     from app.scrapers import directory
     directory._RUNTIME.clear()
+
+
+@pytest.fixture
+def db_session(test_engine):
+    """A raw DB session on the test engine, for unit-testing crud helpers.
+    Cleans up its own EmailPattern rows (the table it's used with)."""
+    SessionTest = sessionmaker(bind=test_engine)
+    db = SessionTest()
+    yield db
+    from app.db.models import EmailPattern
+    db.query(EmailPattern).delete()
+    db.commit()
+    db.close()
 
 
 @pytest.fixture

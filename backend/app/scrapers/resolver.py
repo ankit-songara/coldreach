@@ -269,6 +269,17 @@ class ResolutionCache:
         if email and "@" in email and name and " " in name.strip():
             self._observed[email.split("@", 1)[1].lower()].append((email, name))
 
+    def seed_pattern(self, domain: str, pattern: str) -> None:
+        """Preload a pattern learned in a PREVIOUS hunt (persisted in the DB) so
+        this domain skips observation/GitHub learning entirely."""
+        if domain and pattern:
+            self._pattern[domain.lower()] = pattern
+
+    def learned_patterns(self) -> dict[str, str]:
+        """Every pattern this hunt actually resolved (seeded ones included) —
+        harvested by the hunt route to persist for future hunts."""
+        return {d: p for d, p in self._pattern.items() if p}
+
     async def mx(self, domain: str) -> list[str]:
         if domain not in self._mx:
             async with self._lock(domain):

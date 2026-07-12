@@ -36,6 +36,10 @@ from app.llm.prompts import TEMPLATES, get_designation_key
 
 from app.llm.parsing import parse_subject_body
 
+from app.llm.quality import scrub_fabrications, ends_with_question
+
+from app.scrapers.base import plausible_person_name
+
 
 
 log = logging.getLogger(__name__)
@@ -206,19 +210,56 @@ _NOT_A_NAME = frozenset({
 
     "help", "work", "apply", "hi", "hey", "email", "inbox", "general", "unknown",
 
+    "user", "test", "demo", "example", "sample", "someone", "name", "firstname",
+
+    "candidate", "applicant", "recruitment", "notifications", "automated", "staff",
+
+    "department", "dept", "account", "accounts", "crew", "everyone", "folks",
+
 })
 
 
+# Companies that can't be greeted or named: the "Unknown" sentinel, empty, or
+
+# scraped garbage too long to be a brand ("Hi Some Scraped Legalese team,").
+
+def _usable_company(company: str) -> str:
+
+    c = " ".join((company or "").split())
+
+    if not c or c.lower() in ("unknown", "n/a", "na", "-") or len(c) > 24:
+
+        return ""
+
+    return c
 
 
 
-def _first_name(name: str) -> str:
 
-    """Extract a usable first name, or '' if the contact name is a placeholder."""
+
+def _first_name(name: str, company: str = "") -> str:
+
+    """Extract a usable first name, or '' if the contact name is a placeholder.
+
+
+
+    Runs the full person-name plausibility check first (same one the hunt uses),
+
+    so org names ("Acme Careers"), handles ("dev4life"), role titles and test
+
+    fixtures never make it into a greeting — even on hand-added contacts that
+
+    skipped the hunt's sanitization.
+
+    """
 
     n = (name or "").strip()
 
     if not n or n.lower() in _NOT_A_NAME:
+
+        return ""
+
+    if not plausible_person_name(n, company):
 
         return ""
 
@@ -256,9 +297,25 @@ def _strip_affixes(body: str) -> str:
 
 
 
-def _wrap(body: str, contact_name: str, sender_name: str, sender_links: str = "") -> str:
+def _wrap(body: str, contact_name: str, sender_name: str, sender_links: str = "",
 
-    """Add a deterministic 'Hi {first},' greeting and 'Best regards,' sign-off.
+          company: str = "") -> str:
+
+    """Add a deterministic greeting and 'Best regards,' sign-off.
+
+
+
+    Greeting tiers — always honest about what we actually know:
+
+      real person name      → "Hi Priya,"
+
+      no name, known company → "Hi Vercel team,"   (role inboxes, unnamed leads)
+
+      nothing usable         → "Hi,"
+
+    A "name" that is really the company ("Vercel" at Vercel) counts as no name —
+
+    greeting a brand like a person ("Hi Vercel,") torches credibility.
 
 
 
@@ -276,9 +333,25 @@ def _wrap(body: str, contact_name: str, sender_name: str, sender_links: str = ""
 
     core = _humanize(_strip_affixes(body))
 
-    first = _first_name(contact_name)
+    first = _first_name(contact_name, company)
 
-    greeting = f"Hi {first}," if first else "Hi,"
+    comp = _usable_company(company)
+
+    if first and comp and first.lower() == comp.split()[0].lower():
+
+        first = ""   # the "name" is the company — not a person
+
+    if first:
+
+        greeting = f"Hi {first},"
+
+    elif comp:
+
+        greeting = f"Hi {comp} team,"
+
+    else:
+
+        greeting = "Hi,"
 
     sender = (sender_name or "").strip()
 
@@ -420,19 +493,19 @@ class EmailGenerator:
 
         self, chain, variables: dict, *, contact_name: str, sender_name: str,
 
-        sender_links: str = "",
+        sender_links: str = "", company: str = "", context: str = "",
 
     ) -> tuple[str, str]:
 
         """
 
-        Invoke the chain and validate the result; retry once on an empty or
+        Invoke the chain and validate the result; retry once on an empty,
 
-        malformed draft. Returns (subject, wrapped_body). Raises RuntimeError if
+        malformed, or fabricating draft. Returns (subject, wrapped_body).
 
-        both attempts produce garbage — better a clear error than a blank draft
+        Raises RuntimeError if both attempts produce garbage — better a clear
 
-        that could be bulk-sent.
+        error than a blank draft that could be bulk-sent.
 
         """
 
@@ -444,13 +517,51 @@ class EmailGenerator:
 
             if _PLACEHOLDER in raw:
 
-                return _clean_subject(subject), _wrap(body, contact_name, sender_name, sender_links)
+                return _clean_subject(subject), _wrap(body, contact_name, sender_name, sender_links, company)
+
+
+
+            # Invisible quality pass: claims about the company must be grounded
+
+            # in the verified context. First offence → regenerate; a repeat
+
+            # offender gets the ungrounded sentences silently stripped. A body
+
+            # that doesn't close on a question (the ask) also earns ONE retry.
+
+            # Runs on the affix-stripped body so a model-added sign-off can't
+
+            # mask the closing question.
+
+            clean, fabricated = scrub_fabrications(
+
+                _strip_affixes(body), company=company, context=context,
+
+            )
+
+            if attempt == 1 and (fabricated or not ends_with_question(clean)):
+
+                log.info(
+
+                    f"LLM draft quality retry: {len(fabricated)} ungrounded claim(s), "
+
+                    f"ends_with_question={ends_with_question(clean)}"
+
+                )
+
+                continue
+
+            if fabricated:
+
+                log.info(f"LLM draft: stripped {len(fabricated)} ungrounded company claim(s)")
+
+            body = clean
 
             # Validate AFTER humanize so pleasantry-only drafts (which collapse to
 
             # empty after stripping) trigger a retry rather than being sent blank.
 
-            wrapped = _wrap(body, contact_name, sender_name, sender_links)
+            wrapped = _wrap(body, contact_name, sender_name, sender_links, company)
 
             # Extract the core between greeting and sign-off to measure real content.
 
@@ -538,17 +649,39 @@ class EmailGenerator:
 
 
 
+        # Never leak junk into the prompt: a placeholder name ("Contact",
+
+        # "dev4life") or the "Unknown" company sentinel would get echoed into
+
+        # the body/subject by the model ("referral at Unknown?").
+
+        prompt_name = name if _first_name(name, company) else (
+
+            "unknown (never refer to the recipient by any name)"
+
+        )
+
+        comp = _usable_company(company)
+
+        prompt_company = comp or (
+
+            "their company (name unknown — never write 'their company' or "
+
+            "'Unknown' in the subject or body; phrase around it, e.g. 'your team')"
+
+        )
+
         subject, body = await self._invoke_checked(
 
             chain,
 
             {
 
-                "name":          name or "there",
+                "name":          prompt_name,
 
                 "designation":   designation,
 
-                "company":       company,
+                "company":       prompt_company,
 
                 "resume":        self._trim_resume(resume),
 
@@ -559,6 +692,8 @@ class EmailGenerator:
             },
 
             contact_name=name, sender_name=sender_name, sender_links=sender_links,
+
+            company=company, context=company_context,
 
         )
 
@@ -622,9 +757,9 @@ class EmailGenerator:
 
             {
 
-                "name":           name,
+                "name":           name if _first_name(name, company) else "unknown (never use a name)",
 
-                "company":        company,
+                "company":        _usable_company(company) or "their company (name unknown — never write it literally)",
 
                 "original_email": (orig_body or original_email)[:600],
 
@@ -633,6 +768,14 @@ class EmailGenerator:
             },
 
             contact_name=name, sender_name=sender_name, sender_links=sender_links,
+
+            company=company,
+
+            # Grounding corpus for the follow-up: the verified context PLUS the
+
+            # original email (repeating an already-vetted claim isn't fabrication).
+
+            context=f"{context}\n{orig_body or ''}",
 
         )
 

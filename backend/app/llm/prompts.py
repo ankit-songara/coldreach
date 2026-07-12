@@ -41,6 +41,16 @@ WHAT MAKES IT LAND:
   about your data team"), never a formal title ("Application for Software Engineer").
 - End with ONE easy, low-stakes question, under 12 words ("worth a quick chat?").
 
+THE ASK - the reader must know exactly what you want:
+- Every email makes ONE specific, unmistakable request. Pick whichever fits best:
+  (a) a specific open role - name the exact role if the context mentions one,
+  (b) a 15-minute chat about their team or the problem they're hiring for,
+  (c) being looped into their hiring/TA process for current or upcoming roles.
+- The closing question IS that ask. Never end on something vague ("would love to
+  connect", "let me know your thoughts") - ask for the role, the chat, or the intro.
+- If the recipient or company is marked unknown above, follow that instruction
+  literally: no names, no placeholders, no "[Company]".
+
 FORMAT - write the BODY only:
 - Do NOT write any greeting ("Hi", "Hey", "Hello", "Dear ...") - added automatically.
 - Do NOT write any sign-off or signature ("Best", "Regards", "Thanks", your name) - added automatically.
@@ -77,6 +87,9 @@ Length: 80–110 words. Recruiters see hundreds of emails — get to the point i
 Structure: 1 line hook (tie strongest skill to their hiring context) → 2 lines of most relevant
 experience with real numbers → 1 soft CTA question.
 Do NOT open with "I'm a [title]" — that's what every email starts with. Lead with value.
+If the designation says "role inbox", you are writing to a shared team mailbox
+(careers@ / talent@), not a person: address the team ("you're hiring for…"),
+never an individual, and make the ask easy to forward to the right recruiter.
 
 Return EXACTLY this format (no extra text):
 SUBJECT: [subject]

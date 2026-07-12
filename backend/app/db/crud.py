@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.db.models import Contact, EmailDraft, Resume, AppConfig, User, KnownCompany
+from app.db.models import Contact, EmailDraft, Resume, AppConfig, User, KnownCompany, EmailPattern
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
 from app import security
@@ -469,3 +469,58 @@ def load_known_companies_into_directory(db: Session) -> int:
         if directory.register(kc.name, kc.slug, kc.ats, kc.domain):
             n += 1
     return n
+
+
+# ── Email pattern memory (global, like KnownCompany) ──────────────────────────
+
+def get_domain_patterns(db: Session, domains: list[str]) -> dict[str, str]:
+    """Trusted pattern per domain — only rows whose confirmations outweigh
+    bounce strikes. One query for a whole hunt's worth of domains."""
+    wanted = [d.lower().strip() for d in domains if d]
+    if not wanted:
+        return {}
+    rows = db.query(EmailPattern).filter(EmailPattern.domain.in_(wanted)).all()
+    return {r.domain: r.pattern for r in rows if r.verified_count > r.bounced_count}
+
+
+def record_domain_pattern(db: Session, domain: str, pattern: str, verified: bool) -> None:
+    """Upsert a learned pattern. Same pattern again → another confirmation.
+    A DIFFERENT pattern replaces the old one only when it arrives SMTP-verified;
+    an unverified observation never overwrites a verified record. Best-effort —
+    a race or constraint error must never break a hunt."""
+    domain, pattern = domain.lower().strip(), (pattern or "").strip()
+    if not (domain and pattern):
+        return
+    try:
+        row = db.query(EmailPattern).filter(EmailPattern.domain == domain).first()
+        if row is None:
+            db.add(EmailPattern(domain=domain, pattern=pattern,
+                                verified_count=2 if verified else 1))
+        elif row.pattern == pattern:
+            row.verified_count += 2 if verified else 1
+        elif verified:
+            # Contradicting evidence, but ours is SMTP-confirmed — replace.
+            row.pattern = pattern
+            row.verified_count = 2
+            row.bounced_count = 0
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+    except Exception:
+        db.rollback()
+
+
+def record_pattern_bounce(db: Session, email: str) -> None:
+    """A bounce at this domain is a strike against its stored pattern. Once
+    strikes reach confirmations the pattern stops being trusted (and the next
+    hunt re-learns it from scratch)."""
+    domain = (email or "").rsplit("@", 1)[-1].lower().strip()
+    if not domain:
+        return
+    try:
+        row = db.query(EmailPattern).filter(EmailPattern.domain == domain).first()
+        if row is not None:
+            row.bounced_count += 1
+            db.commit()
+    except Exception:
+        db.rollback()
