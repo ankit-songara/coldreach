@@ -38,6 +38,8 @@ from app.llm.parsing import parse_subject_body
 
 from app.llm.quality import scrub_fabrications, ends_with_question
 
+from app.llm.relevance import rank_relevant_facts, rotate_for_variety
+
 from app.scrapers.base import plausible_person_name
 
 
@@ -649,6 +651,54 @@ class EmailGenerator:
 
 
 
+        # Relevance pre-pass: rank the résumé's individual facts against what
+
+        # THIS recipient cares about (their job context, role, company) and hand
+
+        # the model an explicit shortlist. Otherwise small models build every
+
+        # email around the same flagship project — an AI company should see the
+
+        # candidate's LLM work first, a payments company the billing system.
+
+        # Rotation is seeded per contact so similar companies still get varied
+
+        # openers. No signal → no shortlist → résumé passed through as before.
+
+        resume_for_prompt = self._trim_resume(resume)
+
+        relevant, shared = rank_relevant_facts(
+
+            resume_for_prompt, context=company_context,
+
+            designation=designation, company=company,
+
+        )
+
+        if relevant:
+
+            relevant = rotate_for_variety(relevant, seed=f"{name}|{company}")
+
+            bullets = "\n".join(f"- {f}" for f in relevant)
+
+            resume_for_prompt = (
+
+                "MOST RELEVANT background for THIS recipient — their role/company "
+
+                f"signals ({', '.join(shared)}) directly match these. Build the "
+
+                "email around one or two of THESE, not the candidate's flagship "
+
+                "project:\n"
+
+                f"{bullets}\n\n"
+
+                f"Full résumé:\n{resume_for_prompt}"
+
+            )
+
+
+
         # Never leak junk into the prompt: a placeholder name ("Contact",
 
         # "dev4life") or the "Unknown" company sentinel would get echoed into
@@ -683,7 +733,7 @@ class EmailGenerator:
 
                 "company":       prompt_company,
 
-                "resume":        self._trim_resume(resume),
+                "resume":        resume_for_prompt,
 
                 "context_block": ctx_block,
 

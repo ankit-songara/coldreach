@@ -39,6 +39,9 @@ WHAT MAKES IT LAND:
   imperfection reads as human; polish reads as generated.
 - Subject line: 3-6 plain words, like a colleague's internal email ("quick question
   about your data team"), never a formal title ("Application for Software Engineer").
+- When a "MOST RELEVANT background" list is given below, anchor BOTH the subject and
+  the opening in that shared ground — the specific tech or problem you both touch
+  ("llm eval pipelines", "cutting checkout latency") — never a generic greeting.
 - End with ONE easy, low-stakes question, under 12 words ("worth a quick chat?").
 
 THE ASK - the reader must know exactly what you want:

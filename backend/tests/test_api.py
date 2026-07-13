@@ -342,6 +342,73 @@ class TestDraftQuality:
         assert ends_with_question("") is False
 
 
+class TestRelevanceMatching:
+    """Résumé facts are ranked against the recipient's company/role/context."""
+
+    RESUME = """\
+EXPERIENCE
+- Built a RAG chatbot with LangChain and Postgres pgvector serving 10k queries/day
+- Built a Stripe billing service handling 2M/yr in transactions end to end
+- Cut p95 API latency 40% by moving hot paths off the ORM to raw SQL
+- Migrated 30 services to Kubernetes on AWS, cutting deploy time from 1h to 6min
+
+SKILLS
+Go, Python, PyTorch, Postgres, Docker
+"""
+
+    def test_ai_company_ranks_llm_work_first(self):
+        from app.llm.relevance import rank_relevant_facts
+        facts, shared = rank_relevant_facts(
+            self.RESUME,
+            context="We're an AI platform hiring engineers to scale LLM inference.",
+            designation="Engineering Manager", company="Brightmind AI",
+        )
+        assert facts, "AI context must produce a shortlist"
+        assert "RAG chatbot" in facts[0]
+        assert any(k in shared for k in ("llm", "ai"))
+
+    def test_payments_company_ranks_billing_first(self):
+        from app.llm.relevance import rank_relevant_facts
+        facts, _ = rank_relevant_facts(
+            self.RESUME,
+            context="Fintech startup rebuilding its payments and billing stack.",
+            designation="CTO", company="Ledgerly",
+        )
+        assert facts and "billing service" in facts[0]
+
+    def test_devops_role_ranks_kubernetes_first(self):
+        from app.llm.relevance import rank_relevant_facts
+        facts, _ = rank_relevant_facts(
+            self.RESUME,
+            context="", designation="Head of Platform Engineering", company="Acme",
+        )
+        assert facts and "Kubernetes" in facts[0]
+
+    def test_no_signal_returns_empty(self):
+        from app.llm.relevance import rank_relevant_facts
+        facts, shared = rank_relevant_facts(
+            self.RESUME, context="", designation="Hiring Manager", company="Acme",
+        )
+        assert facts == [] and shared == []
+
+    def test_extract_facts_skips_headers(self):
+        from app.llm.relevance import extract_facts
+        facts = extract_facts(self.RESUME)
+        assert all(f != "EXPERIENCE" and f != "SKILLS" for f in facts)
+        assert any("RAG chatbot" in f for f in facts)
+
+    def test_rotation_is_deterministic_and_varies_by_seed(self):
+        from app.llm.relevance import rotate_for_variety
+        facts = ["a-fact", "b-fact", "c-fact"]
+        r1 = rotate_for_variety(facts, "Priya|Acme")
+        r2 = rotate_for_variety(facts, "Priya|Acme")
+        assert r1 == r2                       # same contact → same email
+        assert sorted(r1) == sorted(facts)    # nothing lost
+        seeds = {tuple(rotate_for_variety(facts, s)) for s in
+                 ("a|x", "b|y", "c|z", "d|w", "e|v")}
+        assert len(seeds) > 1                 # different contacts → varied openers
+
+
 class TestPatternMemory:
     """Persistent domain→email-pattern memory with bounce feedback."""
 
