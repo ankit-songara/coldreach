@@ -35,6 +35,25 @@ def verify_credentials(address: str, app_password: str) -> None:
             pass
 
 
+def auth_error_message(e: smtplib.SMTPAuthenticationError) -> str:
+    """Human message for a Gmail login rejection, distinguishing the two causes:
+      535-5.7.8          Username and Password not accepted → wrong App Password
+      534-5.7.14 / 5.7.9 Please log in via your web browser → IP/security block
+                         (common when connecting from a datacenter IP like Vercel)
+    """
+    code = getattr(e, "smtp_code", "?")
+    raw = getattr(e, "smtp_error", b"")
+    detail = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    detail = " ".join(detail.split())
+    if "5.7.14" in detail or "5.7.9" in detail or "web browser" in detail.lower():
+        return (f"Gmail blocked this login from the server's IP [{code}]. Your App "
+                f"Password is likely fine — Gmail distrusts logins from cloud/datacenter "
+                f"IPs. Gmail said: {detail}")
+    return (f"Gmail rejected the credentials [{code}]. Make sure 2-Step Verification "
+            f"is ON and you pasted a 16-char App Password (not your normal password). "
+            f"Gmail said: {detail}")
+
+
 def _build_message(address: str, to: str, subject: str, body: str) -> MIMEMultipart:
     msg = MIMEMultipart("alternative")
     msg["From"]    = address

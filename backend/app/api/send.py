@@ -236,37 +236,6 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     return BulkSendResponse(sent=sent, failed=failed, deferred=deferred, results=results)
 
 
-@router.post("/test")
-def test_connection(req: BulkSendRequest, user: User = Depends(get_current_user)):
-    """Verify Gmail credentials without sending any email."""
-    try:
-        smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=10)
-        smtp.starttls()
-        smtp.login(req.gmail_address.strip(), normalize_app_password(req.gmail_app_password))
-        smtp.quit()
-        return {"ok": True, "message": "Gmail connection successful"}
-    except smtplib.SMTPAuthenticationError as e:
-        # Surface Gmail's actual response so we can distinguish causes:
-        #   535-5.7.8  Username and Password not accepted  → wrong/invalid App Password
-        #   534-5.7.14 / 5.7.9  Please log in via your web browser → IP/security block
-        #                       (common when sending from a datacenter IP like Vercel)
-        code = getattr(e, "smtp_code", "?")
-        raw = getattr(e, "smtp_error", b"")
-        detail = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
-        detail = " ".join(detail.split())
-        log.warning(f"Gmail auth rejected [{code}]: {detail}")
-        # 400, not 401 — see bulk_send: 401 would end the user's session.
-        if "5.7.14" in detail or "5.7.9" in detail or "web browser" in detail.lower():
-            raise HTTPException(400,
-                f"Gmail blocked this login from the server's IP [{code}]. Your App "
-                f"Password is likely fine — Gmail distrusts logins from cloud/datacenter "
-                f"IPs. Gmail said: {detail}"
-            )
-        raise HTTPException(400,
-            f"Gmail rejected the credentials [{code}]. Make sure 2-Step Verification "
-            f"is ON and you pasted a 16-char App Password (not your normal password). "
-            f"Gmail said: {detail}"
-        )
-    except Exception as e:
-        log.warning(f"Gmail SMTP test-connect failed: {e}")
-        raise HTTPException(502, "Couldn't reach Gmail right now. Please try again in a moment.")
+# NOTE: the old POST /send/test endpoint (verify creds without sending) was
+# removed — the UI verifies via POST /config/gmail, whose error handling now
+# carries the same wrong-password vs IP-block diagnosis (mailer.auth_error_message).

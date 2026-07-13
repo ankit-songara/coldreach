@@ -16,6 +16,8 @@ import logging
 import dns.resolver
 import httpx
 
+from app.scrapers.base import ROLE_LOCALS
+
 log = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
@@ -27,11 +29,12 @@ _DISPOSABLE = {
     "temp-mail.org", "fakeinbox.com", "sharklasers.com", "maildrop.cc",
 }
 
-# Role accounts — reach a team, not a person; deliverable but low-value
-_ROLE_LOCALPARTS = {
-    "info", "support", "admin", "sales", "contact", "hello", "team",
-    "noreply", "no-reply", "donotreply", "help", "office", "mail",
-    "webmaster", "postmaster", "abuse", "marketing", "jobs", "careers",
+# Role accounts — reach a team, not a person; deliverable but low-value.
+# ONE source of truth (scrapers.base.ROLE_LOCALS) plus delivery-side extras
+# that base has no reason to know about.
+_ROLE_LOCALPARTS = ROLE_LOCALS | {
+    "noreply", "no-reply", "donotreply", "webmaster", "postmaster",
+    "abuse", "marketing",
 }
 
 _mx_cache: dict[str, bool] = {}

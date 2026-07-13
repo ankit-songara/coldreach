@@ -135,9 +135,3 @@ def get_all_drafts(db: Session = Depends(get_db), user: User = Depends(get_curre
     contact_id client-side — replaces the old one-request-per-contact hydration
     (N contacts = N serverless invocations + N DB sessions)."""
     return DraftRepository(db, user.id).get_all()
-
-
-@router.get("/{contact_id}", response_model=list[DraftOut])
-def get_drafts(contact_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """List all email drafts for a contact."""
-    return DraftRepository(db, user.id).get_for_contact(contact_id)

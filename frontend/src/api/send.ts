@@ -22,11 +22,4 @@ export const sendApi = {
       gmail_address:      gmailAddress,
       gmail_app_password: gmailAppPassword,
     }).then(r => r.data),
-
-  test: (gmailAddress: string, gmailAppPassword: string) =>
-    api.post<{ ok: boolean; message: string }>('/send/test', {
-      contact_ids:        [],
-      gmail_address:      gmailAddress,
-      gmail_app_password: gmailAppPassword,
-    }).then(r => r.data),
 }
