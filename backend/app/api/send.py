@@ -115,10 +115,12 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         raise HTTPException(400, "No contacts with drafts found.")
 
     # ── Daily cap ────────────────────────────────────────────────────────────
-    # Gmail throttles/flags accounts that fire many cold emails. Cap per rolling
-    # 24h (configurable) and defer the overflow rather than risk a suspension.
+    # Gmail hard-limits personal accounts to ~500 recipients per rolling 24h and
+    # temporarily locks sending when exceeded. Cap at 450 to keep headroom for
+    # the user's own follow-ups/personal mail, and defer the overflow rather
+    # than trip the lockout. Per-user override via the daily_send_cap config key.
     cfg = ConfigRepository(db, user.id)
-    daily_cap = int(cfg.get("daily_send_cap", "50") or 50)
+    daily_cap = int(cfg.get("daily_send_cap", "450") or 450)
     since_24h = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
     sent_last_24h = contact_repo.count_emailed_since(since_24h)
     budget = max(0, daily_cap - sent_last_24h)
