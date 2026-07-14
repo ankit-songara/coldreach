@@ -85,6 +85,11 @@ def _keywords(text: str) -> set[str]:
     return {kw for kw, rx in _KEYWORD_RES if rx.search(t)}
 
 
+def extract_keywords(text: str) -> set[str]:
+    """Public taxonomy keyword scan — also used by the draft quality scorer."""
+    return _keywords(text)
+
+
 def _families(kws: set[str]) -> set[str]:
     return {_KEYWORD_TO_FAMILY[k] for k in kws}
 
@@ -109,7 +114,7 @@ def extract_facts(resume: str, max_facts: int = 40) -> list[str]:
 
 def rank_relevant_facts(
     resume: str, *, context: str = "", designation: str = "", company: str = "",
-    top_n: int = 4,
+    top_n: int = 4, variety_seed: str = "",
 ) -> tuple[list[str], list[str]]:
     """
     Returns (relevant_facts, shared_signals).
@@ -118,6 +123,10 @@ def rank_relevant_facts(
     (direct keyword overlap counts 3×, same-family overlap 1×), best first.
     shared_signals — the recipient-side keywords that drove the match (for the
     subject line and the "why these" note). Both empty when there's no signal.
+
+    variety_seed (contact identity) rotates facts WITHIN equal-score groups
+    only — similar companies get varied openers, but the single best match for
+    this recipient is never demoted below a weaker one.
     """
     profile_kws = _keywords(f"{context}\n{designation}\n{company}")
     if not profile_kws:
@@ -140,6 +149,18 @@ def rank_relevant_facts(
     scored.sort(key=lambda t: (-t[0], t[1]))   # score desc, résumé order as tiebreak
     top = scored[:top_n]
 
+    if variety_seed:
+        # Rotate within each equal-score run, then reassemble in score order.
+        regrouped: list[tuple[int, int, str, set[str]]] = []
+        group: list[tuple[int, int, str, set[str]]] = []
+        for item in top:
+            if group and item[0] != group[0][0]:
+                regrouped.extend(rotate_for_variety(group, variety_seed))
+                group = []
+            group.append(item)
+        regrouped.extend(rotate_for_variety(group, variety_seed))
+        top = regrouped
+
     shared: list[str] = []
     for _, _, _, direct in top:
         for kw in sorted(direct):
@@ -150,11 +171,12 @@ def rank_relevant_facts(
     return [fact for _, _, fact, _ in top], shared[:5]
 
 
-def rotate_for_variety(facts: list[str], seed: str) -> list[str]:
-    """Deterministically rotate equally-relevant facts per contact, so five
-    emails to similar companies don't all open with the identical project.
-    Seeded by contact identity — same contact always gets the same email."""
-    if len(facts) < 2:
-        return facts
-    offset = int(md5(seed.encode()).hexdigest(), 16) % len(facts)
-    return facts[offset:] + facts[:offset]
+def rotate_for_variety(items: list, seed: str) -> list:
+    """Deterministically rotate a list per contact, so five emails to similar
+    companies don't all open with the identical project. Seeded by contact
+    identity — same contact always gets the same email. Callers pass only
+    equal-relevance groups, so rotation never demotes a better match."""
+    if len(items) < 2:
+        return items
+    offset = int(md5(seed.encode()).hexdigest(), 16) % len(items)
+    return items[offset:] + items[:offset]

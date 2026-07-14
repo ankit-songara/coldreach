@@ -28,21 +28,44 @@ BANNED WORDS AND PHRASES (never output any of these):
 "showcase", "landscape", "journey", "testament", "align with", "resonate", "robust",
 "cutting-edge", "fast-paced", "team player", "results-driven", "proven track record",
 "great fit", "perfect fit", "touch base", "circle back", "talented", "skilled",
-"seasoned", "motivated", "driven", "My name is".
+"seasoned", "motivated", "driven", "My name is",
+"I'd like to share", "I'm confident", "I believe my", "contribute to your team",
+"the opportunity to", "This experience taught me", "commitment to", "efforts to",
+"impressed by", "intrigued by", "my skills", "well-positioned", "value I can bring",
+"make an impact", "I look forward to".
+
+THE OPENER - the first sentence decides whether they read the second:
+- Never open with who you are or what you'd like. Open with THEM: their hiring need,
+  their product, their technical problem (from the verified context) - or the collision
+  between their problem and your result.
+- Shapes that work (adapt with the REAL facts, never copy the wording):
+    "You're hiring backend engineers for the payments rebuild. I shipped exactly that: <result with number>."
+    "<Their hard problem from the context> is what I spent the last year on: <result with number>."
+- Instant delete: "I'd like to...", "I'm a backend engineer with...", "My experience in...",
+  "I recently came across your company...".
 
 WHAT MAKES IT LAND:
-- Open with ONE specific, true observation about the recipient or company (only from
-  the verified context below), or with the candidate's single most relevant concrete fact.
 - Numbers do the bragging: "cut p95 latency 38%" beats any adjective. Two real numbers
   from the candidate's background, maximum.
 - One small natural aside is fine ("took three rewrites to get there"). Light
   imperfection reads as human; polish reads as generated.
-- Subject line: 3-6 plain words, like a colleague's internal email ("quick question
-  about your data team"), never a formal title ("Application for Software Engineer").
+- Subject line: 3-6 plain words in lowercase, like a quick internal note ("scaling rag
+  pipelines", "your backend role - quick q"). Never Title Case Every Word, never a
+  formal title ("Application for Software Engineer"), and never a headline about the
+  candidate's own project - the subject is about THEM or the shared problem.
 - When a "MOST RELEVANT background" list is given below, anchor BOTH the subject and
   the opening in that shared ground — the specific tech or problem you both touch
   ("llm eval pipelines", "cutting checkout latency") — never a generic greeting.
 - End with ONE easy, low-stakes question, under 12 words ("worth a quick chat?").
+
+GIVE THEM A REASON TO REPLY:
+- Every sentence must carry a fact: a number, a system name, a decision made. If a
+  sentence could appear unchanged in anyone else's email, delete it.
+- If the context names a concrete technical problem they have, spend ONE sentence on
+  a specific idea you'd try for it. One real idea beats any credential - it gives them
+  a taste of working with you and makes replying feel useful instead of charitable.
+- Micro-offers convert: "want the one-page write-up?", "happy to send the benchmark
+  numbers". A yes/no offer is easier to answer than "open to a chat sometime?".
 
 THE ASK - the reader must know exactly what you want:
 - Every email makes ONE specific, unmistakable request. Pick whichever fits best:
@@ -261,6 +284,20 @@ SUBJECT: Re: [original subject line]
 BODY:
 [follow-up message body only — no greeting, no sign-off, no signature]
 """,
+}
+
+
+# Acceptable body length per template (words), used by the deterministic
+# quality scorer. Slightly wider than the prose targets in the templates so a
+# draft a few words outside the ideal isn't needlessly regenerated.
+WORD_RANGES: dict[str, tuple[int, int]] = {
+    "recruiter":          (55, 115),
+    "engineering_leader": (75, 145),
+    "peer_engineer":      (35, 85),
+    "founder":            (40, 95),
+    "product":            (65, 125),
+    "business_leader":    (65, 120),
+    "followup":           (15, 70),
 }
 
 

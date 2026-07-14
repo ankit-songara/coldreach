@@ -342,6 +342,90 @@ class TestDraftQuality:
         assert ends_with_question("") is False
 
 
+class TestDraftScoring:
+    """Deterministic reply-worthiness scoring + filler removal."""
+
+    GOOD = ("You're hiring backend engineers for the payments rebuild at Ledgerly. "
+            "I shipped exactly that: a Stripe billing service handling 2M/yr, and cut "
+            "p95 latency 40% on the hot paths.\n\n"
+            "If catch-up latency is the bottleneck, I'd start by moving the ledger "
+            "writes off the ORM, that alone bought us 200ms.\n\n"
+            "Want the one-page write-up of how we did it?")
+
+    BAD = ("I'd like to share how my experience building scalable systems can help "
+           "address latency concerns in your tech stack. I'm confident that my skills "
+           "make me a great fit for your team. This experience taught me the importance "
+           "of carefully evaluating trade-offs when scaling systems. "
+           "I look forward to hearing from you.")
+
+    def test_good_draft_beats_bad_draft(self):
+        from app.llm.quality import score_draft
+        good = score_draft(self.GOOD, "your payments rebuild",
+                           word_range=(40, 95), company="Ledgerly",
+                           context="rebuilding payments and billing stack")
+        bad = score_draft(self.BAD, "Exciting Opportunity For Your Team",
+                          word_range=(40, 95), company="Ledgerly",
+                          context="rebuilding payments and billing stack")
+        assert good >= 70, f"good draft scored {good}"
+        assert bad < 40, f"bad draft scored {bad}"
+
+    def test_overlong_draft_penalized(self):
+        from app.llm.quality import score_draft
+        body = ("Kafka moved 9 events. " * 40) + "Worth a chat?"
+        assert score_draft(body, word_range=(40, 90)) < score_draft(
+            "Kafka moved 9M events a day at Acme after my rewrite. Worth a chat?",
+            word_range=(10, 90))
+
+    def test_strip_filler_cuts_cover_letter_sentences(self):
+        from app.llm.quality import strip_filler
+        body = ("I cut p95 latency 40% at Acme. This experience taught me the "
+                "importance of evaluating trade-offs. I'm confident I can help. "
+                "Worth a quick chat?")
+        clean, removed = strip_filler(body)
+        assert removed == 2
+        assert "taught me" not in clean and "confident" not in clean
+        assert "cut p95 latency 40%" in clean and "Worth a quick chat?" in clean
+
+    def test_strip_filler_keeps_factual_bodies_untouched(self):
+        from app.llm.quality import strip_filler
+        clean, removed = strip_filler(self.GOOD)
+        assert removed == 0 and clean == self.GOOD
+
+    def test_invented_candidate_numbers_stripped(self):
+        from app.llm.quality import scrub_ungrounded_numbers
+        resume = "Cut p95 latency 40 percent. Billing service handling 2M per year."
+        body = ("I cut p95 latency 40 percent at Acme. "
+                "I reduced average latency to under 500ms for every customer. "
+                "Worth a quick chat?")
+        clean, flagged = scrub_ungrounded_numbers(body, resume)
+        assert len(flagged) == 1 and "500ms" in flagged[0]
+        assert "40 percent" in clean and "Worth a quick chat?" in clean
+
+    def test_grounded_numbers_survive(self):
+        from app.llm.quality import scrub_ungrounded_numbers
+        resume = "Cut p95 latency 40 percent. Billing handling 2M per year in transactions."
+        body = "My billing service handled 2M per year. I cut latency 40 percent."
+        clean, flagged = scrub_ungrounded_numbers(body, resume)
+        assert flagged == [] and clean == body
+
+    def test_small_bare_integers_ignored(self):
+        from app.llm.quality import scrub_ungrounded_numbers
+        # "15-minute chat" and "one of 3 options" must never be flagged.
+        body = "Open to a 15-minute chat this week?"
+        clean, flagged = scrub_ungrounded_numbers(body, "resume with no numbers")
+        assert flagged == [] and clean == body
+
+    def test_subject_detitlecased_preserving_acronyms_and_company(self):
+        from app.llm.generator import _clean_subject
+        assert _clean_subject("Backend Expertise For Brightmind AI", "Brightmind AI") \
+            == "backend expertise for Brightmind AI"
+        assert _clean_subject("Scaling LLM Eval Pipelines At Acme", "Acme") \
+            == "scaling LLM eval pipelines at Acme"
+        # already-natural subjects untouched
+        assert _clean_subject("quick question about your data team") \
+            == "quick question about your data team"
+
+
 class TestRelevanceMatching:
     """Résumé facts are ranked against the recipient's company/role/context."""
 

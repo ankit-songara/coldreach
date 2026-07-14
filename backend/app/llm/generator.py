@@ -32,13 +32,19 @@ from langchain_core.language_models import BaseChatModel
 
 from app.llm.factory import detect_provider, create_llm
 
-from app.llm.prompts import TEMPLATES, get_designation_key
+from app.llm.prompts import TEMPLATES, WORD_RANGES, get_designation_key
 
 from app.llm.parsing import parse_subject_body
 
-from app.llm.quality import scrub_fabrications, ends_with_question
+from app.llm.quality import (
 
-from app.llm.relevance import rank_relevant_facts, rotate_for_variety
+    scrub_fabrications, scrub_ungrounded_numbers, ends_with_question,
+
+    strip_filler, score_draft,
+
+)
+
+from app.llm.relevance import rank_relevant_facts
 
 from app.scrapers.base import plausible_person_name
 
@@ -371,7 +377,7 @@ def _wrap(body: str, contact_name: str, sender_name: str, sender_links: str = ""
 
 
 
-def _clean_subject(subject: str) -> str:
+def _clean_subject(subject: str, company: str = "") -> str:
 
     """Normalise the LLM-generated subject line."""
 
@@ -408,6 +414,38 @@ def _clean_subject(subject: str) -> str:
     if len(words) > 9:
 
         s = " ".join(words[:7])
+
+        words = s.split()
+
+    # De-Title-Case: "Backend Expertise For Brightmind AI" reads as a campaign
+
+    # blast; "backend expertise for Brightmind AI" reads as a note someone
+
+    # typed. Only fires when most words are capitalized (the LLM Title Case
+
+    # tell); acronyms (LLM, AWS), digit-bearing tokens, and the company name
+
+    # keep their casing.
+
+    if len(words) >= 3:
+
+        capped = sum(1 for w in words if w[:1].isupper())
+
+        if capped / len(words) >= 0.6:
+
+            comp_tokens = {t.lower() for t in (company or "").split()}
+
+            s = " ".join(
+
+                w if (w.isupper() or any(ch.isdigit() for ch in w)
+
+                      or w.lower() in comp_tokens)
+
+                else w.lower()
+
+                for w in words
+
+            )
 
     return s.strip()
 
@@ -491,25 +529,55 @@ class EmailGenerator:
 
 
 
+    # A draft scoring below this is regenerated once; the best of the two
+
+    # attempts ships. 70 ≈ "no cover-letter phrases, decent opener, right length".
+
+    _QUALITY_BAR = 70
+
+
+
     async def _invoke_checked(
 
         self, chain, variables: dict, *, contact_name: str, sender_name: str,
 
         sender_links: str = "", company: str = "", context: str = "",
 
+        word_range: tuple[int, int] = (60, 120), ground_numbers: str = "",
+
     ) -> tuple[str, str]:
 
         """
 
-        Invoke the chain and validate the result; retry once on an empty,
+        Invoke the chain, run the invisible quality pipeline, and return
 
-        malformed, or fabricating draft. Returns (subject, wrapped_body).
+        (subject, wrapped_body) for the BEST attempt:
+
+
+
+          1. strip model-added greetings/sign-offs
+
+          2. scrub ungrounded company claims (fact-check against context)
+
+          3. cut cover-letter filler sentences
+
+          4. score reply-worthiness deterministically (opener, fact density,
+
+             length, closing question, subject shape)
+
+          5. below the bar → regenerate once, then keep whichever attempt
+
+             scored higher (attempt 1 is never thrown away for a worse retry)
+
+
 
         Raises RuntimeError if both attempts produce garbage — better a clear
 
         error than a blank draft that could be bulk-sent.
 
         """
+
+        candidates: list[tuple[int, str, str]] = []   # (score, subject, clean_body)
 
         for attempt in (1, 2):
 
@@ -519,21 +587,9 @@ class EmailGenerator:
 
             if _PLACEHOLDER in raw:
 
-                return _clean_subject(subject), _wrap(body, contact_name, sender_name, sender_links, company)
+                return _clean_subject(subject, company), _wrap(body, contact_name, sender_name, sender_links, company)
 
 
-
-            # Invisible quality pass: claims about the company must be grounded
-
-            # in the verified context. First offence → regenerate; a repeat
-
-            # offender gets the ungrounded sentences silently stripped. A body
-
-            # that doesn't close on a question (the ask) also earns ONE retry.
-
-            # Runs on the affix-stripped body so a model-added sign-off can't
-
-            # mask the closing question.
 
             clean, fabricated = scrub_fabrications(
 
@@ -541,55 +597,73 @@ class EmailGenerator:
 
             )
 
-            if attempt == 1 and (fabricated or not ends_with_question(clean)):
+            # Numbers claimed about the candidate must exist in the résumé or
+
+            # context — an invented "under 500ms" survives until an interviewer
+
+            # asks about it.
+
+            bad_numbers: list[str] = []
+
+            if ground_numbers:
+
+                clean, bad_numbers = scrub_ungrounded_numbers(clean, ground_numbers)
+
+            clean, n_filler = strip_filler(clean)
+
+            quality = score_draft(clean, subject, word_range=word_range,
+
+                                  context=context, company=company)
+
+            if len(clean.strip()) >= _MIN_BODY_CHARS:
+
+                candidates.append((quality, subject, clean))
+
+            if attempt == 1 and (
+
+                not candidates or fabricated or bad_numbers or n_filler
+
+                or not ends_with_question(clean) or quality < self._QUALITY_BAR
+
+            ):
 
                 log.info(
 
-                    f"LLM draft quality retry: {len(fabricated)} ungrounded claim(s), "
+                    f"LLM draft below bar on attempt 1 (score={quality}, "
 
-                    f"ends_with_question={ends_with_question(clean)}"
+                    f"ungrounded={len(fabricated)}, invented_numbers={len(bad_numbers)}, "
+
+                    f"filler={n_filler}, "
+
+                    f"ends_with_question={ends_with_question(clean)}) — regenerating"
 
                 )
 
                 continue
 
-            if fabricated:
+            break
 
-                log.info(f"LLM draft: stripped {len(fabricated)} ungrounded company claim(s)")
 
-            body = clean
 
-            # Validate AFTER humanize so pleasantry-only drafts (which collapse to
+        if not candidates:
 
-            # empty after stripping) trigger a retry rather than being sent blank.
+            raise RuntimeError(
 
-            wrapped = _wrap(body, contact_name, sender_name, sender_links, company)
+                "The LLM returned an empty or malformed draft twice in a row. "
 
-            # Extract the core between greeting and sign-off to measure real content.
-
-            _, inner = wrapped.split("\n\n", 1) if "\n\n" in wrapped else ("", wrapped)
-
-            core = inner.rsplit("\n\n", 1)[0] if "\n\n" in inner else inner
-
-            if len(core.strip()) >= _MIN_BODY_CHARS:
-
-                return _clean_subject(subject), wrapped
-
-            log.warning(
-
-                f"LLM draft malformed/too short on attempt {attempt} "
-
-                f"({len(core)} chars): {raw[:120]!r}"
+                "Try again, or check the provider/model via /api/health."
 
             )
 
-        raise RuntimeError(
+        quality, subject, body = max(candidates, key=lambda c: c[0])
 
-            "The LLM returned an empty or malformed draft twice in a row. "
+        if len(candidates) > 1:
 
-            "Try again, or check the provider/model via /api/health."
+            log.info(f"LLM draft: kept best of {len(candidates)} attempts (score={quality})")
 
-        )
+        wrapped = _wrap(body, contact_name, sender_name, sender_links, company)
+
+        return _clean_subject(subject, company), wrapped
 
 
 
@@ -673,11 +747,11 @@ class EmailGenerator:
 
             designation=designation, company=company,
 
+            variety_seed=f"{name}|{company}",
+
         )
 
         if relevant:
-
-            relevant = rotate_for_variety(relevant, seed=f"{name}|{company}")
 
             bullets = "\n".join(f"- {f}" for f in relevant)
 
@@ -744,6 +818,10 @@ class EmailGenerator:
             contact_name=name, sender_name=sender_name, sender_links=sender_links,
 
             company=company, context=company_context,
+
+            word_range=WORD_RANGES.get(key, (60, 120)),
+
+            ground_numbers=f"{resume}\n{company_context}",
 
         )
 
@@ -826,6 +904,10 @@ class EmailGenerator:
             # original email (repeating an already-vetted claim isn't fabrication).
 
             context=f"{context}\n{orig_body or ''}",
+
+            word_range=WORD_RANGES["followup"],
+
+            ground_numbers=f"{context}\n{orig_body or ''}",
 
         )
 
