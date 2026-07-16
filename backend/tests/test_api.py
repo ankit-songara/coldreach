@@ -170,6 +170,46 @@ class TestRoleFilter:
         assert _role_match_rank("Founder", "engineering") == 1          # gatekeeper kept
         assert _role_match_rank("Product Manager", "engineering") is None  # off-target dropped
 
+    @pytest.mark.parametrize("query, expected", [
+        # the reported bug: a bare domain word must carry role intent on its own
+        ("product",                        "product"),
+        ("product manager hiring",         "product"),   # domain wins over generic "manager"
+        ("hiring manager",                 "management"),
+        ("management position",            "management"),
+        ("react engineer hiring",          "engineering"),
+        ("devops kubernetes hiring",       "engineering"),
+        ("android developer hiring",       "engineering"),
+        ("founding engineer",              "engineering"),  # domain wins over generic "founding"
+        ("founder",                        "founder_exec"),
+        ("technical recruiter",            "recruiting"),
+        ("ux designer",                    "design"),
+        # ambiguous or no signal at all -> no inference, filter stays off
+        ("data engineer hiring",           ""),   # two domain families (data + engineering)
+        ("machine learning engineer",      ""),   # two domain families (data + engineering)
+        ("golang hiring",                  ""),   # no recognizable family
+        ("Linear",                         ""),   # company-name search
+        ("Supabase",                       ""),
+    ])
+    def test_infer_role_from_query(self, query, expected):
+        from app.api.hunt import _infer_role_from_query
+        assert _infer_role_from_query(query) == expected
+
+    @pytest.mark.parametrize("role_filter, query, expected", [
+        # explicit dropdown always wins, even against contradicting query text
+        ("management", "react engineer hiring", "management"),
+        ("engineering", "product manager hiring", "engineering"),
+        # dropdown left on "any" (empty or garbage) -> falls back to inference
+        ("", "product", "product"),
+        ("any", "product", "product"),
+        ("not_a_real_value", "hiring manager", "management"),
+        # neither carries signal -> no filter
+        ("", "Linear", ""),
+        ("", "", ""),
+    ])
+    def test_resolve_target_role_precedence(self, role_filter, query, expected):
+        from app.api.hunt import _resolve_target_role
+        assert _resolve_target_role(role_filter, query) == expected
+
 
 class TestHuntQuality:
     """Junk-email / test-identity / name-plausibility filters (quality > quantity)."""

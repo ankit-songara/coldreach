@@ -148,6 +148,55 @@ def _role_match_rank(designation: str, target: str) -> int | None:
     return None                       # has a family, all off-target → drop
 
 
+# Families checked first when inferring intent FROM THE QUERY TEXT ITSELF (as
+# opposed to a contact's designation). A domain-specific term describes WHO to
+# find; "management"/"founder_exec"/"recruiting" are usually just a seniority
+# suffix riding along with it ("product manager" matches both "product" and
+# "management" — the domain term should win, not the generic one).
+_QUERY_DOMAIN_FAMILIES  = ("product", "design", "data", "engineering")
+_QUERY_GENERIC_FAMILIES = ("management", "founder_exec", "recruiting")
+
+
+def _infer_role_from_query(query: str) -> str:
+    """
+    Best-effort target-role family from the hunt query text, used ONLY when the
+    user left the Hunt role dropdown on "Any role". Without this, typing
+    "product" as the query did nothing by itself — the dropdown still had to be
+    set separately, so a plain "product" search kept returning mostly engineers
+    (whatever a job board happened to list), matching the query text but not
+    the recipient's actual role. This makes the free-text query carry role
+    intent on its own, same as picking the dropdown would.
+
+    A domain-specific family match wins over a generic one when both appear
+    ("product manager hiring" -> product, not management). Two domain-specific
+    families matching at once ("product design lead") is genuinely ambiguous,
+    so no filter is inferred rather than guessing wrong and dropping good leads.
+    """
+    fams = _role_families(query or "")
+    if not fams:
+        return ""
+    domain = [f for f in _QUERY_DOMAIN_FAMILIES if f in fams]
+    if len(domain) == 1:
+        return domain[0]
+    if domain:
+        return ""   # ambiguous between two+ domain-specific families
+    generic = [f for f in _QUERY_GENERIC_FAMILIES if f in fams]
+    return generic[0] if len(generic) == 1 else ""
+
+
+def _resolve_target_role(role_filter: str, query: str) -> str:
+    """
+    The role_filter actually used for this hunt. An explicit, valid dropdown
+    pick always wins; only falls back to inferring from the query text when
+    the caller sent nothing usable ('' / an unrecognised value). Returns ''
+    when there's no signal anywhere — meaning no role filtering is applied.
+    """
+    explicit = (role_filter or "").strip().lower()
+    if explicit in ROLE_FILTERS:
+        return explicit
+    return _infer_role_from_query(query)
+
+
 def _build_scrapers(hunter_key: str) -> list:
     scrapers = [
         HackerNewsScraper(),
@@ -516,7 +565,9 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     #    that match it (plus gatekeepers), dropping off-target ICs. Ranked leads
     #    then sort by that relevance first. ─────────────────────────────────────
     _status_rank = {"valid": 0, "unknown": 1, "risky": 2}
-    target = (req.role_filter or "").strip().lower()
+    target = _resolve_target_role(req.role_filter, req.query)
+    if target and target != (req.role_filter or "").strip().lower():
+        log.info(f"Hunt: inferred role filter '{target}' from query {req.query!r}")
     role_filtered = 0
     if target in ROLE_FILTERS:
         ranked: list[tuple[int, dict]] = []
