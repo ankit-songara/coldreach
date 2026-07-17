@@ -570,3 +570,61 @@ class TestPatternMemory:
         cache.seed_pattern("acme.com", "first.last")
         assert asyncio.run(cache.pattern("acme.com")) == "first.last"
         assert cache.learned_patterns() == {"acme.com": "first.last"}
+
+
+class TestCorsOriginRegex:
+    """
+    Regression test for a live production bug: the deployed frontend project
+    (coldreach-niyp on Vercel) has multiple valid domains — a bare alias, a
+    team-suffixed alias, a git-branch alias, and a brand-new hash URL on every
+    deploy. CORS_ORIGINS was a static list that only had the bare alias;
+    requests from the other two, equally-real domains got a 400 on preflight,
+    which looks identical to "server unreachable" in the browser. Confirmed
+    live via direct OPTIONS probes against the deployed backend. The regex
+    fix must match every URL shape Vercel actually generates for this
+    project, and must NOT match domains crafted to look similar.
+    """
+
+    @pytest.fixture
+    def pattern(self):
+        import re
+        from app.config import settings
+        return re.compile(settings.cors_origin_regex)
+
+    @pytest.mark.parametrize("origin", [
+        "https://coldreach-niyp.vercel.app",
+        "https://coldreach-niyp-cold-reach.vercel.app",
+        "https://coldreach-niyp-git-master-cold-reach.vercel.app",
+        "https://coldreach-niyp-ovji96fdp-cold-reach.vercel.app",
+    ])
+    def test_matches_every_real_deployment_url(self, pattern, origin):
+        assert pattern.fullmatch(origin)
+
+    @pytest.mark.parametrize("origin", [
+        "https://evil-coldreach-niyp.vercel.app",     # prefix spoof
+        "https://coldreach-niyp.vercel.app.evil.com", # suffix-domain spoof
+        "http://coldreach-niyp.vercel.app",           # wrong scheme
+        "https://notcoldreach-niyp.vercel.app",
+        "https://coldreach-niyp.vercelapp.com",
+    ])
+    def test_rejects_spoofed_or_wrong_domains(self, pattern, origin):
+        assert not pattern.fullmatch(origin)
+
+    def test_cors_preflight_allows_all_frontend_origins(self, client):
+        """End-to-end: Starlette's CORSMiddleware actually honours the regex
+        (fullmatch semantics — verified against the installed starlette
+        version) for a real preflight request, for every real frontend URL."""
+        for origin in [
+            "https://coldreach-niyp.vercel.app",
+            "https://coldreach-niyp-cold-reach.vercel.app",
+            "https://coldreach-niyp-git-master-cold-reach.vercel.app",
+        ]:
+            r = client.options(
+                "/api/health",
+                headers={
+                    "Origin": origin,
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+            assert r.status_code == 200, f"{origin} got {r.status_code}"
+            assert r.headers.get("access-control-allow-origin") == origin

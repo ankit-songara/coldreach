@@ -65,9 +65,16 @@ app = FastAPI(
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # Wildcards for methods/headers are rejected by browsers when credentials are
 # allowed, so enumerate them explicitly.
+#
+# Two layers: allow_origins is an exact-match list for known fixed origins
+# (local dev, a custom domain if one gets added); allow_origin_regex catches
+# every URL Vercel generates for the frontend project — its stable aliases
+# AND the unique per-deployment hash URL that changes on every deploy, which
+# no static list can keep up with. An origin allowed by EITHER layer passes.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    allow_origin_regex=settings.cors_origin_regex or None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
