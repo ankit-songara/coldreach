@@ -14,6 +14,16 @@ export const setToken = (t: string | null) => {
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api',
   headers: { 'Content-Type': 'application/json' },
+  // Without a timeout, a request that never gets a response (dead connection,
+  // CORS rejection with no visible error, a backend cold-start that stalls)
+  // hangs silently — the user sees nothing until SOME other layer (browser,
+  // OS, or the platform's own connection reset) eventually fails it, often
+  // much later and while they've moved to a different tab, which is exactly
+  // why "Can't reach the server" toasts felt like they "popped up out of
+  // nowhere". 65s matches the backend's Vercel maxDuration (60s) plus a
+  // buffer, so genuinely slow-but-working hunts/generations still complete —
+  // this only cuts off requests that were never going to get a response.
+  timeout: 65_000,
 })
 
 // Attach the bearer token to every request
