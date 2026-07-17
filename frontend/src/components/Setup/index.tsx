@@ -168,7 +168,7 @@ export default function Setup() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Setup</h1>
+        <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Profile Setup</h1>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
           Add your resume once — that's all you need to start. Connect Gmail only
           if you want to send emails directly from ColdReach.

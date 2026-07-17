@@ -79,7 +79,7 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
       n: 1, done: resume.trim().length > 0,
       title: 'Upload your resume',
       body: 'ColdReach personalises every email using your actual experience. PDF or DOCX, under 15 MB.',
-      cta: 'Go to Setup', tab: 'setup' as const, color: '#e2603f', bg: 'var(--accent-tint)',
+      cta: 'Go to Profile Setup', tab: 'setup' as const, color: '#e2603f', bg: 'var(--accent-tint)',
     },
     {
       n: 2, done: gmailConnected,
@@ -97,13 +97,13 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
       n: 4, done: false,
       title: 'Generate personalised emails',
       body: 'One click generates a targeted cold email for every contact using your resume + their context.',
-      cta: 'Compose', tab: 'compose' as const, color: '#0e9d88', bg: 'rgba(14,157,136,.10)',
+      cta: 'Email Generation', tab: 'compose' as const, color: '#0e9d88', bg: 'rgba(14,157,136,.10)',
     },
     {
       n: 5, done: false,
       title: 'Send & track',
       body: 'Send via Gmail SMTP, check replies in one click, and track every outcome from first touch to offer.',
-      cta: 'Send', tab: 'send' as const, color: '#3f8f43', bg: 'rgba(63,143,67,.10)',
+      cta: 'Send Mail', tab: 'send' as const, color: '#3f8f43', bg: 'rgba(63,143,67,.10)',
     },
   ]
 
@@ -430,7 +430,7 @@ export default function Today() {
       id: 'reply', icon: MailOpen, color: '#0e9d88', bg: 'rgba(14,157,136,.13)',
       title: `${recentReplies.length} new ${recentReplies.length === 1 ? 'reply' : 'replies'}`,
       body: nameList(recentReplies) + (recentReplies.length === 1 ? ' replied — follow up or set up a call.' : ' replied — time to respond!'),
-      action: 'View in Send', tab: 'send',
+      action: 'View in Send Mail', tab: 'send',
     })
   }
   if (offersWon.length > 0) {
@@ -455,7 +455,7 @@ export default function Today() {
     alerts.push({
       id: 'followup', icon: Clock, color: '#c47d1e', bg: 'rgba(196,125,30,.13)',
       title: `${followupsDue} contact${followupsDue > 1 ? 's' : ''} waiting on a follow-up`,
-      body: `They haven't replied yet — a friendly nudge 3–5 days after the first email gets ~40% more replies. Write one in Compose, then send it from the Send tab.`,
+      body: `They haven't replied yet — a friendly nudge 3–5 days after the first email gets ~40% more replies. Write one in Email Generation, then send it from Send Mail.`,
       action: 'Write follow-up', tab: 'compose',
     })
   }
@@ -464,7 +464,7 @@ export default function Today() {
       id: 'draft', icon: Wand2, color: '#e2603f', bg: 'rgba(226,96,63,.10)',
       title: `${ungenerated.length} contact${ungenerated.length > 1 ? 's' : ''} need${ungenerated.length === 1 ? 's' : ''} a draft`,
       body: nameList(ungenerated) + ' — one click to generate personalised emails.',
-      action: 'Compose', tab: 'compose',
+      action: 'Email Generation', tab: 'compose',
     })
   }
 

@@ -248,7 +248,7 @@ export default function Send() {
           instead of pushing the page into horizontal scroll */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Send</h1>
+          <h1 className="text-2xl font-bold tracking-wide mb-1" style={{ fontFamily: 'var(--font-display)' }}>Send Mail</h1>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             {withDraft.length} emails ready · {sentCount} sent/in progress
           </p>

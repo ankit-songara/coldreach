@@ -19,12 +19,16 @@ type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send'
 
 export const ResumeReadyCtx = createContext(false)
 
-const TABS: Array<{ id: TabId; num: string | null; label: string }> = [
-  { id: 'today',   num: null, label: 'Today'   },
-  { id: 'setup',   num: '01', label: 'Setup'   },
-  { id: 'hunt',    num: '02', label: 'Hunt'    },
-  { id: 'compose', num: '03', label: 'Compose' },
-  { id: 'send',    num: '04', label: 'Send'    },
+// shortLabel is for the mobile bottom tab bar only — five equal-width flex
+// columns on a ~375px screen give each label ~75px, and "Email Generation"
+// visibly wraps to multiple lines there. Desktop/tablet nav and every page
+// header always show the full `label`.
+const TABS: Array<{ id: TabId; num: string | null; label: string; shortLabel?: string }> = [
+  { id: 'today',   num: null, label: 'Dashboard'        },
+  { id: 'setup',   num: '01', label: 'Profile Setup',     shortLabel: 'Profile' },
+  { id: 'hunt',    num: '02', label: 'Hunt'             },
+  { id: 'compose', num: '03', label: 'Email Generation',  shortLabel: 'Emails'  },
+  { id: 'send',    num: '04', label: 'Send Mail',         shortLabel: 'Send'   },
 ]
 
 const TAB_IDS = TABS.map(t => t.id)
@@ -216,18 +220,18 @@ export default function App() {
                 onClick={() => setActiveTab(tab.id)}
                 className="inline-flex items-center gap-1.5 text-[13px] font-semibold transition-all"
                 style={{
-                  // Narrower horizontal padding than the original 16px: at
-                  // exactly 768px (the tablet breakpoint where this nav first
-                  // appears) five tabs at 16px overflowed the header by ~22px.
-                  padding: '7px 12px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
+                  // The 01/02/03/04 step-number badges were dropped (below) to
+                  // make room for the longer renamed labels ("Email Generation",
+                  // "Profile Setup", "Dashboard") — with them, five tabs left
+                  // ZERO spare width in the header at exactly 768px, the tablet
+                  // breakpoint where this nav first appears; one extra
+                  // character anywhere would have overflowed it.
+                  padding: '7px 7px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
                   background: active ? 'var(--surface-1)' : 'transparent',
                   color: active ? 'var(--text)' : 'var(--text-muted)',
                   boxShadow: active ? 'var(--shadow-sm)' : 'none',
                 }}
               >
-                {tab.num && (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-dim)' }}>{tab.num}</span>
-                )}
                 {tab.label}
                 {tab.id === 'hunt' && contacts.length > 0 && (
                   <span
@@ -319,8 +323,8 @@ export default function App() {
               }}
             >
               <Icon size={18} strokeWidth={active ? 2.4 : 2} />
-              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, letterSpacing: '0.01em' }}>
-                {tab.label}
+              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, letterSpacing: '0.01em', whiteSpace: 'nowrap' }}>
+                {tab.shortLabel ?? tab.label}
               </span>
               {tab.id === 'hunt' && contacts.length > 0 && (
                 <span
