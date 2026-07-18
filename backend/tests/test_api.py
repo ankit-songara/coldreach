@@ -211,6 +211,163 @@ class TestRoleFilter:
         assert _resolve_target_role(role_filter, query) == expected
 
 
+class TestCompanyDomainGuess:
+    """
+    Universal careers@/jobs@ fallback: guess a company's own domain so a
+    company-name hunt never comes back empty just because no scraper had
+    coverage for it (no GitHub presence, no HN post, not on a supported ATS).
+    """
+
+    def test_known_company_uses_real_directory_domain(self):
+        from app.api.hunt import _guess_company_domain
+        from app.scrapers import directory
+        # Any seeded company with a real domain proves the directory path wins
+        # over guessing — pick one straight from the live seed rather than
+        # assuming a specific name is present.
+        known = next((c for c in directory.all_companies() if c.domain), None)
+        assert known is not None, "seed has no company with a domain — test needs a fixture"
+        assert _guess_company_domain(known.name) == known.domain
+
+    @pytest.mark.parametrize("query, expected", [
+        ("Zyloquartz",         "zyloquartz.com"),   # single made-up word
+        ("Acme Widgets Corp",  "acme.com"),         # short-name convention, not "acmewidgetscorp.com"
+        ("Brightmind AI",      "brightmind.com"),   # first word alone, not "brightmindai.com"
+    ])
+    def test_unknown_company_guesses_short_name_dot_com(self, query, expected):
+        from app.api.hunt import _guess_company_domain
+        from app.scrapers import directory
+        assert directory.lookup(query) is None, "test assumes this name isn't in the seed"
+        assert _guess_company_domain(query) == expected
+
+    def test_empty_query_yields_no_guess(self):
+        from app.api.hunt import _guess_company_domain
+        assert _guess_company_domain("") == ""
+
+
+class TestRoleInboxFallback:
+    """Role-address ordering and the catch-all fix (careers@ etc. must not be
+    discarded just because the domain accepts everything)."""
+
+    def test_careers_is_tried_first(self):
+        from app.api.hunt import _ROLE_ADDRESSES
+        assert _ROLE_ADDRESSES[0] == "careers"
+
+    def test_alt_tlds_cover_in_and_org(self):
+        from app.api.hunt import _ALT_TLDS
+        assert ".in" in _ALT_TLDS
+        assert ".org" in _ALT_TLDS
+
+    def test_catchall_domain_returns_guess_instead_of_none(self, monkeypatch):
+        import asyncio
+        from app.api import hunt as hunt_mod
+        from app.scrapers.resolver import ResolutionCache
+
+        async def fake_mx(self, domain):
+            return ["mx.example.com"]
+
+        async def fake_catch_all(self, domain, mx):
+            return True   # every local part is accepted
+
+        async def fake_page_emails(domain):
+            return []     # no real named person found on the company's site
+
+        monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
+        monkeypatch.setattr(ResolutionCache, "catch_all", fake_catch_all)
+        monkeypatch.setattr(hunt_mod, "emails_from_company_pages", fake_page_emails)
+
+        cache = ResolutionCache()
+        result = asyncio.run(hunt_mod._resolve_domain_contact(
+            {"name": "", "company": "Acme", "_domain": "acme.com"}, cache,
+        ))
+        assert result is not None, "catch-all domain must not discard the lead entirely"
+        assert result["email"] == "careers@acme.com"
+        assert result["email_status"] == "risky"
+
+    def test_vercel_env_skips_dead_smtp_loop_and_still_returns_a_guess(self, monkeypatch):
+        """
+        Vercel blocks outbound port 25, so _smtp_probe always returns None
+        there (verified against resolver.py's own VERCEL check) — meaning
+        detect_catch_all always reports False and the confirmation loop can
+        NEVER succeed on the one platform this app is actually deployed to.
+        Without the VERCEL short-circuit, this fallback would be entirely
+        inert in production. Confirmed here by NOT mocking _smtp_probe at all
+        — if the code path reached it, this test would hang/fail on a real
+        network call instead of returning immediately.
+        """
+        import asyncio
+        from app.api import hunt as hunt_mod
+        from app.scrapers.resolver import ResolutionCache
+
+        async def fake_mx(self, domain):
+            return ["mx.example.com"]
+
+        async def fake_catch_all(self, domain, mx):
+            return False   # not catch-all — the SMTP loop would normally run here
+
+        async def fake_page_emails(domain):
+            return []
+
+        monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
+        monkeypatch.setattr(ResolutionCache, "catch_all", fake_catch_all)
+        monkeypatch.setattr(hunt_mod, "emails_from_company_pages", fake_page_emails)
+        monkeypatch.setenv("VERCEL", "1")
+
+        cache = ResolutionCache()
+        result = asyncio.run(hunt_mod._resolve_domain_contact(
+            {"name": "", "company": "Acme", "_domain": "acme.com"}, cache,
+        ))
+        assert result is not None
+        assert result["email"] == "careers@acme.com"
+        assert result["email_status"] == "risky"
+
+    def test_domain_guess_lead_skips_expensive_page_scrape(self, monkeypatch):
+        """
+        Live-observed bug: a real corporate site's page-scrape step can burn
+        the entire resolve budget before ever reaching the role-inbox check,
+        starving the domain-guess fallback of the tiny bit of time it needs.
+        The synthetic lead (source="domain-guess") must skip straight to the
+        role-inbox check. A normal ATS-sourced lead (no such source tag) must
+        still go through the page-scrape as before — proven by NOT mocking
+        emails_from_company_pages and instead asserting it's simply never
+        called for the domain-guess lead.
+        """
+        import asyncio
+        from app.api import hunt as hunt_mod
+        from app.scrapers.resolver import ResolutionCache
+
+        calls = []
+
+        async def tracking_page_emails(domain):
+            calls.append(domain)
+            return []
+
+        async def fake_mx(self, domain):
+            return ["mx.example.com"]
+
+        async def fake_catch_all(self, domain, mx):
+            return True   # shortest path to a result, isolates the scrape-skip behaviour
+
+        monkeypatch.setattr(hunt_mod, "emails_from_company_pages", tracking_page_emails)
+        monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
+        monkeypatch.setattr(ResolutionCache, "catch_all", fake_catch_all)
+
+        cache = ResolutionCache()
+        result = asyncio.run(hunt_mod._resolve_domain_contact(
+            {"name": "", "company": "Acme", "_domain": "acme.com", "source": "domain-guess"},
+            cache,
+        ))
+        assert result is not None
+        assert calls == [], "domain-guess lead must not trigger the page scrape"
+
+        # A normal (non-domain-guess) identity-only lead still gets scraped.
+        calls.clear()
+        asyncio.run(hunt_mod._resolve_domain_contact(
+            {"name": "", "company": "Acme", "_domain": "acme.com", "source": "greenhouse/acme"},
+            cache,
+        ))
+        assert calls == ["acme.com"], "non-fallback leads must keep the page-scrape step"
+
+
 class TestHuntQuality:
     """Junk-email / test-identity / name-plausibility filters (quality > quantity)."""
 

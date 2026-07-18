@@ -50,7 +50,10 @@ router = APIRouter(prefix="/hunt", tags=["hunt"])
 # Serverless functions have a hard wall-clock limit (~60s incl. scraping), so
 # the budget shrinks there; SMTP probes are skipped entirely on Vercel anyway.
 _RESOLVE_BUDGET_SECONDS = 15 if os.environ.get("VERCEL") else 45
-_ROLE_ADDRESSES = ("talent", "recruiting", "careers", "jobs", "hr", "people", "team")
+# "careers@" and "jobs@" are the most universally standard convention across
+# company sizes and countries — tried first. "talent@"/"hr@" skew larger/tech-
+# forward; "people@"/"team@" skew startup-specific and are the least reliable.
+_ROLE_ADDRESSES = ("careers", "jobs", "talent", "hr", "recruiting", "people", "team")
 
 # Minimum confidence to persist a resolver-generated email. Direct scraper emails
 # (confidence=0) are always kept; only resolver outputs are gated.
@@ -62,8 +65,9 @@ _HUNT_COOLDOWN_SECONDS = 15
 _last_hunt: dict[int, float] = {}
 
 # Alternative TLDs to try when the guessed .com domain has no MX.
-# Ordered by how common they are for tech companies.
-_ALT_TLDS = (".io", ".ai", ".co", ".app", ".dev", ".com")  # .com retried last as canonical fallback
+# Ordered by how common they are for tech companies; .in covers Indian
+# companies, .org nonprofits/orgs. .com retried last as canonical fallback.
+_ALT_TLDS = (".io", ".ai", ".co", ".app", ".dev", ".in", ".org", ".com")
 
 
 # Freemail providers — an email here says nothing about the sender's company.
@@ -197,6 +201,30 @@ def _resolve_target_role(role_filter: str, query: str) -> str:
     return _infer_role_from_query(query)
 
 
+def _guess_company_domain(query: str) -> str:
+    """
+    Best-guess domain for a company-name hunt query, for the universal
+    careers@/jobs@ fallback lead. Prefers the directory's REAL domain when the
+    company is already known (curated seed or previously discovered); else
+    guesses from the query text using the single best base slug.
+
+    Real companies overwhelmingly use their short name as a domain, not the
+    full legal name concatenated ("Acme Corp" -> acme.com, not acmecorp.com),
+    so this prefers slugify_company's "first word alone" candidate over its
+    "full name" one. Always guesses .com — TLD alternation (.io/.ai/.in/.org/…)
+    happens downstream in _resolve_domain_contact via _find_live_domain when
+    this guess has no MX. Returns '' if the query yields no usable slug.
+    """
+    known = directory.lookup(query)
+    if known and known.domain:
+        return known.domain
+    slugs = directory.slugify_company(query)
+    if not slugs:
+        return ""
+    base = slugs[1] if len(slugs) > 1 else slugs[0]
+    return f"{base}.com" if base else ""
+
+
 def _build_scrapers(hunter_key: str) -> list:
     scrapers = [
         HackerNewsScraper(),
@@ -301,20 +329,66 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
             out["email_status"] = "risky"   # deliverable but unprovable
         return out
 
-    # No name → first try the company's own pages for a real, named person.
-    page_emails = await emails_from_company_pages(domain)
-    personal = _personal_email(page_emails, domain)
-    if personal:
-        return {**raw, "email": personal,
-                "name": person_name_from_email(personal, raw.get("company") or ""),
-                "designation": raw.get("designation") or "Team",
-                "confidence": 50, "_domain": None}
+    # No name → first try the company's own pages for a real, named person —
+    # UNLESS this is the universal domain-guess fallback lead itself, whose
+    # entire purpose is being a fast, always-available last resort. A real
+    # corporate site's /about and /contact pages can take most of the resolve
+    # budget to load (observed live: Nike's site alone burned the full 15s
+    # Vercel budget before even reaching the role-inbox check below), starving
+    # this lead of the tiny bit of time its own fallback actually needs.
+    # Every OTHER identity-only lead still gets the page-scrape — those come
+    # from a real source (an ATS board, a job post) where finding a named
+    # person is worth the cost.
+    if raw.get("source") != "domain-guess":
+        page_emails = await emails_from_company_pages(domain)
+        personal = _personal_email(page_emails, domain)
+        if personal:
+            return {**raw, "email": personal,
+                    "name": person_name_from_email(personal, raw.get("company") or ""),
+                    "designation": raw.get("designation") or "Team",
+                    "confidence": 50, "_domain": None}
 
-    # Fall back to probing role mailboxes (hr@, talent@, …) — clearly labeled so
-    # the user and the email generator know this reaches an inbox, not a person.
+    # Fall back to probing role mailboxes (careers@, jobs@, …) — clearly
+    # labeled so the user and the email generator know this reaches an
+    # inbox, not a person.
     mx = await cache.mx(domain)
-    if not mx or await cache.catch_all(domain, mx):
-        return None   # no MX, or catch-all makes role probing meaningless
+    if not mx:
+        return None
+
+    def _optimistic_guess() -> dict:
+        # Used whenever we can't SMTP-confirm an address either way (catch-all
+        # domain, or SMTP probing unavailable at all — see below): a standard
+        # address like careers@ overwhelmingly exists and won't bounce even
+        # unconfirmed. Unlike a blind first.last personal-name guess (20-30 in
+        # resolver.py's confidence bands), this IS a known, deliberate company
+        # convention, not a guess about how a specific person's name is
+        # formatted — so it sits at the top of the "catch-all domain, pattern
+        # learned" band (35-45) rather than down with "no pattern" guesses.
+        # 40 exactly clears _MIN_RESOLVER_CONFIDENCE below (a lower value here
+        # was live-verified to get this lead silently dropped by that gate
+        # even though the function itself resolves it correctly).
+        prefix = _ROLE_ADDRESSES[0]
+        return {**raw, "email": f"{prefix}@{domain}", "name": prefix.title(),
+                "designation": "Talent/Recruiting (role inbox)",
+                "confidence": 40, "email_status": "risky", "_domain": None}
+
+    if await cache.catch_all(domain, mx):
+        # A catch-all domain accepts EVERY local part by definition, so the
+        # guess will never bounce — we just can't confirm it reaches anyone
+        # in particular. Previously this returned None here, silently
+        # discarding a perfectly usable address on every catch-all domain.
+        return _optimistic_guess()
+
+    if os.environ.get("VERCEL"):
+        # Serverless platforms including Vercel block outbound port 25, so
+        # _smtp_probe below is a guaranteed no-op there (it short-circuits to
+        # None for every candidate — see resolver.py). Looping through
+        # candidates that can NEVER return a confirmation wastes the request's
+        # time budget for zero benefit; go straight to the same optimistic
+        # guess the catch-all path uses, so this fallback actually works in
+        # the one environment the app is actually deployed to.
+        return _optimistic_guess()
+
     loop = asyncio.get_running_loop()
     for prefix in _ROLE_ADDRESSES:
         addr = f"{prefix}@{domain}"
@@ -421,6 +495,32 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         source_counts[scraper.name] = count
     if dropped_junk:
         log.info(f"Hunt: dropped {dropped_junk} test-identity leads")
+
+    # ── Universal fallback: guess the standard role-inbox address (careers@,
+    #    jobs@, …) at the company's OWN domain, independent of whether any
+    #    scraper found anything at all. This is the one source that needs no
+    #    GitHub presence, no HN post, and no board on a supported ATS — nearly
+    #    every real company accepts mail at its own careers/jobs/hr inbox, so
+    #    a company-name search should never come back empty just because no
+    #    scraper happened to have coverage for it. Prefers the directory's
+    #    REAL domain when the company is already known; otherwise guesses
+    #    from the query using the single best base slug — real companies
+    #    overwhelmingly use their short name as a domain, not the full legal
+    #    name concatenated ("Acme Corp" -> acme.com, not acmecorp.com) — and
+    #    leans on _resolve_domain_contact's existing TLD alternation (now
+    #    covering .in/.org too) if that .com guess has no MX. Merges into the
+    #    same by-domain dedup as everything else below, so it only "wins" a
+    #    domain when nothing better already covers it.
+    if looks_like_company(req.query):
+        guess_domain = _guess_company_domain(req.query)
+        if guess_domain:
+            needs_resolve.append({
+                "name": "", "company": req.query.strip(),
+                "designation": "", "source": "domain-guess",
+                "_domain": guess_domain,
+            })
+            source_counts["domain-guess"] = source_counts.get("domain-guess", 0) + 1
+            log.debug(f"Hunt: added domain-guess fallback lead for {guess_domain!r}")
 
     log.info(f"Hunt: {len(with_email)} direct emails, {len(needs_resolve)} identity-only leads")
 
