@@ -85,7 +85,8 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
 
     # Resolve contacts to send
     if req.contact_ids:
-        contacts = [contact_repo.get_by_id(cid) for cid in req.contact_ids]
+        unique_ids = list(dict.fromkeys(req.contact_ids))
+        contacts = [contact_repo.get_by_id(cid) for cid in unique_ids]
         contacts = [c for c in contacts if c]
     else:
         contacts = contact_repo.get_all()
