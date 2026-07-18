@@ -172,8 +172,9 @@ def _extract_docx(data: bytes) -> str:
 # ── Post-extraction cleanup ───────────────────────────────────────────────────
 def _clean(text: str) -> str:
     # Fix spaced-out characters: "E x p e r i e n c e" → "Experience"
-    text = re.sub(r'\b([A-Za-z])( \1){2,}\b', lambda m: m.group(0).replace(" ", ""), text)
-    text = re.sub(r'(?<=[A-Za-z]) (?=[A-Za-z])(?:(?<=[A-Za-z]{1}) (?=[A-Za-z] ))', '', text)
+    # A run of 3+ single-letter "words" separated by single spaces is virtually
+    # always a font-kerning artifact from PDF extraction, never real text.
+    text = re.sub(r'\b(?:[A-Za-z] ){2,}[A-Za-z]\b', lambda m: m.group(0).replace(" ", ""), text)
 
     # Remove ligature / encoding artefacts
     text = text.replace('ﬁ', 'fi').replace('ﬂ', 'fl')
