@@ -277,9 +277,10 @@ def _first_name(name: str, company: str = "") -> str:
 
         return ""   # usernames like "jsmith84" — never greet with these
 
-    # Drop anything non-alphabetic (e.g. "john.doe" → "John")
+    # Drop anything not part of a name token (e.g. "john.doe" -> "John"),
+    # but keep apostrophes/hyphens so "D'Angelo" / "Anne-Marie" survive intact.
 
-    first = re.split(r"[^A-Za-z]", first_raw)[0]
+    first = re.split(r"[^A-Za-z'\-]", first_raw)[0]
 
     if len(first) < 2 or first.lower() in _NOT_A_NAME:
 
