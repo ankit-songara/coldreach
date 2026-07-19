@@ -51,11 +51,11 @@ function LLMBanner({ label }: { label: string }) {
   return (
     <div
       className="flex items-center gap-3 rounded-xl px-4 py-3"
-      style={{ background: 'rgba(196,125,30,0.09)', border: '1px solid rgba(196,125,30,0.28)' }}
+      style={{ background: 'color-mix(in srgb, var(--warning) 9%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 28%, transparent)' }}
       title={label}
     >
-      <AlertTriangle size={16} color="#c47d1e" style={{ flexShrink: 0 }} />
-      <div className="flex-1 text-sm" style={{ color: '#c47d1e' }}>
+      <AlertTriangle size={16} color="var(--warning)" style={{ flexShrink: 0 }} />
+      <div className="flex-1 text-sm" style={{ color: 'var(--warning-text)' }}>
         <strong>Email writing is temporarily unavailable.</strong>{' '}
         <span style={{ color: 'var(--text-muted)' }}>
           You can still hunt contacts and track replies — try generating drafts again in a few minutes.
@@ -80,31 +80,31 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
       n: 1, done: resume.trim().length > 0,
       title: 'Upload your resume',
       body: 'ColdReach personalises every email using your actual experience. PDF or DOCX, under 15 MB.',
-      cta: 'Go to Profile Setup', tab: 'setup' as const, color: '#e2603f', bg: 'var(--accent-tint)',
+      cta: 'Go to Profile Setup', tab: 'setup' as const, color: 'var(--accent)', text: 'var(--accent-text)', bg: 'var(--accent-tint)',
     },
     {
       n: 2, done: gmailConnected,
       title: 'Connect Gmail (optional)',
       body: 'Lets ColdReach send for you and track replies automatically. Skip it — you can always send each email from your own Gmail with one click.',
-      cta: 'Connect Gmail', tab: 'setup' as const, color: '#c47d1e', bg: 'rgba(196,125,30,.10)',
+      cta: 'Connect Gmail', tab: 'setup' as const, color: 'var(--warning)', text: 'var(--warning-text)', bg: 'color-mix(in srgb, var(--warning) 10%, transparent)',
     },
     {
       n: 3, done: contacts > 0,
       title: 'Find contacts',
       body: 'Type a role or company — ColdReach finds hiring managers, recruiters, and founders who are actively hiring, with a real email for each.',
-      cta: 'Hunt contacts', tab: 'hunt' as const, color: '#6f5ae0', bg: 'rgba(111,90,224,.10)',
+      cta: 'Hunt contacts', tab: 'hunt' as const, color: 'var(--info)', text: 'var(--info-text)', bg: 'color-mix(in srgb, var(--info) 10%, transparent)',
     },
     {
       n: 4, done: false,
       title: 'Generate personalised emails',
       body: 'One click generates a targeted cold email for every contact using your resume + their context.',
-      cta: 'Email Generation', tab: 'compose' as const, color: '#0e9d88', bg: 'rgba(14,157,136,.10)',
+      cta: 'Email Generation', tab: 'compose' as const, color: 'var(--status-replied)', text: 'var(--status-replied)', bg: 'color-mix(in srgb, var(--status-replied) 10%, transparent)',
     },
     {
       n: 5, done: false,
       title: 'Send & track',
       body: 'Send from your own Gmail, check replies in one click, and track every outcome from first touch to offer.',
-      cta: 'Send Mail', tab: 'send' as const, color: '#3f8f43', bg: 'rgba(63,143,67,.10)',
+      cta: 'Send Mail', tab: 'send' as const, color: 'var(--success)', text: 'var(--success-text)', bg: 'color-mix(in srgb, var(--success) 10%, transparent)',
     },
   ]
 
@@ -137,26 +137,35 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
           return (
             <div
               key={step.n}
+              // Contains real <button> CTAs, so the card itself can't be a
+              // <button> (nested buttons are invalid HTML) — role + key
+              // handling make it keyboard-operable instead.
+              role={step.done ? undefined : 'button'}
+              tabIndex={step.done ? undefined : 0}
               onClick={() => !step.done && onTab(step.tab)}
+              onKeyDown={e => {
+                if (step.done || e.target !== e.currentTarget) return
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTab(step.tab) }
+              }}
               className="flex items-start gap-4"
               style={{
                 background: 'var(--surface-1)',
-                border: `1px solid ${isActive ? step.color + '45' : step.done ? 'var(--border-dim)' : 'var(--border)'}`,
+                border: `1px solid ${isActive ? `color-mix(in srgb, ${step.color} 27%, transparent)` : step.done ? 'var(--border-dim)' : 'var(--border)'}`,
                 borderRadius: 16,
                 padding: '18px 20px',
                 cursor: step.done ? 'default' : 'pointer',
                 opacity: step.done ? 0.55 : 1,
-                boxShadow: isActive ? `0 0 0 2px ${step.color}18, var(--shadow-sm)` : 'var(--shadow-xs)',
+                boxShadow: isActive ? `0 0 0 2px color-mix(in srgb, ${step.color} 9%, transparent), var(--shadow-sm)` : 'var(--shadow-xs)',
                 transition: 'all 160ms',
               }}
             >
               {/* Step indicator */}
               <div style={{ flexShrink: 0, marginTop: 2 }}>
                 {step.done
-                  ? <CheckCircle2 size={22} color="#3f8f43" />
+                  ? <CheckCircle2 size={22} color="var(--success)" />
                   : isActive
                     ? <div style={{ width: 22, height: 22, borderRadius: '50%', background: step.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ color: '#fff', fontSize: 12, fontWeight: 800 }}>{step.n}</span>
+                        <span style={{ color: 'var(--on-accent)', fontSize: 12, fontWeight: 800 }}>{step.n}</span>
                       </div>
                     : <Circle size={22} style={{ color: 'var(--border-strong)' }} />
                 }
@@ -178,7 +187,7 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
                         <button
                           onClick={e => { e.stopPropagation(); onSkipGmail() }}
                           className="text-xs font-semibold"
-                          style={{ color: 'var(--text-dim)', background: 'none', border: 'none', cursor: 'pointer' }}
+                          style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
                         >
                           Skip for now
                         </button>
@@ -186,7 +195,7 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
                       <button
                         onClick={e => { e.stopPropagation(); onTab(step.tab) }}
                         className="flex items-center gap-1.5 text-xs font-semibold"
-                        style={{ color: step.color, background: step.bg, border: `1px solid ${step.color}35`, borderRadius: 'var(--radius-full)', padding: '5px 12px', cursor: 'pointer' }}
+                        style={{ color: step.text, background: step.bg, border: `1px solid color-mix(in srgb, ${step.color} 21%, transparent)`, borderRadius: 'var(--radius-full)', padding: '5px 12px', cursor: 'pointer' }}
                       >
                         {step.cta} <ArrowRight size={11} />
                       </button>
@@ -208,7 +217,7 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
       <div
         style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 20px' }}
       >
-        <p className="text-xs font-bold font-mono tracking-widest mb-3" style={{ color: 'var(--text-dim)' }}>
+        <p className="text-xs font-bold font-mono tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>
           TRY THESE HUNT QUERIES
         </p>
         <div className="flex flex-wrap gap-2">
@@ -249,10 +258,11 @@ function FunnelRow({ label, count, total, color, delay, onClick }: {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className="flex items-center gap-3.5"
-      style={{ padding: '11px 0', borderBottom: '1px solid var(--border)', cursor: onClick ? 'pointer' : 'default' }}
+      className="flex items-center gap-3.5 w-full"
+      style={{ padding: '11px 0', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', textAlign: 'left', cursor: onClick ? 'pointer' : 'default' }}
     >
       <div style={{ width: 120, flexShrink: 0 }}>
         <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{label}</span>
@@ -261,27 +271,28 @@ function FunnelRow({ label, count, total, color, delay, onClick }: {
         <div style={{ height: '100%', borderRadius: 99, background: color, width: `${width}%`, transition: 'width 0.7s var(--ease-out)', minWidth: count > 0 ? 10 : 0 }} />
       </div>
       <div className="flex items-center gap-2 flex-shrink-0 justify-end" style={{ minWidth: 76 }}>
-        <span className="font-bold" style={{ fontSize: 18, color }}>{count}</span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)' }}>{pct}%</span>
+        <span className="font-bold tnum" style={{ fontSize: 18, color }}>{count}</span>
+        <span className="tnum" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>{pct}%</span>
       </div>
-    </div>
+    </button>
   )
 }
 
 // ── Alert card ──────────────────────────────────────────────────────────────
-function AlertCard({ icon: Icon, color, bg, title, body, action, onAction }: {
-  icon: LucideIcon; color: string; bg: string; title: string; body: string; action: string; onAction: () => void
+function AlertCard({ icon: Icon, color, textColor, bg, title, body, action, onAction }: {
+  icon: LucideIcon; color: string; textColor?: string; bg: string; title: string; body: string; action: string; onAction: () => void
 }) {
   const [hover, setHover] = useState(false)
   return (
-    <div
+    <button
+      type="button"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={onAction}
-      className="flex items-start gap-3.5"
+      className="flex items-start gap-3.5 w-full"
       style={{
-        background: 'var(--surface-1)', border: `1px solid ${hover ? color + '50' : 'var(--border)'}`,
-        borderRadius: 14, padding: '16px 18px', cursor: 'pointer',
+        background: 'var(--surface-1)', border: `1px solid ${hover ? `color-mix(in srgb, ${color} 31%, transparent)` : 'var(--border)'}`,
+        borderRadius: 14, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
         boxShadow: hover ? 'var(--shadow-md)' : 'var(--shadow-sm)',
         transform: hover ? 'translateY(-1px)' : 'none', transition: 'all 180ms',
       }}
@@ -303,8 +314,8 @@ function AlertCard({ icon: Icon, color, bg, title, body, action, onAction }: {
           {body}
         </div>
       </div>
-      <span className="text-xs font-semibold flex-shrink-0" style={{ color, marginTop: 2 }}>{action} →</span>
-    </div>
+      <span className="text-xs font-semibold flex-shrink-0" style={{ color: textColor ?? color, marginTop: 2 }}>{action} →</span>
+    </button>
   )
 }
 
@@ -318,9 +329,9 @@ function StatTile({ label, value, sub, color, icon: Icon, iconBg }: {
         <Icon size={22} color={color} />
       </div>
       <div>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
+        <div className="tnum" style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
         <div className="text-[13px] font-medium" style={{ color: 'var(--text-muted)', marginTop: 2 }}>{label}</div>
-        {sub && <div className="text-xs" style={{ color: 'var(--text-dim)', marginTop: 1 }}>{sub}</div>}
+        {sub && <div className="text-xs tnum" style={{ color: 'var(--text-muted)', marginTop: 1 }}>{sub}</div>}
       </div>
     </div>
   )
@@ -420,11 +431,11 @@ export default function Today() {
     c => !SENT_STATUSES.includes(c.status) && !hasDraftFor(c.id)
   )
 
-  type Alert = { id: string; icon: LucideIcon; color: string; bg: string; title: string; body: string; action: string; tab: 'today' | 'setup' | 'hunt' | 'compose' | 'send' }
+  type Alert = { id: string; icon: LucideIcon; color: string; textColor?: string; bg: string; title: string; body: string; action: string; tab: 'today' | 'setup' | 'hunt' | 'compose' | 'send' }
   const alerts: Alert[] = []
   if (recentReplies.length > 0) {
     alerts.push({
-      id: 'reply', icon: MailOpen, color: '#0e9d88', bg: 'rgba(14,157,136,.13)',
+      id: 'reply', icon: MailOpen, color: 'var(--status-replied)', bg: 'var(--status-replied-tint)',
       title: `${recentReplies.length} new ${recentReplies.length === 1 ? 'reply' : 'replies'}`,
       body: nameList(recentReplies) + (recentReplies.length === 1 ? ' replied — follow up or set up a call.' : ' replied — time to respond!'),
       action: 'View in Send Mail', tab: 'send',
@@ -432,7 +443,7 @@ export default function Today() {
   }
   if (offersWon.length > 0) {
     alerts.push({
-      id: 'offer', icon: Trophy, color: '#2f9e44', bg: 'rgba(47,158,68,.14)',
+      id: 'offer', icon: Trophy, color: 'var(--success)', textColor: 'var(--success-text)', bg: 'color-mix(in srgb, var(--success) 14%, transparent)',
       title: `🎉 ${offersWon.length} offer${offersWon.length > 1 ? 's' : ''}!`,
       body: offersWon.slice(0, 3).map(c => `${c.name} at ${c.company}`).join(' · ')
         + (offersWon.length > 3 ? ` + ${offersWon.length - 3} more` : '') + ' — congratulations.',
@@ -441,7 +452,7 @@ export default function Today() {
   }
   if (activeInterviews.length > 0) {
     alerts.push({
-      id: 'interview', icon: CalendarCheck, color: '#3f8f43', bg: 'rgba(63,143,67,.13)',
+      id: 'interview', icon: CalendarCheck, color: 'var(--success)', textColor: 'var(--success-text)', bg: 'var(--status-interview-tint)',
       title: `${activeInterviews.length} interview${activeInterviews.length > 1 ? 's' : ''} lined up`,
       body: activeInterviews.slice(0, 3).map(c => `${c.name} at ${c.company}`).join(' · ')
         + (activeInterviews.length > 3 ? ` + ${activeInterviews.length - 3} more` : ''),
@@ -450,7 +461,7 @@ export default function Today() {
   }
   if (followupsDue > 0) {
     alerts.push({
-      id: 'followup', icon: Clock, color: '#c47d1e', bg: 'rgba(196,125,30,.13)',
+      id: 'followup', icon: Clock, color: 'var(--warning)', textColor: 'var(--warning-text)', bg: 'var(--status-emailed-tint)',
       title: `${followupsDue} contact${followupsDue > 1 ? 's' : ''} waiting on a follow-up`,
       body: `They haven't replied yet — a friendly nudge 3–5 days after the first email gets ~40% more replies. Write one in Email Generation, then send it from Send Mail.`,
       action: 'Write follow-up', tab: 'compose',
@@ -458,7 +469,7 @@ export default function Today() {
   }
   if (ungenerated.length > 0) {
     alerts.push({
-      id: 'draft', icon: Wand2, color: '#e2603f', bg: 'rgba(226,96,63,.10)',
+      id: 'draft', icon: Wand2, color: 'var(--accent)', textColor: 'var(--accent-text)', bg: 'var(--accent-dim)',
       title: `${ungenerated.length} contact${ungenerated.length > 1 ? 's' : ''} need${ungenerated.length === 1 ? 's' : ''} a draft`,
       body: nameList(ungenerated) + ' — one click to generate personalised emails.',
       action: 'Email Generation', tab: 'compose',
@@ -480,7 +491,7 @@ export default function Today() {
         <button
           onClick={() => refetchContacts()}
           className="px-5 py-2 rounded-full text-sm font-bold"
-          style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}
+          style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer' }}
         >
           Retry
         </button>
@@ -539,12 +550,12 @@ export default function Today() {
         </div>
         <div
           className="flex items-center gap-2"
-          style={{ padding: '8px 16px', borderRadius: 'var(--radius-full)', background: replyRate >= 20 ? 'rgba(63,143,67,.10)' : 'var(--surface-2)', border: `1px solid ${replyRate >= 20 ? 'rgba(63,143,67,.25)' : 'var(--border)'}` }}
+          style={{ padding: '8px 16px', borderRadius: 'var(--radius-full)', background: replyRate >= 20 ? 'color-mix(in srgb, var(--success) 10%, transparent)' : 'var(--surface-2)', border: `1px solid ${replyRate >= 20 ? 'color-mix(in srgb, var(--success) 25%, transparent)' : 'var(--border)'}` }}
         >
           {replyRate >= 20
-            ? <TrendingUp size={14} color="#3f8f43" />
+            ? <TrendingUp size={14} color="var(--success)" />
             : <Activity size={14} style={{ color: 'var(--text-muted)' }} />}
-          <span className="text-[13px] font-semibold" style={{ color: replyRate >= 20 ? '#3f8f43' : 'var(--text-muted)' }}>
+          <span className="text-[13px] font-semibold tnum" style={{ color: replyRate >= 20 ? 'var(--success-text)' : 'var(--text-muted)' }}>
             {replyRate}% reply rate
           </span>
         </div>
@@ -570,18 +581,18 @@ export default function Today() {
           {alerts.length > 0 && (
             <div className="grid" style={{ gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
               {alerts.map(a => (
-                <AlertCard key={a.id} icon={a.icon} color={a.color} bg={a.bg} title={a.title} body={a.body} action={a.action} onAction={() => setActiveTab(a.tab)} />
+                <AlertCard key={a.id} icon={a.icon} color={a.color} textColor={a.textColor} bg={a.bg} title={a.title} body={a.body} action={a.action} onAction={() => setActiveTab(a.tab)} />
               ))}
             </div>
           )}
 
           {/* ── Stats row ── */}
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-            <StatTile label="Emails sent" value={sent}      icon={SendIcon}      color="var(--accent)" iconBg="var(--accent-tint)" />
-            <StatTile label="Replied"     value={replied}   icon={MessageCircle} color="#0e9d88"       iconBg="rgba(14,157,136,.12)" sub={sent > 0 ? `${replyRate}% of sent` : undefined} />
-            <StatTile label="Interviews"  value={interview} icon={CalendarCheck} color="#3f8f43"       iconBg="rgba(63,143,67,.12)"  sub={replied > 0 ? `${interviewRate}% of replies` : undefined} />
-            <StatTile label="Offers"      value={offer}     icon={Trophy}        color="#2f9e44"       iconBg="rgba(47,158,68,.12)"  sub={interview > 0 ? `${offerRate}% of interviews` : undefined} />
-            <StatTile label="Avg reply"   value={avgReplyDays ?? 0} icon={Timer} color="#c47d1e"       iconBg="rgba(196,125,30,.12)" sub={avgReplyDays != null ? 'days to first reply' : 'no replies yet'} />
+            <StatTile label="Emails sent" value={sent}      icon={SendIcon}      color="var(--accent)"         iconBg="var(--accent-tint)" />
+            <StatTile label="Replied"     value={replied}   icon={MessageCircle} color="var(--status-replied)" iconBg="var(--status-replied-tint)" sub={sent > 0 ? `${replyRate}% of sent` : undefined} />
+            <StatTile label="Interviews"  value={interview} icon={CalendarCheck} color="var(--success)"        iconBg="var(--status-interview-tint)"  sub={replied > 0 ? `${interviewRate}% of replies` : undefined} />
+            <StatTile label="Offers"      value={offer}     icon={Trophy}        color="var(--success)"        iconBg="color-mix(in srgb, var(--success) 12%, transparent)"  sub={interview > 0 ? `${offerRate}% of interviews` : undefined} />
+            <StatTile label="Avg reply"   value={avgReplyDays ?? 0} icon={Timer} color="var(--warning)"        iconBg="var(--status-emailed-tint)" sub={avgReplyDays != null ? 'days to first reply' : 'no replies yet'} />
           </div>
 
           {/* ── Conversion funnel ── */}
@@ -597,16 +608,16 @@ export default function Today() {
               </div>
             </div>
 
-            <FunnelRow label="Hunted"    count={total}     total={total}                 color="#e2603f" delay={100} onClick={() => setActiveTab('hunt')} />
-            <FunnelRow label="Drafted"   count={hasDraft}  total={total}                 color="#6f5ae0" delay={200} onClick={() => setActiveTab('compose')} />
-            <FunnelRow label="Sent"      count={sent}      total={total}                 color="#0e9d88" delay={400} onClick={() => setActiveTab('send')} />
-            <FunnelRow label="Replied"   count={replied}   total={Math.max(sent, 1)}     color="#3f8f43" delay={500} onClick={() => setActiveTab('send')} />
-            <FunnelRow label="Interview" count={interview} total={Math.max(replied, 1)}  color="#c47d1e" delay={600} onClick={() => setActiveTab('send')} />
-            <FunnelRow label="Offer"     count={offer}     total={Math.max(interview, 1)} color="#2f9e44" delay={700} onClick={() => setActiveTab('send')} />
+            <FunnelRow label="Hunted"    count={total}     total={total}                 color="var(--accent)"         delay={100} onClick={() => setActiveTab('hunt')} />
+            <FunnelRow label="Drafted"   count={hasDraft}  total={total}                 color="var(--info)"           delay={200} onClick={() => setActiveTab('compose')} />
+            <FunnelRow label="Sent"      count={sent}      total={total}                 color="var(--status-replied)" delay={400} onClick={() => setActiveTab('send')} />
+            <FunnelRow label="Replied"   count={replied}   total={Math.max(sent, 1)}     color="var(--success)"        delay={500} onClick={() => setActiveTab('send')} />
+            <FunnelRow label="Interview" count={interview} total={Math.max(replied, 1)}  color="var(--warning)"        delay={600} onClick={() => setActiveTab('send')} />
+            <FunnelRow label="Offer"     count={offer}     total={Math.max(interview, 1)} color="var(--success)"       delay={700} onClick={() => setActiveTab('send')} />
 
             {sent > 0 && (
               <div className="flex items-start gap-2.5" style={{ marginTop: 18, padding: '12px 16px', borderRadius: 12, background: 'var(--surface-2)' }}>
-                <Lightbulb size={14} color="#c47d1e" style={{ flexShrink: 0, marginTop: 2 }} />
+                <Lightbulb size={14} color="var(--warning)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
                   {replyRate >= 20 ? `Strong ${replyRate}% reply rate — above the ~15% average for personalised cold email.` :
                    replyRate >= 10 ? `${replyRate}% reply rate. Try more specific subject lines or adding a company reference.` :
@@ -623,9 +634,9 @@ export default function Today() {
             <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
               {([
                 { icon: Search,   label: 'Find more contacts', sub: 'Fresh leads for your pipeline', tab: 'hunt' as const, color: 'var(--accent)', bg: 'var(--accent-tint)' },
-                { icon: Wand2,    label: 'Generate drafts',    sub: `${ungenerated.length} contacts waiting`,  tab: 'compose' as const, color: '#6f5ae0', bg: 'rgba(111,90,224,.10)' },
-                { icon: SendIcon, label: 'Send emails',        sub: `${hasDraft} ready to go`,                tab: 'send' as const,    color: '#0e9d88', bg: 'rgba(14,157,136,.10)' },
-                { icon: Settings, label: 'Setup Gmail',        sub: 'Connect your account',                   tab: 'setup' as const,   color: '#c47d1e', bg: 'rgba(196,125,30,.10)' },
+                { icon: Wand2,    label: 'Generate drafts',    sub: `${ungenerated.length} contacts waiting`,  tab: 'compose' as const, color: 'var(--info)',           bg: 'color-mix(in srgb, var(--info) 10%, transparent)' },
+                { icon: SendIcon, label: 'Send emails',        sub: `${hasDraft} ready to go`,                tab: 'send' as const,    color: 'var(--status-replied)', bg: 'color-mix(in srgb, var(--status-replied) 10%, transparent)' },
+                { icon: Settings, label: 'Setup Gmail',        sub: 'Connect your account',                   tab: 'setup' as const,   color: 'var(--warning)',        bg: 'color-mix(in srgb, var(--warning) 10%, transparent)' },
               ]).map(a => {
                 const Icon = a.icon
                 return (
@@ -634,7 +645,7 @@ export default function Today() {
                     onClick={() => setActiveTab(a.tab)}
                     className="flex items-center gap-3 text-left transition-all"
                     style={{ padding: '14px 16px', background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 14, cursor: 'pointer', boxShadow: 'var(--shadow-xs)' }}
-                    onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.borderColor = a.color + '50' }}
+                    onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.borderColor = `color-mix(in srgb, ${a.color} 31%, transparent)` }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--shadow-xs)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.borderColor = 'var(--border)' }}
                   >
                     <div className="flex items-center justify-center flex-shrink-0" style={{ width: 36, height: 36, borderRadius: 10, background: a.bg }}>

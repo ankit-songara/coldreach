@@ -14,8 +14,14 @@ export function resolveTheme(theme: Theme): 'light' | 'dark' {
 }
 
 export function applyTheme(theme: Theme) {
-  document.documentElement.setAttribute('data-theme', resolveTheme(theme))
+  const resolved = resolveTheme(theme)
+  document.documentElement.setAttribute('data-theme', resolved)
   localStorage.setItem(STORAGE_KEY, theme)
+  // Keep the browser chrome (Android address bar, Safari toolbar) matched to
+  // the app canvas. The inline script in index.html sets the same values
+  // pre-paint; these hexes are --bg light/dark.
+  document.querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', resolved === 'dark' ? '#151210' : '#faf7f2')
 }
 
 export function cycleTheme(): Theme {

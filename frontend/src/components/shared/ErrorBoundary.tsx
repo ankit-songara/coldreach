@@ -39,7 +39,7 @@ export default class ErrorBoundary extends Component<
             onClick={() => window.location.reload()}
             style={{
               padding: '10px 24px', borderRadius: 999, border: 'none', cursor: 'pointer',
-              background: 'var(--accent, #e2603f)', color: '#fff', fontWeight: 700, fontSize: 14,
+              background: 'var(--accent, #e2603f)', color: 'var(--on-accent, #fff)', fontWeight: 700, fontSize: 14,
             }}
           >
             Reload ColdReach

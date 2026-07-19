@@ -4,7 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <meta name="theme-color" content="#e2603f" />
+  <meta name="theme-color" content="#faf7f2" />
+  <!-- Theme must be decided BEFORE the stylesheet paints: initTheme() lives in
+       the JS bundle, which arrives after first paint — without this, every
+       dark-mode load flashes white. Kept in sync with lib/theme.ts. -->
+  <script>
+    (function () {
+      var t = localStorage.getItem('coldreach-theme');
+      var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      if (dark) {
+        document.documentElement.dataset.theme = 'dark';
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', '#151210');
+      }
+    })();
+  </script>
   <title>ColdReach</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

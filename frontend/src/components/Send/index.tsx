@@ -25,6 +25,9 @@ const SEND_CHUNK_SIZE = 5
 // to the clipboard instead of losing the tail silently.
 const MAX_GMAIL_URL = 1900
 
+// Contact rows rendered before "Show more" takes over.
+const PAGE_SIZE = 100
+
 export default function Send() {
   const { contacts, drafts, upsertContact, setContacts, gmailAddress, gmailAppPassword, setActiveTab } = useStore()
   const qc = useQueryClient()
@@ -35,6 +38,9 @@ export default function Send() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [checkingReplies, setCheckingReplies] = useState(false)
   const [search, setSearch] = useState('')
+  // Render the list in pages: at 300+ contacts, mounting every card (each
+  // with its pill row) is noticeably slow on mid phones.
+  const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE)
 
   // Drafts come from a shared query so Compose and Send don't each refetch them.
   const { draftsLoaded } = useAllDrafts()
@@ -59,11 +65,21 @@ export default function Send() {
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: ContactStatus }) =>
       contactsApi.setStatus(id, status),
+    // Optimistic: the pill reflects the tap instantly instead of freezing the
+    // whole row for a server round-trip; rolled back if the request fails.
+    onMutate: ({ id, status }) => {
+      const prev = useStore.getState().contacts.find(c => c.id === id)
+      if (prev) upsertContact({ ...prev, status })
+      return { prev }
+    },
     onSuccess: (updated) => {
       upsertContact(updated)
       qc.invalidateQueries({ queryKey: ['contacts'] })
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, _vars, ctx) => {
+      if (ctx?.prev) upsertContact(ctx.prev)
+      toast.error(e.message)
+    },
   })
 
   const refreshContacts = async () => {
@@ -78,18 +94,28 @@ export default function Send() {
     newStatus: ContactStatus, prevStatus: ContactStatus,
   ) => {
     const base = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}`
-    let url = `${base}&body=${encodeURIComponent(body)}`
+    const url = `${base}&body=${encodeURIComponent(body)}`
     if (url.length > MAX_GMAIL_URL) {
       // Gmail silently cuts long bodies off — copy instead so nothing is lost.
+      // Open the window BEFORE the clipboard await: awaiting first drops the
+      // click's user activation, so Safari/Firefox block the popup entirely.
+      const win = window.open('', '_blank')
       try {
         await navigator.clipboard.writeText(body)
         toast('Email is long, so the body was copied — paste it into the Gmail window', { icon: '📋', duration: 6000 })
       } catch {
         toast('Email is long — Gmail may cut off the end. Review before sending.', { icon: '⚠️', duration: 6000 })
       }
-      url = base
+      if (win) {
+        win.location.href = base
+      } else {
+        // Nothing opened, so nothing was sent — don't mark the contact.
+        toast('Popup blocked — allow popups for this site, then try again', { icon: '🚫', duration: 6000 })
+        return
+      }
+    } else {
+      window.open(url, '_blank')
     }
-    window.open(url, '_blank')
     // Opening compose isn't proof it was sent — mark it, but offer an undo.
     statusMutation.mutate({ id: contactId, status: newStatus })
     toast(t => (
@@ -203,7 +229,7 @@ export default function Send() {
 
   if (contacts.length === 0) return (
     <div className="text-center py-20">
-      <p className="text-sm font-mono" style={{ color: 'var(--text-dim)' }}>No contacts yet</p>
+      <p className="text-sm font-mono" style={{ color: 'var(--text-muted)' }}>No contacts yet</p>
     </div>
   )
 
@@ -263,9 +289,9 @@ export default function Send() {
               : 'Scan your Gmail inbox for replies and update statuses'}
             className="btn flex items-center gap-2 text-sm font-medium"
             style={{
-              background: 'rgba(111,90,224,0.10)',
-              borderColor: 'rgba(111,90,224,0.30)',
-              color: '#6f5ae0',
+              background: 'color-mix(in srgb, var(--info) 10%, transparent)',
+              borderColor: 'color-mix(in srgb, var(--info) 30%, transparent)',
+              color: 'var(--info-text)',
               padding: '8px 14px',
               opacity: noCredentials ? 0.5 : 1,
             }}
@@ -283,9 +309,9 @@ export default function Send() {
               disabled={sending}
               className="btn flex items-center gap-2 text-sm font-semibold"
               style={{
-                background: noCredentials ? 'rgba(138,127,112,0.10)' : 'rgba(226,96,63,0.12)',
-                borderColor: noCredentials ? 'var(--border)' : 'rgba(226,96,63,0.35)',
-                color: noCredentials ? 'var(--text-dim)' : 'var(--accent)',
+                background: noCredentials ? 'var(--status-new-tint)' : 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                borderColor: noCredentials ? 'var(--border)' : 'color-mix(in srgb, var(--accent) 35%, transparent)',
+                color: noCredentials ? 'var(--text-dim)' : 'var(--accent-text)',
                 padding: '8px 16px',
               }}
             >
@@ -302,10 +328,13 @@ export default function Send() {
       {noCredentials && withDraft.length > 0 && (
         <div
           className="rounded-xl p-4 flex items-center justify-between gap-4"
-          style={{ background: 'rgba(196,125,30,0.08)', border: '1px solid rgba(196,125,30,0.2)' }}
+          style={{
+            background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--warning) 20%, transparent)',
+          }}
         >
           <div>
-            <p className="text-sm font-medium" style={{ color: '#c47d1e' }}>Gmail not connected</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--warning-text)' }}>Gmail not connected</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Connect your Gmail in Setup once — credentials are verified, stored
               encrypted, and sending works from then on without re-entering them.
@@ -314,7 +343,7 @@ export default function Send() {
           <button
             onClick={() => setActiveTab('setup')}
             className="btn text-xs flex items-center gap-1 flex-shrink-0"
-            style={{ color: 'var(--accent)', borderColor: 'rgba(226,96,63,0.25)' }}
+            style={{ color: 'var(--accent-text)', borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)' }}
           >
             <Settings size={12} /> Setup
           </button>
@@ -335,7 +364,7 @@ export default function Send() {
           </p>
           <div className="space-y-1 max-h-40 overflow-y-auto">
             {unsent.map(c => (
-              <div key={c.id} className="flex items-center gap-2 text-xs font-mono" style={{ color: 'var(--text-dim)' }}>
+              <div key={c.id} className="flex items-center gap-2 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />
                 {c.name} · {c.email}
               </div>
@@ -348,22 +377,22 @@ export default function Send() {
       {results && (
         <div className="card space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
+            <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-muted)' }}>
               SEND RESULTS
             </span>
-            <button onClick={() => setResults(null)} className="text-xs" style={{ color: 'var(--text-dim)' }}>
+            <button onClick={() => setResults(null)} className="text-xs" style={{ color: 'var(--text-muted)' }}>
               dismiss
             </button>
           </div>
           {results.map(r => (
             <div key={r.contact_id} className="flex items-center gap-3 text-sm">
               {r.status === 'sent'
-                ? <CheckCircle2 size={14} style={{ color: '#3f8f43', flexShrink: 0 }} />
-                : <XCircle      size={14} style={{ color: '#d2483a', flexShrink: 0 }} />
+                ? <CheckCircle2 size={14} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                : <XCircle      size={14} style={{ color: 'var(--danger)', flexShrink: 0 }} />
               }
               <span className="flex-1 truncate">{r.name} · {r.email}</span>
               {r.status === 'failed' && (
-                <span className="text-xs truncate max-w-[180px]" style={{ color: '#d2483a' }} title={r.error}>
+                <span className="text-xs truncate max-w-[180px]" style={{ color: 'var(--danger-text)' }} title={r.error}>
                   {r.error}
                 </span>
               )}
@@ -376,12 +405,12 @@ export default function Send() {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total',    value: contacts.length,  color: 'var(--text-muted)' },
-          { label: 'Ready',    value: withDraft.length, color: '#0e9d88' },
-          { label: 'Actioned', value: sentCount,        color: '#3f8f43' },
+          { label: 'Ready',    value: withDraft.length, color: 'var(--status-replied)' },
+          { label: 'Actioned', value: sentCount,        color: 'var(--success)' },
         ].map(stat => (
           <div key={stat.label} className="card text-center">
-            <div className="text-2xl font-bold" style={{ color: stat.color }}>{stat.value}</div>
-            <div className="text-xs font-mono mt-1" style={{ color: 'var(--text-dim)' }}>{stat.label}</div>
+            <div className="text-2xl font-bold tnum" style={{ color: stat.color }}>{stat.value}</div>
+            <div className="text-xs font-mono mt-1" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
           </div>
         ))}
       </div>
@@ -404,11 +433,11 @@ export default function Send() {
       {/* ── Contact rows ────────────────────────────────────────────────────── */}
       <div className="space-y-2">
         {visibleContacts.length === 0 && search.trim() && (
-          <p className="text-sm text-center py-8" style={{ color: 'var(--text-dim)' }}>
+          <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>
             No contacts match “{search.trim()}”
           </p>
         )}
-        {visibleContacts.map(c => {
+        {visibleContacts.slice(0, visibleLimit).map(c => {
           const first    = (drafts[c.id] ?? []).find(d => !d.is_followup)
           const followup = (drafts[c.id] ?? []).find(d => d.is_followup)
           // Already contacted + a follow-up draft exists → the Gmail button
@@ -426,11 +455,11 @@ export default function Send() {
                     {isGenericName(c.name) && (
                       <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
                     )}
-                    <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
+                    <span className="badge" style={{ background: st.bg, color: st.color }}>
                       {st.label}
                     </span>
                   </div>
-                  <div className="text-xs font-mono truncate mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                  <div className="text-xs font-mono truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
                     {isGenericName(c.name) ? c.company : `${c.email} · ${c.company}`}
                   </div>
                 </div>
@@ -439,7 +468,7 @@ export default function Send() {
                   {draft ? (
                     <>
                       {c.status === 'emailed' && (
-                        <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
+                        <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--success-text)' }}>
                           <CheckCircle2 size={12} /> Sent
                         </span>
                       )}
@@ -452,9 +481,9 @@ export default function Send() {
                           title={`Send this email to ${c.name} now`}
                           className="btn text-xs flex items-center gap-1 font-semibold"
                           style={{
-                            background: 'rgba(63,143,67,0.12)',
-                            borderColor: 'rgba(63,143,67,0.35)',
-                            color: '#3f8f43',
+                            background: 'color-mix(in srgb, var(--success) 12%, transparent)',
+                            borderColor: 'color-mix(in srgb, var(--success) 35%, transparent)',
+                            color: 'var(--success-text)',
                             opacity: sendingId !== null && sendingId !== c.id ? 0.5 : 1,
                           }}
                         >
@@ -474,13 +503,13 @@ export default function Send() {
                           : 'Open Gmail with this draft'}
                         className="btn text-xs flex items-center gap-1"
                         style={isFollowupSend ? {
-                          background: 'rgba(111,90,224,0.10)',
-                          borderColor: 'rgba(111,90,224,0.30)',
-                          color: '#6f5ae0',
+                          background: 'color-mix(in srgb, var(--info) 10%, transparent)',
+                          borderColor: 'color-mix(in srgb, var(--info) 30%, transparent)',
+                          color: 'var(--info-text)',
                         } : {
-                          background: 'rgba(226,96,63,0.10)',
-                          borderColor: 'rgba(226,96,63,0.25)',
-                          color: 'var(--accent)',
+                          background: 'var(--accent-dim)',
+                          borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)',
+                          color: 'var(--accent-text)',
                         }}
                       >
                         <ExternalLink size={11} />
@@ -499,7 +528,7 @@ export default function Send() {
                   happened so the Today funnel reflects real results. */}
               {SENT_STATUSES.includes(c.status) && (
                 <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: '1px solid var(--border)' }}>
-                  <span className="text-[10px] font-mono font-bold tracking-widest mr-1" style={{ color: 'var(--text-dim)' }}>
+                  <span className="text-[11px] font-mono font-bold tracking-widest mr-1" style={{ color: 'var(--text-muted)' }}>
                     OUTCOME
                   </span>
                   {OUTCOME_STEPS.map(s => {
@@ -509,12 +538,12 @@ export default function Send() {
                       <button
                         key={s}
                         onClick={() => statusMutation.mutate({ id: c.id, status: s })}
-                        disabled={statusMutation.isPending}
-                        className="text-[10px] px-2 py-0.5 rounded-full font-semibold transition-all"
+                        className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-all hit-target"
                         style={{
                           background: active ? meta.bg : 'transparent',
-                          color:      active ? meta.color : 'var(--text-dim)',
-                          border:     `1px solid ${active ? meta.color + '55' : 'var(--border)'}`,
+                          // meta.color is a var() — alpha via color-mix, never string-suffix tricks
+                          color:      active ? meta.color : 'var(--text-muted)',
+                          border:     `1px solid ${active ? `color-mix(in srgb, ${meta.color} 33%, transparent)` : 'var(--border)'}`,
                         }}
                       >
                         {meta.label}
@@ -526,6 +555,17 @@ export default function Send() {
             </div>
           )
         })}
+        {visibleContacts.length > visibleLimit && (
+          <button
+            onClick={() => setVisibleLimit(l => l + PAGE_SIZE)}
+            className="btn btn-ghost w-full justify-center text-sm"
+          >
+            Show {Math.min(PAGE_SIZE, visibleContacts.length - visibleLimit)} more
+            <span className="tnum" style={{ color: 'var(--text-muted)' }}>
+              &nbsp;({visibleLimit} of {visibleContacts.length})
+            </span>
+          </button>
+        )}
       </div>
     </div>
   )

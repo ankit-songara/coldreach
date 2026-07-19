@@ -55,7 +55,7 @@ class TabErrorBoundary extends Component<{ children: ReactNode }, { failed: bool
         <button
           onClick={() => window.location.reload()}
           className="px-5 py-2 rounded-full text-sm font-bold"
-          style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}
+          style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer' }}
         >
           Refresh
         </button>
@@ -91,6 +91,7 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
   const [open, setOpen] = useState(false)
   const [theme, setTheme] = useState<Theme>(getStoredTheme)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const initials = (email.split('@')[0] || '?').slice(0, 2).toUpperCase()
 
   useEffect(() => {
@@ -101,9 +102,26 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
+  // Escape closes the menu and hands focus back to the trigger — without the
+  // focus return, keyboard users are dropped at the document root.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
+
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 rounded-full pl-1.5 pr-2.5 py-1.5 transition-colors"
         style={{ border: '1px solid var(--border)', background: 'var(--surface-1)', boxShadow: 'var(--shadow-xs)' }}
@@ -205,7 +223,11 @@ export default function App() {
   }, [setActiveTab])
 
   useEffect(() => {
-    if (window.location.hash.replace('#', '') !== activeTab) {
+    if (!window.location.hash) {
+      // First load on a bare URL: replace, don't push — assigning the hash here
+      // would add a history entry, making the first Back press a no-op ghost.
+      history.replaceState(null, '', '#' + activeTab)
+    } else if (window.location.hash.slice(1) !== activeTab) {
       window.location.hash = activeTab
     }
   }, [activeTab])
@@ -241,7 +263,7 @@ export default function App() {
             className="flex items-center justify-center"
             style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--accent)', boxShadow: 'var(--shadow-sm)' }}
           >
-            <SendIcon size={15} color="#fff" />
+            <SendIcon size={15} color="var(--on-accent)" />
           </div>
           {/* Wordmark hides on narrow phones so the tab nav keeps room */}
           <span className="hidden min-[480px]:inline" style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--accent)', lineHeight: 1 }}>
@@ -277,10 +299,11 @@ export default function App() {
                 {tab.label}
                 {tab.id === 'hunt' && contacts.length > 0 && (
                   <span
+                    className="tnum"
                     style={{
                       padding: '1px 6px', borderRadius: 'var(--radius-full)', fontSize: 11,
                       background: active ? 'var(--accent-tint)' : 'var(--surface-3)',
-                      color: active ? 'var(--accent)' : 'var(--text-dim)',
+                      color: active ? 'var(--accent)' : 'var(--text-muted)',
                     }}
                   >
                     {contacts.length}
@@ -297,7 +320,7 @@ export default function App() {
             nav tabs always win the space fight at tablet widths */}
         <div className="flex items-center gap-2.5 flex-shrink-0">
           <div
-            className="hidden lg:flex items-center gap-1.5 text-[13px] font-medium"
+            className="hidden lg:flex items-center gap-1.5 text-[13px] font-medium tnum"
             style={{ padding: '4px 10px', borderRadius: 'var(--radius-full)', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
           >
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)' }} />
@@ -365,7 +388,7 @@ export default function App() {
               className="flex-1 flex flex-col items-center gap-1 relative"
               style={{
                 padding: '10px 0 8px', background: 'none', border: 'none', cursor: 'pointer',
-                color: active ? 'var(--accent)' : 'var(--text-dim)',
+                color: active ? 'var(--accent)' : 'var(--text-muted)',
               }}
             >
               <Icon size={18} strokeWidth={active ? 2.4 : 2} />
@@ -374,12 +397,12 @@ export default function App() {
               </span>
               {tab.id === 'hunt' && contacts.length > 0 && (
                 <span
-                  className="absolute"
+                  className="absolute tnum"
                   style={{
                     top: 4, right: '50%', marginRight: -20,
                     minWidth: 15, height: 15, padding: '0 4px',
                     borderRadius: 'var(--radius-full)', background: 'var(--accent)',
-                    color: '#fff', fontSize: 9, fontWeight: 700,
+                    color: 'var(--on-accent)', fontSize: 9, fontWeight: 700,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
                   }}
                 >

@@ -35,3 +35,9 @@ dist/
 
 # Claude Code local config
 .claude/
+
+# Local run leftovers (dev servers, scratch verification)
+*.log
+*.pid
+*.db-wal
+*.db-shm

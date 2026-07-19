@@ -63,13 +63,15 @@ export interface FollowUpRequest {
   original_email: string
 }
 
+// Colors resolve through the CSS variables in styles/index.css so dark mode
+// flips every pill/dot/funnel row automatically — never inline hexes here.
 export const STATUS_META: Record<ContactStatus, { label: string; color: string; bg: string }> = {
-  new:          { label: 'New',          color: '#8a7f70', bg: 'rgba(138,127,112,0.12)' },
-  emailed:      { label: 'Emailed',      color: '#c47d1e', bg: 'rgba(196,125,30,0.13)'  },
-  followed_up:  { label: 'Followed up',  color: '#6f5ae0', bg: 'rgba(111,90,224,0.12)'  },
-  replied:      { label: 'Replied',      color: '#0e9d88', bg: 'rgba(14,157,136,0.13)'  },
-  interview:    { label: 'Interview',    color: '#3f8f43', bg: 'rgba(63,143,67,0.13)'   },
-  offer:        { label: 'Offer',        color: '#2f9e44', bg: 'rgba(47,158,68,0.16)'   },
-  rejected:     { label: 'Rejected',     color: '#d2483a', bg: 'rgba(210,72,58,0.12)'   },
-  bounced:      { label: 'Bounced',      color: '#cf6a59', bg: 'rgba(207,106,89,0.13)'  },
+  new:          { label: 'New',          color: 'var(--status-new)',          bg: 'var(--status-new-tint)'          },
+  emailed:      { label: 'Emailed',      color: 'var(--status-emailed)',      bg: 'var(--status-emailed-tint)'      },
+  followed_up:  { label: 'Followed up',  color: 'var(--status-followed_up)',  bg: 'var(--status-followed_up-tint)'  },
+  replied:      { label: 'Replied',      color: 'var(--status-replied)',      bg: 'var(--status-replied-tint)'      },
+  interview:    { label: 'Interview',    color: 'var(--status-interview)',    bg: 'var(--status-interview-tint)'    },
+  offer:        { label: 'Offer',        color: 'var(--status-offer)',        bg: 'var(--status-offer-tint)'        },
+  rejected:     { label: 'Rejected',     color: 'var(--status-rejected)',     bg: 'var(--status-rejected-tint)'     },
+  bounced:      { label: 'Bounced',      color: 'var(--status-bounced)',      bg: 'var(--status-bounced-tint)'      },
 }

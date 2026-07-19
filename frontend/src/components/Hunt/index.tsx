@@ -166,14 +166,19 @@ export default function Hunt() {
       if (/^[=+\-@]/.test(s)) s = "'" + s
       return `"${s.replace(/"/g, '""')}"`
     }
-    const rows = contacts.map(c =>
+    // Export what the user is LOOKING at — an active status filter narrows the
+    // export too ("export what I see"), and the filename says so.
+    const rows = filtered.map(c =>
       [c.name, c.email, c.designation, c.company, c.status].map(cell).join(',')
     )
-    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' })
+    // ﻿ = UTF-8 BOM: without it Excel decodes as ANSI and garbles
+    // non-ASCII names (é, ñ, Indian scripts).
+    const blob = new Blob(['﻿', [header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href = url
-    a.download = `coldreach-${new Date().toISOString().slice(0,10)}.csv`
+    const scope = statusFilter === 'all' ? '' : `-${statusFilter}`
+    a.download = `coldreach${scope}-${new Date().toISOString().slice(0,10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -286,7 +291,7 @@ export default function Hunt() {
             key={chip}
             onClick={() => { setQuery(chip); doHunt(chip) }}
             disabled={hunting}
-            className="text-xs px-3 py-1.5 rounded-full border font-mono transition-colors hover:border-accent"
+            className="relative text-xs px-3 py-1.5 rounded-full border font-mono transition-colors hover:border-accent before:absolute before:-inset-y-1.5 before:inset-x-0 before:content-['']"
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', opacity: hunting ? 0.5 : 1 }}
           >
             {chip}
@@ -297,7 +302,7 @@ export default function Hunt() {
       {/* ── Live hunt progress ───────────────────────────────────────── */}
       {hunting && (
         <div className="space-y-3" aria-live="polite">
-          <div className="flex items-center gap-2.5 text-sm flex-wrap" style={{ color: 'var(--text-muted)' }}>
+          <div className="flex items-center gap-2.5 text-sm flex-wrap tnum" style={{ color: 'var(--text-muted)' }}>
             <span
               className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
               style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--accent)' }}
@@ -328,10 +333,10 @@ export default function Hunt() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className="text-xs px-3 py-1 rounded-full font-mono border transition-colors"
+                  className="relative text-xs px-3 py-1 rounded-full font-mono border transition-colors tnum before:absolute before:-inset-y-2 before:inset-x-0 before:content-['']"
                   style={{
                     borderColor: statusFilter === s ? 'var(--accent)'      : 'var(--border)',
-                    color:       statusFilter === s ? 'var(--accent)'      : 'var(--text-dim)',
+                    color:       statusFilter === s ? 'var(--accent-text)' : 'var(--text-muted)',
                     background:  statusFilter === s ? 'var(--accent-dim)'  : 'transparent',
                   }}
                 >
@@ -355,7 +360,7 @@ export default function Hunt() {
             <button
               onClick={() => setShowClearConfirm(true)}
               className="btn btn-ghost flex items-center gap-1 text-xs"
-              style={{ color: '#d2483a' }}
+              style={{ color: 'var(--danger-text)' }}
             >
               <Trash2 size={12} /> Clear all
             </button>
@@ -369,13 +374,13 @@ export default function Hunt() {
           className="flex items-center gap-3 flex-wrap rounded-xl"
           style={{ padding: '10px 16px', background: 'var(--accent-dim)', border: '1px solid var(--accent)' }}
         >
-          <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>
+          <span className="text-sm font-semibold tnum" style={{ color: 'var(--accent-text)' }}>
             {selectedIds.size} selected
           </span>
           <button
             onClick={() => selectedIds.size === filtered.length ? deselectAll() : selectAll()}
-            className="text-xs font-semibold"
-            style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
+            className="relative text-xs font-semibold before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
+            style={{ color: 'var(--accent-text)', background: 'none', border: 'none', cursor: 'pointer' }}
           >
             {selectedIds.size === filtered.length ? 'Deselect all' : 'Select all'}
           </button>
@@ -386,8 +391,13 @@ export default function Hunt() {
                 key={key}
                 onClick={() => bulkSetStatus(key)}
                 disabled={bulkBusy}
-                className="text-[10px] px-2 py-0.5 rounded-full font-bold font-mono transition-all"
-                style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}50`, cursor: 'pointer' }}
+                className="relative text-[11px] px-2 py-0.5 rounded-full font-bold font-mono transition-all before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
+                style={{
+                  background: meta.bg,
+                  color: meta.color,
+                  border: `1px solid color-mix(in srgb, ${meta.color} 31%, transparent)`,
+                  cursor: 'pointer',
+                }}
               >
                 {meta.label}
               </button>
@@ -397,7 +407,11 @@ export default function Hunt() {
             onClick={bulkDelete}
             disabled={bulkBusy}
             className="btn text-xs flex items-center gap-1"
-            style={{ color: '#d2483a', borderColor: 'rgba(210,72,58,0.3)', background: 'rgba(210,72,58,0.08)' }}
+            style={{
+              color: 'var(--danger-text)',
+              borderColor: 'color-mix(in srgb, var(--danger) 30%, transparent)',
+              background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+            }}
           >
             <Trash2 size={11} /> Delete
           </button>
@@ -433,9 +447,9 @@ export default function Hunt() {
             <button
               onClick={clearHunt}
               className="font-semibold flex-shrink-0"
-              style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}
+              style={{ color: 'var(--accent-text)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}
             >
-              Show all {contacts.length} contacts →
+              Show all <span className="tnum">{contacts.length}</span> contacts →
             </button>
           )}
         </p>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { LogIn, UserPlus, Send as SendIcon } from 'lucide-react'
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
@@ -16,9 +16,24 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // Fixed 304px overflowed 320px phones (288px available) — and a one-shot
+  // read of innerWidth goes stale after phone rotation, so track resizes.
+  const [googleWidth, setGoogleWidth] = useState(() => Math.min(304, window.innerWidth - 64))
+  useEffect(() => {
+    const onResize = () => setGoogleWidth(Math.min(304, window.innerWidth - 64))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim() || !password) { toast.error('Enter email and password'); return }
+    // Mirror the server's minimum up front — no round-trip just to learn
+    // the password is too short.
+    if (mode === 'register' && password.length < 8) {
+      toast.error('Password must be at least 8 characters')
+      return
+    }
     setBusy(true)
     try {
       const res = mode === 'login'
@@ -74,8 +89,7 @@ export default function Auth() {
                   onError={() => toast.error('Google sign-in failed')}
                   text="continue_with"
                   shape="rectangular"
-                  // Fixed 304px overflowed 320px phones (288px available)
-                  width={String(Math.min(304, window.innerWidth - 64))}
+                  width={String(googleWidth)}
                 />
               </div>
               <div className="flex items-center gap-3">
@@ -123,6 +137,7 @@ export default function Auth() {
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder={mode === 'register' ? 'at least 8 characters' : '••••••••'}
+              minLength={mode === 'register' ? 8 : undefined}
               className="input text-sm w-full mt-1"
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />

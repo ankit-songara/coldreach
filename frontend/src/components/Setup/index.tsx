@@ -187,7 +187,7 @@ export default function Setup() {
       {/* ── Resume ────────────────────────────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
+          <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-muted)' }}>
             RESUME
           </span>
           {resume && (
@@ -209,7 +209,7 @@ export default function Setup() {
           <p className="text-sm font-medium">
             {extracting ? '⏳ Extracting...' : isDragActive ? 'Drop it!' : 'Drop PDF or DOCX — or click to browse'}
           </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>Max 15 MB</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Max 15 MB</p>
         </div>
 
         <textarea
@@ -227,9 +227,9 @@ export default function Setup() {
             disabled={savingResume || !resume.trim()}
             className="btn text-sm flex items-center gap-1.5"
             style={{
-              background: 'rgba(63,143,67,0.10)',
-              borderColor: 'rgba(63,143,67,0.25)',
-              color: '#3f8f43',
+              background: 'color-mix(in srgb, var(--success) 10%, transparent)',
+              borderColor: 'color-mix(in srgb, var(--success) 25%, transparent)',
+              color: 'var(--success-text)',
               opacity: savingResume || !resume.trim() ? 0.5 : 1,
             }}
           >
@@ -242,7 +242,7 @@ export default function Setup() {
       {/* ── Signature (auto-detected; preview-first, edit on demand) ──────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
+          <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-muted)' }}>
             EMAIL SIGNATURE
           </span>
           {!editingSig && (
@@ -270,7 +270,7 @@ export default function Setup() {
               <span className="font-semibold">{senderName || 'Your name'}</span><br />
               {joinLinks(links)
                 ? <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{joinLinks(links)}</span>
-                : <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     No links found in your résumé — add LinkedIn / GitHub / portfolio via Edit.
                   </span>}
             </div>
@@ -278,7 +278,7 @@ export default function Setup() {
         ) : (
           <div className="card space-y-3">
             <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Name</label>
+              <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Name</label>
               <input
                 value={senderName}
                 onChange={e => setSenderName(e.target.value)}
@@ -288,7 +288,7 @@ export default function Setup() {
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1">
-                <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>LinkedIn</label>
+                <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>LinkedIn</label>
                 <input
                   value={links.linkedin}
                   onChange={e => setLinks(l => ({ ...l, linkedin: e.target.value }))}
@@ -297,7 +297,7 @@ export default function Setup() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>GitHub</label>
+                <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>GitHub</label>
                 <input
                   value={links.github}
                   onChange={e => setLinks(l => ({ ...l, github: e.target.value }))}
@@ -306,7 +306,7 @@ export default function Setup() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Portfolio</label>
+                <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Portfolio</label>
                 <input
                   value={links.portfolio}
                   onChange={e => setLinks(l => ({ ...l, portfolio: e.target.value }))}
@@ -321,9 +321,9 @@ export default function Setup() {
                 disabled={savingName}
                 className="btn text-sm flex items-center gap-1.5"
                 style={{
-                  background: 'rgba(63,143,67,0.10)',
-                  borderColor: 'rgba(63,143,67,0.25)',
-                  color: '#3f8f43',
+                  background: 'color-mix(in srgb, var(--success) 10%, transparent)',
+                  borderColor: 'color-mix(in srgb, var(--success) 25%, transparent)',
+                  color: 'var(--success-text)',
                   opacity: savingName ? 0.5 : 1,
                 }}
               >
@@ -348,17 +348,17 @@ export default function Setup() {
       {/* ── Gmail Credentials (optional) ──────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-dim)' }}>
+          <span className="text-xs font-bold font-mono tracking-widest" style={{ color: 'var(--text-muted)' }}>
             GMAIL CREDENTIALS
             <span
               className="ml-2 px-1.5 py-0.5 rounded font-sans font-semibold"
-              style={{ background: 'var(--surface-2)', color: 'var(--text-dim)', fontSize: 9, letterSpacing: '0.02em' }}
+              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', fontSize: 9, letterSpacing: '0.02em' }}
             >
               OPTIONAL
             </span>
           </span>
           {gmailConnected && (
-            <span className="flex items-center gap-1 text-xs" style={{ color: '#3f8f43' }}>
+            <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--success-text)' }}>
               <CheckCircle2 size={12} /> Connected
             </span>
           )}
@@ -369,9 +369,9 @@ export default function Setup() {
           <div className="card space-y-3">
             <div
               className="flex items-center gap-2.5 rounded-lg p-3 text-sm"
-              style={{ background: 'rgba(63,143,67,0.08)', border: '1px solid rgba(63,143,67,0.2)' }}
+              style={{ background: 'color-mix(in srgb, var(--success) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)' }}
             >
-              <CheckCircle2 size={16} color="#3f8f43" style={{ flexShrink: 0 }} />
+              <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
               <div>
                 <span className="font-medium">Sending as {localAddress}</span>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -391,7 +391,7 @@ export default function Setup() {
               <button
                 onClick={handleDisconnect}
                 className="btn text-sm"
-                style={{ color: '#d2483a', borderColor: 'rgba(210,72,58,0.3)' }}
+                style={{ color: 'var(--danger-text)', borderColor: 'color-mix(in srgb, var(--danger) 30%, transparent)' }}
               >
                 Disconnect
               </button>
@@ -406,7 +406,7 @@ export default function Setup() {
               in-app sending ("Send All" and per-contact Send) plus reply tracking.
             </p>
             <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>Gmail address</label>
+              <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Gmail address</label>
               <input
                 type="email"
                 value={localAddress}
@@ -417,7 +417,7 @@ export default function Setup() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-dim)' }}>App Password</label>
+              <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>App Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -439,7 +439,7 @@ export default function Setup() {
 
             {/* Instructions */}
             <div className="rounded-lg p-3 text-xs space-y-1"
-              style={{ background: 'rgba(226,96,63,0.05)', border: '1px solid rgba(226,96,63,0.12)', color: 'var(--text-muted)' }}>
+              style={{ background: 'color-mix(in srgb, var(--accent) 5%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--text-muted)' }}>
               <p className="font-semibold" style={{ color: 'var(--text)' }}>How to get an App Password:</p>
               <p>1. Enable 2-Step Verification on your Google account</p>
               <p>2. Go to{' '}
@@ -462,7 +462,7 @@ export default function Setup() {
               >
                 Open App Passwords <ExternalLink size={10} />
               </a>
-              <p className="pt-1" style={{ color: 'var(--text-dim)' }}>
+              <p className="pt-1" style={{ color: 'var(--text-muted)' }}>
                 🔒 Verified with Gmail, then stored encrypted on the server — never in
                 this browser. Remove it anytime with Disconnect.
               </p>
@@ -474,9 +474,9 @@ export default function Setup() {
                 disabled={testing || !localAddress || !localPassword}
                 className="btn text-sm flex-1"
                 style={{
-                  background: 'rgba(226,96,63,0.10)',
-                  borderColor: 'rgba(226,96,63,0.25)',
-                  color: 'var(--accent)',
+                  background: 'var(--accent-dim)',
+                  borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)',
+                  color: 'var(--accent-text)',
                   opacity: testing || !localAddress || !localPassword ? 0.5 : 1,
                 }}
               >
@@ -503,9 +503,9 @@ export default function Setup() {
           onClick={() => setActiveTab('hunt')}
           className="btn flex items-center gap-2 text-sm font-semibold"
           style={{
-            background: 'rgba(226,96,63,0.12)',
-            borderColor: 'rgba(226,96,63,0.35)',
-            color: 'var(--accent)',
+            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+            borderColor: 'color-mix(in srgb, var(--accent) 35%, transparent)',
+            color: 'var(--accent-text)',
             padding: '9px 20px',
           }}
         >
