@@ -1,20 +1,21 @@
 """
-Reply detection via Gmail IMAP.
+Reply detection.
 
 POST /api/inbox/sync
-  Connects to the user's Gmail over IMAP, scans the inbox for messages FROM any
-  contact we're awaiting a reply from, and marks that contact
-  status='replied' + replied_at (or 'bounced' for delivery failures).
+  Scans the user's Gmail inbox for messages FROM any contact we're awaiting a
+  reply from, and marks that contact status='replied' + replied_at (or
+  'bounced' for delivery failures).
 
-Uses the same Gmail address + App Password as sending — no extra setup.
-Gmail IMAP must be enabled (it is, by default, for App-Password accounts).
+Connection precedence mirrors sending: explicit request creds (IMAP) → stored
+OAuth grant (Gmail REST API) → stored App Password (IMAP). The App Password
+path needs Gmail IMAP enabled (it is, by default, for App-Password accounts).
 """
 
 import re
 import imaplib
 import email
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
@@ -30,6 +31,8 @@ from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
 from app.timeutil import utcnow, to_naive_utc
+from app import gmail_oauth
+from app.api.send import RECONNECT_MSG
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/inbox", tags=["inbox"])
@@ -172,9 +175,16 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
     since_date = max(since_date, utcnow() - timedelta(days=90))
     since_str  = since_date.strftime("%d-%b-%Y")
 
+    # Connection precedence: explicit request creds (IMAP) → stored OAuth
+    # grant (Gmail API, preferred) → stored App Password (IMAP).
     address, password = req.gmail_address.strip(), req.gmail_app_password
     if not (address and password):
-        address, password = ConfigRepository(db, user.id).get_gmail_creds()
+        cfg = ConfigRepository(db, user.id)
+        oauth_address, oauth_refresh = cfg.get_gmail_oauth()
+        if oauth_address and oauth_refresh:
+            return _sync_via_gmail_api(
+                db, user, oauth_refresh, awaiting, since_date, contact_repo)
+        address, password = cfg.get_gmail_creds()
     if not (address and password):
         raise HTTPException(400,
             "Gmail isn't connected. Add your Gmail address and App Password in Setup first.")
@@ -300,6 +310,60 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
         replies_found=len(hits),
         bounces_found=len(bounced_emails - reply_addrs),
         hits=hits,
+    )
+
+
+def _sync_via_gmail_api(db, user, refresh_token, awaiting, since_date, contact_repo) -> InboxSyncResponse:
+    """Reply detection over the Gmail REST API — the OAuth-grant path.
+
+    Mirrors the IMAP scan's semantics: per contact, only messages that arrived
+    after we emailed them count (contacts with no send timestamp fall back to
+    the capped scan window), the EARLIEST qualifying message is the one
+    persisted (later ones are thread follow-ups), and detection flips the
+    contact to 'replied'. Gmail's own search (from: + after:) enforces the
+    cutoff server-side, so there is no daemon-message pass here — bounce
+    detection stays on the IMAP path for App Password users.
+    """
+    try:
+        access_token = gmail_oauth.access_token_for(refresh_token)
+    except gmail_oauth.GrantRevoked:
+        # 400, not 401 — 401 would force-log-out the ColdReach session.
+        raise HTTPException(400, RECONNECT_MSG)
+    except Exception as e:
+        log.warning(f"Gmail OAuth token refresh failed: {e}")
+        raise HTTPException(502, "Couldn't connect to Gmail right now. Please try again in a moment.")
+
+    now = utcnow()
+    reply_repo = ReplyRepository(db, user.id)
+    hits: list[ReplyHit] = []
+    for c in awaiting.values():
+        cutoff = c.last_emailed_at or since_date          # naive UTC, like the DB
+        after_epoch = int(cutoff.replace(tzinfo=timezone.utc).timestamp())
+        try:
+            msgs = gmail_oauth.find_replies_from(access_token, c.email, after_epoch)
+        except gmail_oauth.GrantRevoked:
+            raise HTTPException(400, RECONNECT_MSG)
+        except Exception as e:
+            # One contact's scan failing shouldn't sink the whole sync.
+            log.warning(f"Gmail API reply scan failed for {c.email}: {e}")
+            continue
+        if not msgs:
+            continue
+        # Oldest first — the first hit is the actual reply to our outreach.
+        first = msgs[0]
+        contact_repo.update(c.id, ContactUpdate(status="replied", replied_at=now))
+        reply_repo.add_if_new(
+            contact_id=c.id,
+            subject=first.get("subject") or "",
+            snippet=first.get("snippet") or "",
+            received_at=first.get("received_at") or now,
+        )
+        hits.append(ReplyHit(contact_id=c.id, name=c.name, email=c.email))
+        log.info(f"Reply detected from {c.email} — marked replied (oauth)")
+
+    return InboxSyncResponse(
+        scanned=len(awaiting), replies_found=len(hits),
+        bounces_found=0, hits=hits,
     )
 
 

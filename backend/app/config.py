@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     # password login is unaffected. Create one at console.cloud.google.com.
     google_client_id: str = ""
 
+    # ── Gmail OAuth (one-click "Connect Gmail" — no App Password) ────────────
+    # Client SECRET of the same OAuth client as google_client_id. Empty → the
+    # OAuth connect flow returns 503 and the frontend shows only the App
+    # Password path. Requires gmail.send + gmail.readonly scopes on the
+    # consent screen and backend_public_url/…/callback as a redirect URI.
+    google_client_secret: str = ""
+    # Public base URL of THIS backend (no trailing slash) — used to build the
+    # OAuth redirect_uri Google sends the browser back to.
+    backend_public_url: str = "http://localhost:8000"
+    # Where to land the browser after the OAuth callback stores the grant.
+    frontend_url: str = "http://localhost:5173"
+
     # ── Database ─────────────────────────────────────────────────────────────
     # Lives under data/ alongside the encryption key (matches .env.example and
     # the Docker volume mount). The directory is auto-created on startup.

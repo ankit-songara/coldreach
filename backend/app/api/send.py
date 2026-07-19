@@ -1,6 +1,9 @@
 """
-Bulk email sending via Gmail SMTP.
-Uses the user's Gmail address + App Password (no OAuth needed).
+Bulk email sending via Gmail.
+
+Two connection methods, resolved per request:
+  - One-click OAuth grant (preferred when stored) → Gmail REST API sends.
+  - Gmail address + App Password (explicit in the request, or stored) → SMTP.
 
 How to get an App Password:
   1. Enable 2-Step Verification on your Google account
@@ -29,9 +32,15 @@ from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
 from app.mailer import normalize_app_password, build_message
+from app import gmail_oauth
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/send", tags=["send"])
+
+# Shown whenever the stored OAuth grant stops working (revoked, or Google's
+# 7-day Testing-mode expiry). Actionable: the fix is always "reconnect".
+RECONNECT_MSG = ("Your Gmail connection expired — reconnect it in Setup "
+                 "(Google expires test-mode connections weekly).")
 
 # Serverless functions have a hard wall-clock limit, so the human-like pauses
 # between sends must shrink to fit. The frontend compensates by sending in
@@ -138,32 +147,55 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     # Normalize once: Gmail App Passwords are often pasted with the display spaces.
     gmail_address = req.gmail_address.strip()
     gmail_app_password = normalize_app_password(req.gmail_app_password)
-    # Fall back to the server-stored (encrypted) creds saved in Setup.
-    if not (gmail_address and gmail_app_password):
-        gmail_address, gmail_app_password = cfg.get_gmail_creds()
-    if not (gmail_address and gmail_app_password):
-        raise HTTPException(400,
-            "Gmail isn't connected. Add your Gmail address and App Password in Setup first.")
 
-    # Verify credentials once before sending anything.
-    # 400 (not 401) on failure: 401 means "session expired" to the frontend and
-    # would log the user out over a bad Gmail password.
-    try:
-        test_smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
-        test_smtp.starttls()
-        test_smtp.login(gmail_address, gmail_app_password)
-        test_smtp.quit()
-    except smtplib.SMTPAuthenticationError:
-        raise HTTPException(400,
-            "Gmail authentication failed. Check your address and App Password. "
-            "Make sure 2-Step Verification is on and you're using an App Password "
-            "(not your regular Gmail password)."
-        )
-    except Exception as e:
-        # Raw socket/SSL/DNS exception text is internal noise, not something a
-        # user can act on — log it, show a plain retry message instead.
-        log.warning(f"Gmail SMTP connect failed: {e}")
-        raise HTTPException(502, "Couldn't connect to Gmail right now. Please try again in a moment.")
+    # Credential precedence: explicit request creds → stored OAuth grant
+    # (preferred) → stored App Password.
+    use_oauth = False
+    access_token = ""
+    if not (gmail_address and gmail_app_password):
+        oauth_address, oauth_refresh = cfg.get_gmail_oauth()
+        if oauth_address and oauth_refresh:
+            # Pre-verify: one token refresh replaces the SMTP login check.
+            # 400 (not 401) on a dead grant: 401 means "session expired" to the
+            # frontend and would log the user out over a stale Gmail grant.
+            try:
+                access_token = gmail_oauth.access_token_for(oauth_refresh)
+            except gmail_oauth.GrantRevoked:
+                raise HTTPException(400, RECONNECT_MSG)
+            except Exception as e:
+                log.warning(f"Gmail OAuth token refresh failed: {e}")
+                raise HTTPException(502, "Couldn't connect to Gmail right now. Please try again in a moment.")
+            use_oauth = True
+            # From-address is always the OAuth-connected account.
+            gmail_address = oauth_address
+        else:
+            # Fall back to the server-stored (encrypted) creds saved in Setup.
+            gmail_address, gmail_app_password = cfg.get_gmail_creds()
+
+    if not use_oauth:
+        if not (gmail_address and gmail_app_password):
+            raise HTTPException(400,
+                "Gmail isn't connected. Add your Gmail address and App Password in Setup first.")
+
+        # Verify credentials once before sending anything.
+        # 400 (not 401) on failure: 401 means "session expired" to the frontend and
+        # would log the user out over a bad Gmail password.
+        try:
+            test_smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+            test_smtp.starttls()
+            test_smtp.login(gmail_address, gmail_app_password)
+            test_smtp.quit()
+        except smtplib.SMTPAuthenticationError:
+            raise HTTPException(400,
+                "Gmail authentication failed. Check your address and App Password. "
+                "Make sure 2-Step Verification is on and you're using an App Password "
+                "(not your regular Gmail password)."
+            )
+        except Exception as e:
+            # Raw socket/SSL/DNS exception text is internal noise, not something a
+            # user can act on — log it, show a plain retry message instead.
+            log.warning(f"Gmail SMTP connect failed: {e}")
+            raise HTTPException(502, "Couldn't connect to Gmail right now. Please try again in a moment.")
 
     # Résumé attachment: loaded once per request, attached only when the
     # recipient is a hiring inbox or recruiter — the recipients whose formal
@@ -224,6 +256,48 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
                 pass
         return out
 
+    # OAuth path: one HTTPS call per message via the Gmail REST API — no SMTP
+    # session to establish or reuse. Once the grant dies mid-run, every
+    # remaining message fails fast with the reconnect message instead of
+    # hammering Google with calls that can't succeed.
+    oauth_grant_dead = False
+
+    def send_batch_oauth(batch) -> list[SendResult]:
+        """Send one batch via the Gmail API. Mirrors send_batch's human-like
+        jitter and per-message error capture."""
+        nonlocal oauth_grant_dead
+        out: list[SendResult] = []
+        for contact, draft in batch:
+            if oauth_grant_dead:
+                out.append(SendResult(contact_id=contact.id, name=contact.name,
+                                      email=contact.email, status="failed",
+                                      error=RECONNECT_MSG))
+                continue
+            try:
+                # Tiny human-like jitter — trimmed on serverless to stay
+                # inside the function's execution limit.
+                time.sleep(random.uniform(0.1, 0.4) if _SERVERLESS else random.uniform(0.2, 1.2))
+                msg = build_message(
+                    gmail_address, contact.email, draft.subject, draft.body,
+                    attachment=_attachment_for(contact),
+                )
+                gmail_oauth.send_raw(access_token, msg.as_bytes())
+                log.info(f"Sent to {contact.email} (oauth)")
+                out.append(SendResult(contact_id=contact.id, name=contact.name,
+                                      email=contact.email, status="sent"))
+            except gmail_oauth.GrantRevoked:
+                log.error(f"Gmail OAuth grant revoked mid-batch (at {contact.email})")
+                oauth_grant_dead = True
+                out.append(SendResult(contact_id=contact.id, name=contact.name,
+                                      email=contact.email, status="failed",
+                                      error=RECONNECT_MSG))
+            except Exception as e:
+                log.error(f"Failed {contact.email}: {e}")
+                out.append(SendResult(contact_id=contact.id, name=contact.name,
+                                      email=contact.email, status="failed",
+                                      error="Couldn't send this one. Try again in a moment."))
+        return out
+
     # Send in small batches with a randomized pause between them. Jitter makes
     # the traffic look less machine-like (constant intervals are a spam signal)
     # and keeps concurrency low so Gmail doesn't throttle.
@@ -232,10 +306,12 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     batches = [queue[i:i+batch_size] for i in range(0, len(queue), batch_size)]
 
     for batch_idx, batch in enumerate(batches):
-        if batch_idx > 0:
+        # No pause once the OAuth grant is dead — remaining batches only
+        # produce instant "reconnect" failures, so don't stretch them out.
+        if batch_idx > 0 and not oauth_grant_dead:
             time.sleep(random.uniform(0.5, 1.0) if _SERVERLESS else random.uniform(1.5, 4.0))
 
-        batch_results = send_batch(batch)
+        batch_results = send_batch_oauth(batch) if use_oauth else send_batch(batch)
         for result in batch_results:
             results.append(result)
             if result.status == "sent":

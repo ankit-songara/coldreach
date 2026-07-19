@@ -1692,3 +1692,325 @@ class TestAnalyticsSummary:
 
     def test_requires_auth(self, client):
         assert client.get("/api/analytics/summary").status_code in (401, 403)
+
+
+class TestGmailOAuthSend:
+    """POST /api/send/bulk over a stored OAuth grant (Gmail REST API path)."""
+
+    @staticmethod
+    def _store_oauth_grant(db_session, address="oauth-user@gmail.com",
+                           refresh_token="refresh-123"):
+        from app.db.models import User
+        from app.db.crud import ConfigRepository
+        user = db_session.query(User).first()
+        cfg = ConfigRepository(db_session, user.id)
+        cfg.set("gmail_oauth_address", address)
+        cfg.set("gmail_oauth_refresh_token", refresh_token)
+        return user
+
+    @staticmethod
+    def _seed_drafted_contact(db_session, user_id, email):
+        from app.db.models import Contact, EmailDraft
+        c = Contact(user_id=user_id, name="Lead Person", email=email,
+                    designation="Software Engineer", company="StartupCo")
+        db_session.add(c)
+        db_session.commit()
+        db_session.add(EmailDraft(user_id=user_id, contact_id=c.id,
+                                  subject="Quick question", body="Hello there"))
+        db_session.commit()
+        return c
+
+    @staticmethod
+    def _forbid_smtp(monkeypatch):
+        """The OAuth path must never open an SMTP session."""
+        from app.api import send as send_mod
+
+        def _boom(*a, **k):
+            raise AssertionError("SMTP was used on the OAuth path")
+        monkeypatch.setattr(send_mod.smtplib, "SMTP", _boom)
+
+    def test_oauth_send_happy_path(self, auth_client, db_session, monkeypatch):
+        from app import gmail_oauth
+        from app.api import send as send_mod
+        user = self._store_oauth_grant(db_session)
+        self._seed_drafted_contact(db_session, user.id, "a@startup.com")
+        self._seed_drafted_contact(db_session, user.id, "b@other.com")
+
+        monkeypatch.setattr(send_mod.time, "sleep", lambda *_: None)
+        self._forbid_smtp(monkeypatch)
+        refreshed_with = []
+        monkeypatch.setattr(gmail_oauth, "access_token_for",
+                            lambda rt: refreshed_with.append(rt) or "access-tok")
+        sent_msgs = []
+
+        def fake_send_raw(token, mime_bytes):
+            assert token == "access-tok"
+            sent_msgs.append(mime_bytes)
+        monkeypatch.setattr(gmail_oauth, "send_raw", fake_send_raw)
+
+        r = auth_client.post("/api/send/bulk", json={})
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sent"] == 2 and data["failed"] == 0
+
+        # One Gmail API send per queued contact, from the connected address.
+        assert len(sent_msgs) == 2
+        assert refreshed_with == ["refresh-123"]
+        assert all(b"oauth-user@gmail.com" in m for m in sent_msgs)
+
+        statuses = {c["email"]: c["status"] for c in auth_client.get("/api/contacts").json()}
+        assert statuses["a@startup.com"] == "emailed"
+        assert statuses["b@other.com"] == "emailed"
+
+    def test_grant_revoked_returns_400_with_reconnect(self, auth_client, db_session, monkeypatch):
+        from app import gmail_oauth
+        user = self._store_oauth_grant(db_session)
+        self._seed_drafted_contact(db_session, user.id, "a@startup.com")
+
+        def _revoked(rt):
+            raise gmail_oauth.GrantRevoked()
+        monkeypatch.setattr(gmail_oauth, "access_token_for", _revoked)
+
+        r = auth_client.post("/api/send/bulk", json={})
+        # 400, not 401 — 401 would force-log-out the frontend session.
+        assert r.status_code == 400, r.text
+        assert "reconnect" in r.json()["detail"].lower()
+
+        # Nothing was sent — the contact is still untouched.
+        statuses = {c["email"]: c["status"] for c in auth_client.get("/api/contacts").json()}
+        assert statuses["a@startup.com"] == "new"
+
+    def test_oauth_preferred_over_stored_app_password(self, auth_client, db_session, monkeypatch):
+        from app import gmail_oauth
+        from app.api import send as send_mod
+        from app.db.crud import ConfigRepository
+        user = self._store_oauth_grant(db_session)
+        # Both methods stored — OAuth must win (and SMTP never be touched).
+        cfg = ConfigRepository(db_session, user.id)
+        cfg.set("gmail_address", "legacy@gmail.com")
+        cfg.set("gmail_app_password", "abcdabcdabcdabcd")
+        self._seed_drafted_contact(db_session, user.id, "a@startup.com")
+
+        monkeypatch.setattr(send_mod.time, "sleep", lambda *_: None)
+        self._forbid_smtp(monkeypatch)
+        monkeypatch.setattr(gmail_oauth, "access_token_for", lambda rt: "access-tok")
+        sent_msgs = []
+        monkeypatch.setattr(gmail_oauth, "send_raw",
+                            lambda tok, mime: sent_msgs.append(mime))
+
+        r = auth_client.post("/api/send/bulk", json={})
+        assert r.status_code == 200, r.text
+        assert r.json()["sent"] == 1
+        assert len(sent_msgs) == 1
+        # From-address is the OAuth-connected account, not the App Password one.
+        assert b"oauth-user@gmail.com" in sent_msgs[0]
+
+    def test_grant_revoked_mid_batch_fails_remaining(self, auth_client, db_session, monkeypatch):
+        from app import gmail_oauth
+        from app.api import send as send_mod
+        user = self._store_oauth_grant(db_session)
+        for i in range(3):
+            self._seed_drafted_contact(db_session, user.id, f"lead{i}@startup.com")
+
+        monkeypatch.setattr(send_mod.time, "sleep", lambda *_: None)
+        self._forbid_smtp(monkeypatch)
+        monkeypatch.setattr(gmail_oauth, "access_token_for", lambda rt: "access-tok")
+        calls = []
+
+        def flaky_send_raw(token, mime):
+            calls.append(mime)
+            if len(calls) >= 2:                    # token dies after the first send
+                raise gmail_oauth.GrantRevoked()
+        monkeypatch.setattr(gmail_oauth, "send_raw", flaky_send_raw)
+
+        r = auth_client.post("/api/send/bulk", json={})
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sent"] == 1 and data["failed"] == 2
+        # After the revocation, no further Gmail API calls are attempted.
+        assert len(calls) == 2
+        failures = [x for x in data["results"] if x["status"] == "failed"]
+        assert all("reconnect" in x["error"] for x in failures)
+
+
+class TestGmailOAuthInboxSync:
+    """POST /api/inbox/sync over a stored OAuth grant (Gmail REST API path)."""
+
+    def _seed_awaiting_contact(self, auth_client, email="priya@startup.com"):
+        contact = auth_client.post("/api/contacts", json={
+            "name": "Priya Sharma", "email": email,
+            "designation": "Technical Recruiter", "company": "StartupCo",
+        }).json()
+        r = auth_client.patch(f"/api/contacts/{contact['id']}", json={
+            "status": "emailed", "last_emailed_at": "2026-07-10T09:00:00",
+        })
+        assert r.status_code == 200
+        return contact
+
+    @staticmethod
+    def _forbid_imap(monkeypatch):
+        from app.api import inbox as inbox_mod
+
+        def _boom(*a, **k):
+            raise AssertionError("IMAP was used on the OAuth path")
+        monkeypatch.setattr(inbox_mod.imaplib, "IMAP4_SSL", _boom)
+
+    def test_sync_via_oauth_persists_reply_and_flips_status(self, auth_client, db_session, monkeypatch):
+        from datetime import datetime, timezone
+        from app import gmail_oauth
+        contact = self._seed_awaiting_contact(auth_client)
+        TestGmailOAuthSend._store_oauth_grant(db_session)
+
+        self._forbid_imap(monkeypatch)
+        monkeypatch.setattr(gmail_oauth, "access_token_for", lambda rt: "access-tok")
+        calls = []
+
+        def fake_find(token, sender, after_epoch):
+            assert token == "access-tok"
+            calls.append((sender, after_epoch))
+            return [
+                {"subject": "Re: Backend role", "snippet": "Thanks for reaching out!",
+                 "received_at": datetime(2026, 7, 18, 10, 30)},
+                {"subject": "Re: Backend role", "snippet": "Bumping this thread",
+                 "received_at": datetime(2026, 7, 19, 8, 0)},
+            ]
+        monkeypatch.setattr(gmail_oauth, "find_replies_from", fake_find)
+
+        r = auth_client.post("/api/inbox/sync", json={})
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["scanned"] == 1
+        assert data["replies_found"] == 1
+        assert data["bounces_found"] == 0
+        assert data["hits"][0]["email"] == "priya@startup.com"
+
+        # Cutoff mirrors the IMAP semantics: the query goes back exactly to
+        # when we emailed this contact (naive UTC treated as UTC).
+        expected_epoch = int(datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc).timestamp())
+        assert calls == [("priya@startup.com", expected_epoch)]
+
+        # Status flipped and the EARLIEST message was persisted for the inbox.
+        replies = auth_client.get("/api/inbox/replies").json()
+        assert len(replies) == 1
+        rep = replies[0]
+        assert rep["contact_id"] == contact["id"]
+        assert rep["status"] == "replied"
+        assert rep["subject"] == "Re: Backend role"
+        assert rep["snippet"] == "Thanks for reaching out!"
+        assert rep["received_at"].startswith("2026-07-18T10:30:00")
+
+    def test_sync_grant_revoked_returns_400_with_reconnect(self, auth_client, db_session, monkeypatch):
+        from app import gmail_oauth
+        self._seed_awaiting_contact(auth_client)
+        TestGmailOAuthSend._store_oauth_grant(db_session)
+        self._forbid_imap(monkeypatch)
+
+        def _revoked(rt):
+            raise gmail_oauth.GrantRevoked()
+        monkeypatch.setattr(gmail_oauth, "access_token_for", _revoked)
+
+        r = auth_client.post("/api/inbox/sync", json={})
+        assert r.status_code == 400, r.text
+        assert "reconnect" in r.json()["detail"].lower()
+
+    def test_explicit_request_creds_still_use_imap(self, auth_client, db_session, monkeypatch):
+        """Explicit App Password creds in the request outrank the stored grant."""
+        from app import gmail_oauth
+        self._seed_awaiting_contact(auth_client)
+        TestGmailOAuthSend._store_oauth_grant(db_session)
+
+        def _no_oauth(rt):
+            raise AssertionError("OAuth used despite explicit request creds")
+        monkeypatch.setattr(gmail_oauth, "access_token_for", _no_oauth)
+        TestInboxReplies._install_fake_imap(monkeypatch, [
+            TestInboxReplies._raw_reply("priya@startup.com", "Re: hi", "yo"),
+        ])
+
+        r = auth_client.post("/api/inbox/sync", json={
+            "gmail_address": "me@gmail.com", "gmail_app_password": "app-pw",
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["replies_found"] == 1
+
+
+class TestGmailOAuthEndpoints:
+    """GET /api/config/gmail/oauth/start + the unauthenticated callback."""
+
+    def test_start_returns_consent_url(self, auth_client, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "google_client_id", "client-id-123")
+        monkeypatch.setattr(settings, "google_client_secret", "client-secret")
+        r = auth_client.get("/api/config/gmail/oauth/start")
+        assert r.status_code == 200, r.text
+        url = r.json()["url"]
+        assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+        assert "client_id=client-id-123" in url
+        assert "state=" in url
+
+    def test_start_503_when_not_configured(self, auth_client, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "google_client_id", "")
+        monkeypatch.setattr(settings, "google_client_secret", "")
+        assert auth_client.get("/api/config/gmail/oauth/start").status_code == 503
+
+    def test_callback_forged_state_redirects_error(self, client, monkeypatch):
+        from app import gmail_oauth
+
+        def _never(code):
+            raise AssertionError("exchange_code called with a forged state")
+        monkeypatch.setattr(gmail_oauth, "exchange_code", _never)
+
+        r = client.get("/api/config/gmail/oauth/callback",
+                       params={"state": "forged-garbage", "code": "abc"},
+                       follow_redirects=False)
+        assert r.status_code in (302, 307)
+        assert "gmail=error" in r.headers["location"]
+
+    def test_callback_expired_state_redirects_error(self, client, monkeypatch):
+        import json
+        from datetime import datetime, timezone, timedelta
+        from app import security, gmail_oauth
+
+        def _never(code):
+            raise AssertionError("exchange_code called with an expired state")
+        monkeypatch.setattr(gmail_oauth, "exchange_code", _never)
+
+        # Genuine (decryptable) state whose TTL has passed.
+        payload = {"purpose": "gmail-oauth", "uid": 1,
+                   "exp": (datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp()}
+        state = security._fernet.encrypt(json.dumps(payload).encode()).decode()
+
+        r = client.get("/api/config/gmail/oauth/callback",
+                       params={"state": state, "code": "abc"},
+                       follow_redirects=False)
+        assert "gmail=error" in r.headers["location"]
+
+    def test_callback_happy_path_stores_encrypted_refresh_token(self, auth_client, db_session, monkeypatch):
+        from app import gmail_oauth
+        from app.db.models import User, AppConfig
+        from app.db.crud import ConfigRepository
+
+        user = db_session.query(User).first()
+        state = gmail_oauth.make_state(user.id)
+        monkeypatch.setattr(gmail_oauth, "exchange_code",
+                            lambda code: ("refresh-xyz", "me@gmail.com"))
+
+        r = auth_client.get("/api/config/gmail/oauth/callback",
+                            params={"state": state, "code": "good-code"},
+                            follow_redirects=False)
+        assert r.status_code in (302, 307)
+        assert "gmail=connected" in r.headers["location"]
+
+        db_session.commit()   # end the read transaction so the write is visible
+        addr, token = ConfigRepository(db_session, user.id).get_gmail_oauth()
+        assert (addr, token) == ("me@gmail.com", "refresh-xyz")
+        # The refresh token never touches the DB in cleartext.
+        raw = db_session.query(AppConfig).filter_by(
+            user_id=user.id, key="gmail_oauth_refresh_token").first()
+        assert raw.value and raw.value != "refresh-xyz"
+
+        # The connection now reports as OAuth-connected.
+        status = auth_client.get("/api/config").json()
+        assert status["has_gmail"] is True
+        assert status["gmail_method"] == "oauth"
+        assert status["gmail_address"] == "me@gmail.com"

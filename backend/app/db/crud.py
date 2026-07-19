@@ -256,9 +256,10 @@ class ReplyRepository:
 
 # ── AppConfig Repository ──────────────────────────────────────────────────────
 # Per-user keys: sender_name, signature_links, daily_send_cap,
-#                gmail_address, gmail_app_password (encrypted at rest)
+#                gmail_address, gmail_app_password (encrypted at rest),
+#                gmail_oauth_address, gmail_oauth_refresh_token (encrypted)
 class ConfigRepository:
-    SECRET_KEYS = {"gmail_app_password"}
+    SECRET_KEYS = {"gmail_app_password", "gmail_oauth_refresh_token"}
 
     def __init__(self, db: Session, user_id: int):
         self.db = db
@@ -283,6 +284,11 @@ class ConfigRepository:
         """(address, app_password) — empty strings if not connected.
         Password decrypts via SECRET_KEY; stored value never leaves the server."""
         return self.get("gmail_address"), self.get("gmail_app_password")
+
+    def get_gmail_oauth(self) -> tuple[str, str]:
+        """(address, refresh_token) for the one-click OAuth connection —
+        empty strings if not connected. Token decrypts via SECRET_KEY."""
+        return self.get("gmail_oauth_address"), self.get("gmail_oauth_refresh_token")
 
     def set(self, key: str, value: str) -> None:
         stored = security.encrypt(value) if key in self.SECRET_KEYS and value else value

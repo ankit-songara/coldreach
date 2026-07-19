@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Eye, EyeOff, CheckCircle2, ExternalLink, ArrowRight, Save, Pencil } from 'lucide-react'
+import { Eye, EyeOff, CheckCircle2, ExternalLink, ArrowRight, Save, Pencil, ChevronDown, ChevronRight, Mail } from 'lucide-react'
 import { useStore } from '../../store'
 import { resumeApi } from '../../api/resume'
 import { automationApi } from '../../api/automation'
@@ -38,10 +38,36 @@ export default function Setup() {
   const [editingSig, setEditingSig]       = useState(false)
   const [gmailConnected, setGmailConnected] = useState(false)
   const [updatingCreds, setUpdatingCreds]   = useState(false)  // show form while connected
+  const [appPwOpen, setAppPwOpen]           = useState(false)  // "Use an App Password instead" expander
+  const [startingOauth, setStartingOauth]   = useState(false)
 
   const qc = useQueryClient()
   // Server config comes from the shared query (same cache as Today and Send).
   const { data: cfg } = useAutomationConfig()
+
+  const gmailMethod    = cfg?.gmail_method ?? ''
+  const oauthAvailable = cfg?.oauth_available ?? false
+
+  // The OAuth callback lands the browser back here as /?gmail=<result>#setup
+  // (hash routing — the param precedes the #). Toast once, then strip the
+  // param so a refresh doesn't re-toast.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('gmail')
+    if (!result) return
+    if (result === 'connected') {
+      toast.success('Gmail connected — you can send right away')
+      qc.invalidateQueries({ queryKey: ['config'] })
+    } else if (result === 'cancelled') {
+      toast('Gmail connection cancelled — nothing was changed', { icon: '↩️' })
+    } else if (result === 'error') {
+      toast.error('Google connection failed — please try again')
+    }
+    params.delete('gmail')
+    const rest = params.toString()
+    history.replaceState(null, '',
+      window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Populate the local form state from the resolved signature (explicit
   // override → auto-detected from résumé). Guarded by !editingSig so a
@@ -129,9 +155,26 @@ export default function Setup() {
     }
   }
 
+  // One click, no password — fetch the Google consent URL and send the whole
+  // page there. On success the backend redirects back with ?gmail=connected.
+  const handleOauthStart = async () => {
+    setStartingOauth(true)
+    try {
+      const { url } = await automationApi.gmailOauthStart()
+      window.location.href = url
+      // no setStartingOauth(false) — the page is navigating away
+    } catch (e: any) {
+      toast.error(e.message)
+      setStartingOauth(false)
+    }
+  }
+
   const handleDisconnect = async () => {
     try {
-      const fresh = await automationApi.deleteGmail()
+      // OAuth grants and stored App Passwords live behind different endpoints.
+      const fresh = gmailMethod === 'oauth'
+        ? await automationApi.gmailOauthDisconnect()
+        : await automationApi.deleteGmail()
       qc.setQueryData(['config'], fresh)
       setGmailConnected(fresh.has_gmail)
       setGmailCreds('', '')
@@ -172,7 +215,106 @@ export default function Setup() {
     }
   }
 
-  const showCredsForm = !gmailConnected || updatingCreds
+  // The full App Password form — rendered standalone when OAuth isn't
+  // available (exactly today's UI), or inside the "Use an App Password
+  // instead" expander when it is.
+  const appPasswordForm = (
+    <div className="card space-y-3">
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Without Gmail connected you can still hunt contacts, generate emails, and
+        send each one from your own Gmail with one click. Connecting enables
+        in-app sending ("Send All" and per-contact Send) plus reply tracking.
+      </p>
+      <div className="space-y-1">
+        <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Gmail address</label>
+        <input
+          type="email"
+          value={localAddress}
+          onChange={e => setLocalAddress(e.target.value)}
+          placeholder="you@gmail.com"
+          className="input text-sm w-full"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>App Password</label>
+        <div className="relative">
+          <input
+            type={showPassword ? 'text' : 'password'}
+            value={localPassword}
+            onChange={e => setLocalPassword(e.target.value)}
+            placeholder="xxxx xxxx xxxx xxxx"
+            className="input text-sm w-full pr-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(p => !p)}
+            className="absolute right-3 top-1/2 -translate-y-1/2"
+            style={{ color: 'var(--text-dim)' }}
+          >
+            {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Instructions */}
+      <div className="rounded-lg p-3 text-xs space-y-1"
+        style={{ background: 'color-mix(in srgb, var(--accent) 5%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--text-muted)' }}>
+        <p className="font-semibold" style={{ color: 'var(--text)' }}>How to get an App Password:</p>
+        <p>1. Enable 2-Step Verification on your Google account</p>
+        <p>2. Go to{' '}
+          <a
+            href="https://myaccount.google.com/apppasswords"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+          >
+            myaccount.google.com/apppasswords
+          </a>
+        </p>
+        <p>3. Create a new app → copy the 16-character password</p>
+        <a
+          href="https://myaccount.google.com/apppasswords"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1 mt-1"
+          style={{ color: 'var(--accent)' }}
+        >
+          Open App Passwords <ExternalLink size={10} />
+        </a>
+        <p className="pt-1" style={{ color: 'var(--text-muted)' }}>
+          🔒 Verified with Gmail, then stored encrypted on the server — never in
+          this browser. Remove it anytime with Disconnect.
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleConnect}
+          disabled={testing || !localAddress || !localPassword}
+          className="btn text-sm flex-1"
+          style={{
+            background: 'var(--accent-dim)',
+            borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)',
+            color: 'var(--accent-text)',
+            opacity: testing || !localAddress || !localPassword ? 0.5 : 1,
+          }}
+        >
+          {testing ? 'Verifying…' : 'Verify & Save'}
+        </button>
+        {updatingCreds && (
+          <button
+            onClick={() => { setUpdatingCreds(false); setLocalPassword('') }}
+            disabled={testing}
+            className="btn text-sm"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  )
 
   return (
     <div className="space-y-8">
@@ -364,8 +506,8 @@ export default function Setup() {
           )}
         </div>
 
-        {!showCredsForm ? (
-          /* ── Connected state ── */
+        {gmailConnected && !updatingCreds ? (
+          /* ── Connected state (OAuth or App Password) ── */
           <div className="card space-y-3">
             <div
               className="flex items-center gap-2.5 rounded-lg p-3 text-sm"
@@ -373,21 +515,40 @@ export default function Setup() {
             >
               <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
               <div>
-                <span className="font-medium">Sending as {localAddress}</span>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  Saved securely — Send All, per-contact Send, and reply checks work
-                  without re-entering anything, even after a refresh.
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium">Sending as {cfg?.gmail_address || localAddress}</span>
+                  {gmailMethod === 'oauth' && (
+                    <span
+                      className="px-1.5 py-0.5 rounded font-semibold"
+                      style={{ background: 'var(--accent-dim)', color: 'var(--accent-text)', fontSize: 10, letterSpacing: '0.02em' }}
+                    >
+                      Connected with Google
+                    </span>
+                  )}
+                </div>
+                {gmailMethod === 'oauth' ? (
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Google may expire this connection weekly while the app is in test
+                    mode — reconnect if sending stops.
+                  </p>
+                ) : (
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Saved securely — Send All, per-contact Send, and reply checks work
+                    without re-entering anything, even after a refresh.
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => setUpdatingCreds(true)}
-                className="btn text-sm"
-                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
-              >
-                Update credentials
-              </button>
+              {gmailMethod !== 'oauth' && (
+                <button
+                  onClick={() => setUpdatingCreds(true)}
+                  className="btn text-sm"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+                >
+                  Update credentials
+                </button>
+              )}
               <button
                 onClick={handleDisconnect}
                 className="btn text-sm"
@@ -397,103 +558,47 @@ export default function Setup() {
               </button>
             </div>
           </div>
-        ) : (
-          /* ── Connect / update form ── */
-          <div className="card space-y-3">
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Without Gmail connected you can still hunt contacts, generate emails, and
-              send each one from your own Gmail with one click. Connecting enables
-              in-app sending ("Send All" and per-contact Send) plus reply tracking.
-            </p>
-            <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Gmail address</label>
-              <input
-                type="email"
-                value={localAddress}
-                onChange={e => setLocalAddress(e.target.value)}
-                placeholder="you@gmail.com"
-                className="input text-sm w-full"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>App Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={localPassword}
-                  onChange={e => setLocalPassword(e.target.value)}
-                  placeholder="xxxx xxxx xxxx xxxx"
-                  className="input text-sm w-full pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(p => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                  style={{ color: 'var(--text-dim)' }}
-                >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Instructions */}
-            <div className="rounded-lg p-3 text-xs space-y-1"
-              style={{ background: 'color-mix(in srgb, var(--accent) 5%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--text-muted)' }}>
-              <p className="font-semibold" style={{ color: 'var(--text)' }}>How to get an App Password:</p>
-              <p>1. Enable 2-Step Verification on your Google account</p>
-              <p>2. Go to{' '}
-                <a
-                  href="https://myaccount.google.com/apppasswords"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: 'var(--accent)', textDecoration: 'underline' }}
-                >
-                  myaccount.google.com/apppasswords
-                </a>
+        ) : oauthAvailable && !gmailConnected ? (
+          /* ── OAuth-first connect (App Password tucked behind an expander) ── */
+          <div className="space-y-3">
+            <div className="card space-y-3">
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Without Gmail connected you can still hunt contacts, generate emails, and
+                send each one from your own Gmail with one click. Connecting enables
+                in-app sending ("Send All" and per-contact Send) plus reply tracking.
               </p>
-              <p>3. Create a new app → copy the 16-character password</p>
-              <a
-                href="https://myaccount.google.com/apppasswords"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 mt-1"
-                style={{ color: 'var(--accent)' }}
-              >
-                Open App Passwords <ExternalLink size={10} />
-              </a>
-              <p className="pt-1" style={{ color: 'var(--text-muted)' }}>
-                🔒 Verified with Gmail, then stored encrypted on the server — never in
-                this browser. Remove it anytime with Disconnect.
-              </p>
-            </div>
-
-            <div className="flex gap-2">
               <button
-                onClick={handleConnect}
-                disabled={testing || !localAddress || !localPassword}
-                className="btn text-sm flex-1"
+                onClick={handleOauthStart}
+                disabled={startingOauth}
+                className="btn text-sm w-full flex items-center justify-center gap-2"
                 style={{
                   background: 'var(--accent-dim)',
                   borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)',
                   color: 'var(--accent-text)',
-                  opacity: testing || !localAddress || !localPassword ? 0.5 : 1,
+                  opacity: startingOauth ? 0.5 : 1,
                 }}
               >
-                {testing ? 'Verifying…' : 'Verify & Save'}
+                <Mail size={14} />
+                {startingOauth ? 'Opening Google…' : 'Connect Gmail'}
               </button>
-              {updatingCreds && (
-                <button
-                  onClick={() => { setUpdatingCreds(false); setLocalPassword('') }}
-                  disabled={testing}
-                  className="btn text-sm"
-                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
-                >
-                  Cancel
-                </button>
-              )}
+              <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+                One click — sign in with Google, no password to copy.
+              </p>
             </div>
+
+            <button
+              onClick={() => setAppPwOpen(o => !o)}
+              className="flex items-center gap-1 text-xs font-semibold"
+              style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              {appPwOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              Use an App Password instead
+            </button>
+            {appPwOpen && appPasswordForm}
           </div>
+        ) : (
+          /* ── App Password form — OAuth unavailable, or updating stored creds ── */
+          appPasswordForm
         )}
       </div>
 
