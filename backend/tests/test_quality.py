@@ -16,8 +16,6 @@ from app.llm.parsing import parse_subject_body
 from app.llm.prompts import TEMPLATES, get_designation_key
 from app.scrapers.base import person_name_from_email
 from app.scrapers.directory import role_match
-from app.scrapers.github import _is_bot
-from app.scrapers.hn import HNJobsScraper
 
 # Unicode chars used in test strings — defined as constants to keep source ASCII-clean
 EM = "—"   # em dash
@@ -80,35 +78,6 @@ class TestCompanyFromEmail:
     def test_freemail_yields_empty(self):
         assert _company_from_email("x@gmail.com") == ""
         assert _company_from_email("x@outlook.com") == ""
-
-
-class TestGitHubBotFilter:
-    def test_bots_detected(self):
-        assert _is_bot("dependabot[bot]", "x@users.noreply", "dependabot")
-        assert _is_bot("", "actions@github.com", "")
-        assert _is_bot("Renovate", "renovate@whitesource.com", "renovate-bot")
-        assert _is_bot("", "ci@company.com", "")
-
-    def test_humans_pass(self):
-        assert not _is_bot("Sarah Chen", "sarah@acme.com", "sarahc")
-
-    def test_robotics_not_flagged(self):
-        # 'bot' as substring of 'robotics' must NOT trigger the filter
-        assert not _is_bot("Alice Chen", "alice@robotics.io", "alicec")
-        assert not _is_bot("Bob Smith", "bob@openrobot.ai", "bobsmith")
-
-
-class TestHNJobsExtraction:
-    def test_yc_title(self):
-        s = HNJobsScraper()
-        assert s._company_from_title("Acme (YC W24) Is Hiring a Senior Backend Engineer") == "Acme"
-
-    def test_is_hiring_title(self):
-        s = HNJobsScraper()
-        assert s._company_from_title("DataCorp is hiring engineers in Berlin") == "DataCorp"
-
-    def test_unknown(self):
-        assert HNJobsScraper()._company_from_title("Random title") == "Unknown"
 
 
 # ── Email generation quality ──────────────────────────────────────────────────

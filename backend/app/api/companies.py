@@ -24,7 +24,11 @@ from app.scrapers import directory
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/companies", tags=["companies"])
 
-VALID_ATS = {"greenhouse", "lever", "ashby", "smartrecruiters", "recruitee"}
+# Must cover every ATS the hunt pipeline can scrape AND auto-discover
+# (hunt._DISCOVERABLE_ATS persists workable/breezy companies — a user must be
+# able to manually re-add anything the system itself creates).
+VALID_ATS = {"greenhouse", "lever", "ashby", "smartrecruiters", "recruitee",
+             "workable", "breezy"}
 
 
 class CompanyIn(BaseModel):

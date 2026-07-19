@@ -1,6 +1,6 @@
 """Shared parser for the LLM's `SUBJECT: ... / BODY: ...` output format.
 
-Used by compose, follow-up scheduling, and the generator's reserialization step
+Used by compose, follow-up generation, and the generator's reserialization step
 so the parsing rules can't drift between call sites.
 
 Tolerant of the decoration small local models add around the markers:

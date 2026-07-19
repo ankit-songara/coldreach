@@ -43,9 +43,6 @@ class UserRepository:
     def get_by_google_sub(self, google_sub: str) -> User | None:
         return self.db.query(User).filter(User.google_sub == google_sub).first()
 
-    def count(self) -> int:
-        return self.db.query(User).count()
-
     def create(self, email: str, password: str) -> User:
         user = User(email=email.lower().strip(), password_hash=security.hash_password(password))
         self.db.add(user)
@@ -209,11 +206,6 @@ class DraftRepository:
         self.db.commit()
         self.db.refresh(draft)
         return draft
-
-    def delete_for_contact(self, contact_id: int) -> None:
-        self._scoped().filter(EmailDraft.contact_id == contact_id).delete()
-        self.db.commit()
-
 
 # ── AppConfig Repository ──────────────────────────────────────────────────────
 # Per-user keys: sender_name, signature_links, daily_send_cap,

@@ -93,7 +93,7 @@ def create_tables() -> None:
 _PERF_INDEXES = (
     # GET /contacts — list scoped to user, ordered by created_at desc
     "CREATE INDEX IF NOT EXISTS ix_contacts_user_created ON contacts (user_id, created_at)",
-    # status filters (compose/send tab splits, scheduler guards)
+    # status filters (compose/send tab splits)
     "CREATE INDEX IF NOT EXISTS ix_contacts_user_status ON contacts (user_id, status)",
     # daily send-cap count: last_emailed_at >= now-24h per user
     "CREATE INDEX IF NOT EXISTS ix_contacts_user_last_emailed ON contacts (user_id, last_emailed_at)",

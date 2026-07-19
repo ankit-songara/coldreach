@@ -8,14 +8,12 @@ import { sendApi } from '../../api/send'
 import { inboxApi } from '../../api/inbox'
 import { useAutomationConfig } from '../../hooks/useAutomationConfig'
 import type { SendResult } from '../../api/send'
-import { STATUS_META } from '../../types'
+import { STATUS_META, SENT_STATUSES } from '../../types'
 import ConfirmDialog from '../shared/ConfirmDialog'
 import type { Contact, ContactStatus } from '../../types'
 import { contactDisplayName, isGenericName } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
 
-// A contact that has received a first-touch email — eligible for outcome capture.
-const CONTACTED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
 // Outcomes a user records by hand as a conversation progresses.
 const OUTCOME_STEPS: ContactStatus[] = ['replied', 'interview', 'offer', 'rejected']
 
@@ -56,9 +54,7 @@ export default function Send() {
   const isUnverifiedGuess = (c: Contact) => (c.designation || '').toLowerCase().includes('unverified guess')
   const sendable = withDraft.filter(c => !ACTIONED.includes(c.status) && !c.last_emailed_at)
   const unsent = sendable.filter(c => !isUnverifiedGuess(c))
-  const sentCount = contacts.filter(c =>
-    ['emailed', 'followed_up', 'replied', 'interview'].includes(c.status)
-  ).length
+  const sentCount = contacts.filter(c => SENT_STATUSES.includes(c.status)).length
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: ContactStatus }) =>
@@ -416,8 +412,8 @@ export default function Send() {
           const first    = (drafts[c.id] ?? []).find(d => !d.is_followup)
           const followup = (drafts[c.id] ?? []).find(d => d.is_followup)
           // Already contacted + a follow-up draft exists → the Gmail button
-          // sends the follow-up (the manual replacement for the old scheduler).
-          const isFollowupSend = CONTACTED.includes(c.status) && !!followup
+          // sends the follow-up.
+          const isFollowupSend = SENT_STATUSES.includes(c.status) && !!followup
           const draft = isFollowupSend ? followup : first
           const st = STATUS_META[c.status] ?? STATUS_META.new
 
@@ -501,7 +497,7 @@ export default function Send() {
 
               {/* Outcome capture — once a contact has been emailed, record what
                   happened so the Today funnel reflects real results. */}
-              {CONTACTED.includes(c.status) && (
+              {SENT_STATUSES.includes(c.status) && (
                 <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: '1px solid var(--border)' }}>
                   <span className="text-[10px] font-mono font-bold tracking-widest mr-1" style={{ color: 'var(--text-dim)' }}>
                     OUTCOME

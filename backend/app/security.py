@@ -6,8 +6,8 @@ on POSIX). It never leaves the machine. We use it to encrypt the Gmail App
 Password before it touches the database, so a leaked DB file alone can't send
 mail as the user.
 
-This is local-machine protection, not multi-tenant security — that arrives with
-real auth (feature #6).
+This protects the key material at rest on the machine; per-user access control
+is enforced by the auth layer (app/api/auth.py + app/deps.py).
 """
 
 import os

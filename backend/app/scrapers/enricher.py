@@ -1,6 +1,5 @@
 """Email enrichment — Hunter.io domain search + pattern derivation."""
 
-import re
 import httpx
 from app.scrapers.base import BaseScraper
 
@@ -73,32 +72,3 @@ class HunterEnricher(BaseScraper):
         return None
 
 
-# ── Pattern derivation (no API needed) ───────────────────────────────────────
-
-def detect_email_pattern(emails: list[str], domain: str) -> str | None:
-    """
-    Given emails at a domain, detect the format used.
-    e.g. ankit.rao@razorpay.com  → 'firstname.lastname'
-         arao@razorpay.com       → 'f.lastname'
-         ankit@razorpay.com      → 'firstname'
-    """
-    domain_emails = [e for e in emails if e.lower().endswith(f"@{domain}")]
-    if not domain_emails:
-        return None
-    local = domain_emails[0].split("@")[0].lower()
-    if "." in local:
-        parts = local.split(".")
-        return "firstname.lastname" if len(parts[0]) > 1 else "f.lastname"
-    return "firstname" if len(local) > 3 else "f.lastname"
-
-
-def apply_pattern(first: str, last: str, domain: str, pattern: str) -> str | None:
-    f = re.sub(r"[^a-z]", "", first.lower())
-    l = re.sub(r"[^a-z]", "", last.lower())
-    if not f:
-        return None
-    return {
-        "firstname.lastname": f"{f}.{l}@{domain}",
-        "firstname":          f"{f}@{domain}",
-        "f.lastname":         f"{f[0]}.{l}@{domain}" if l else None,
-    }.get(pattern)

@@ -5,13 +5,11 @@ import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, 
 import { useStore } from '../../store'
 import { composeApi } from '../../api/compose'
 import api from '../../api/client'
-import { STATUS_META } from '../../types'
+import { STATUS_META, SENT_STATUSES } from '../../types'
 import type { Contact } from '../../types'
 import { ResumeReadyCtx } from '../../App'
 import { contactDisplayName, isGenericName } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
-
-const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
 
 export default function Compose() {
   const { contacts, resume, drafts, setDrafts, setActiveTab } = useStore()

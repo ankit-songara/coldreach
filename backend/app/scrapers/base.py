@@ -7,7 +7,7 @@ composes multiple scrapers and runs them in parallel.
 To add a new source:
   1. Create backend/app/scrapers/mysource.py
   2. Implement BaseScraper
-  3. Register in app/api/hunt.py's SCRAPERS list
+  3. Register in app/api/hunt.py's _build_scrapers()
 """
 
 from abc import ABC, abstractmethod

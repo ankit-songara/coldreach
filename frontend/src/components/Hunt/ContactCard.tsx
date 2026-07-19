@@ -39,8 +39,7 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
     onError: (e: Error) => toast.error(e.message),
   })
 
-  // Color only — tier labels (P1/P2/…) were internal ranking jargon that
-  // confused more than informed; the designation text says who this is.
+  // Color only — the designation text itself says who this is.
   const getDesigColor = (d: string) => {
     const dl = d.toLowerCase()
     if (['founder', 'co-founder', 'ceo', 'cto', 'chief', 'founding'].some(x => dl.includes(x)))

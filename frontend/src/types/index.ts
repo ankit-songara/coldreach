@@ -22,11 +22,12 @@ export interface Contact {
   replied_at?:      string | null
   bounced?:         boolean
   followups_sent?:  number
-  email_status?:    'unknown' | 'valid' | 'risky' | 'invalid'
-  confidence?:      number
   created_at:       string
   updated_at:       string
 }
+
+// Statuses meaning "we emailed this contact at some point" (first-touch delivered).
+export const SENT_STATUSES: ContactStatus[] = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
 
 export interface Draft {
   id:          number

@@ -77,19 +77,3 @@ def build_message(
     return msg
 
 
-_build_message = build_message  # internal alias for send_email below
-
-
-def send_email(address: str, app_password: str, to: str, subject: str, body: str) -> None:
-    """Send one plain-text email over a fresh connection. Raises on failure."""
-    smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20)
-    try:
-        smtp.starttls()
-        smtp.login(address.strip(), normalize_app_password(app_password))
-        smtp.sendmail(address, to, _build_message(address, to, subject, body).as_string())
-        log.info(f"Sent to {to}: {subject!r}")
-    finally:
-        try:
-            smtp.quit()
-        except Exception:
-            pass

@@ -9,7 +9,7 @@ from app.db.database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id:            Mapped[int]      = mapped_column(primary_key=True, index=True)
+    id:            Mapped[int]      = mapped_column(primary_key=True)
     email:         Mapped[str]      = mapped_column(String(255), unique=True, index=True)
     # Empty string for Google-only accounts (they never set a password). An empty
     # hash can never authenticate via /auth/login — verify_password rejects it.
@@ -32,7 +32,7 @@ class Contact(Base):
     # concurrent hunts racing the app-level get_by_email check.
     __table_args__ = (UniqueConstraint("user_id", "email", name="uq_contact_user_email"),)
 
-    id:          Mapped[int]      = mapped_column(primary_key=True, index=True)
+    id:          Mapped[int]      = mapped_column(primary_key=True)
     user_id:     Mapped[int]      = mapped_column(index=True)
     name:        Mapped[str]      = mapped_column(String(255))
     # Unique per-user (enforced in the repository), not globally
@@ -41,10 +41,10 @@ class Contact(Base):
     company:     Mapped[str]      = mapped_column(String(255), default="Unknown")
     source:      Mapped[str]      = mapped_column(String(255), default="")
     # Genuine, non-fabricated provenance context captured at hunt time — e.g. the
-    # HN "Who is Hiring" post text, or the GitHub repos this person committed to.
-    # Fed to the LLM so it can anchor on real signal instead of inventing details.
+    # job posting this lead came from. Fed to the LLM so it can anchor on real
+    # signal instead of inventing details.
     context:     Mapped[str|None] = mapped_column(Text,        nullable=True)
-    status:      Mapped[str]      = mapped_column(String(50),  default="new", index=True)
+    status:      Mapped[str]      = mapped_column(String(50),  default="new")
     notes:       Mapped[str|None] = mapped_column(Text,        nullable=True)
 
     # ── Tracking (populated by send + inbox sync) ────────────────────────────
@@ -67,7 +67,7 @@ class Contact(Base):
 class EmailDraft(Base):
     __tablename__ = "email_drafts"
 
-    id:         Mapped[int]       = mapped_column(primary_key=True, index=True)
+    id:         Mapped[int]       = mapped_column(primary_key=True)
     user_id:    Mapped[int]       = mapped_column(index=True)
     contact_id: Mapped[int]       = mapped_column(index=True)
     subject:    Mapped[str]       = mapped_column(Text)
@@ -79,7 +79,7 @@ class EmailDraft(Base):
 class Resume(Base):
     __tablename__ = "resumes"
 
-    id:         Mapped[int]      = mapped_column(primary_key=True, index=True)
+    id:         Mapped[int]      = mapped_column(primary_key=True)
     user_id:    Mapped[int]      = mapped_column(index=True)
     text:       Mapped[str]      = mapped_column(Text)
     filename:   Mapped[str|None] = mapped_column(String(255), nullable=True)
@@ -131,7 +131,7 @@ class EmailPattern(Base):
     """
     __tablename__ = "email_patterns"
 
-    id:             Mapped[int]      = mapped_column(primary_key=True, index=True)
+    id:             Mapped[int]      = mapped_column(primary_key=True)
     domain:         Mapped[str]      = mapped_column(String(255), unique=True, index=True)
     pattern:        Mapped[str]      = mapped_column(String(32))   # e.g. "first.last"
     verified_count: Mapped[int]      = mapped_column(default=1)    # confirmations (SMTP/observed)
@@ -153,7 +153,7 @@ class KnownCompany(Base):
     __tablename__ = "known_companies"
     __table_args__ = (UniqueConstraint("ats", "slug", name="uq_known_company_ats_slug"),)
 
-    id:         Mapped[int]      = mapped_column(primary_key=True, index=True)
+    id:         Mapped[int]      = mapped_column(primary_key=True)
     name:       Mapped[str]      = mapped_column(String(255))
     slug:       Mapped[str]      = mapped_column(String(255))
     ats:        Mapped[str]      = mapped_column(String(50))

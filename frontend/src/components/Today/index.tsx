@@ -16,6 +16,7 @@ import { resumeApi } from '../../api/resume'
 import { useContacts } from '../../hooks/useContacts'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
 import { useAutomationConfig } from '../../hooks/useAutomationConfig'
+import { SENT_STATUSES } from '../../types'
 
 function greeting() {
   const h = new Date().getHours()
@@ -389,9 +390,6 @@ export default function Today() {
   const isDemo = contacts.some(c => (c.notes ?? '') === DEMO_SENTINEL)
 
   const hasDraftFor = (id: number) => (drafts[id] ?? []).some(d => !d.is_followup)
-
-  // A contact that has been emailed (first-touch delivered), in any later state.
-  const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
 
   const total     = contacts.length
   const hasDraft  = contacts.filter(c => hasDraftFor(c.id)).length

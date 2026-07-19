@@ -38,7 +38,7 @@ from app.scrapers.web import (
 from app.scrapers import directory
 from app.scrapers.directory import looks_like_company
 from app.scrapers.resolver import (
-    resolve as resolver_resolve, ResolutionCache, mx_hosts, _smtp_probe,
+    resolve as resolver_resolve, ResolutionCache, _smtp_probe,
 )
 from app.verifier import verify_email
 from app.config import settings

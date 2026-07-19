@@ -3,15 +3,14 @@ Company-page email harvesting.
 
 `emails_from_company_pages(domain)` is the fast, dependency-free path used during
 a hunt to turn a bare company domain into a real, named person's mailbox (from
-/team, /about, /careers …) instead of a generic role inbox. The Playwright-based
-`WebScraper.scrape_company_contact_pages` remains for JS-rendered deep scrapes.
+/team, /about, /careers …) instead of a generic role inbox.
+`find_published_role_email(domain)` grounds the P0 hiring-inbox lead in an
+address the company actually publishes.
 """
 
 import re
 import asyncio
 import httpx
-from urllib.parse import urlparse
-from app.scrapers.base import BaseScraper
 from app.netguard import resolves_public
 
 EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
@@ -333,76 +332,3 @@ async def _scrape_httpx(domain: str, timeout: int) -> list[str]:
     return _clean(found)[:8]
 
 
-class WebScraper(BaseScraper):
-    name = "Web"
-
-    async def search(self, query: str, **_) -> list[dict]:
-        # Wellfound is a heavy SPA with no server-rendered emails — scraping it
-        # over plain HTTP yielded nothing, so this source is intentionally inert.
-        # Company-page harvesting now happens in the resolver via
-        # emails_from_company_pages(). Kept registered for the Playwright path.
-        return []
-
-    async def scrape_company_contact_pages(self, domain: str) -> list[str]:
-        """
-        Visit a company's /contact /about /team /careers and collect emails.
-        Uses Playwright for JS-rendered pages.
-        """
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            return await self._httpx_scrape(domain)
-
-        emails: set[str] = set()
-        try:
-            async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
-                for path in ["/contact", "/about", "/team", "/careers", "/about-us"]:
-                    try:
-                        page = await browser.new_page()
-                        await page.goto(f"https://{domain}{path}", timeout=15_000)
-                        text = await page.inner_text("body")
-                        await page.close()
-                        for e in EMAIL_RE.findall(text):
-                            emails.add(e)
-                        if emails:
-                            break
-                    except Exception:
-                        pass
-                await browser.close()
-        except Exception:
-            return await self._httpx_scrape(domain)
-
-        return list(emails)
-
-    async def _httpx_scrape(self, domain: str) -> list[str]:
-        """Lightweight fallback: plain HTTP scrape (no JS rendering)."""
-        emails: set[str] = set()
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            for path in ["/contact", "/about", "/team"]:
-                try:
-                    resp = await client.get(f"https://{domain}{path}")
-                    for e in EMAIL_RE.findall(resp.text):
-                        emails.add(e)
-                    if emails:
-                        break
-                except Exception:
-                    pass
-        return list(emails)
-
-
-async def find_company_domain(company_name: str) -> str | None:
-    """Guess company official domain via DuckDuckGo Instant Answer."""
-    try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            resp = await client.get(
-                "https://api.duckduckgo.com/",
-                params={"q": company_name, "format": "json", "no_redirect": "1"},
-            )
-            data = resp.json()
-            url = data.get("AbstractURL") or data.get("Redirect", "")
-            if url:
-                return urlparse(url).hostname.removeprefix("www.")  # type: ignore[union-attr]
-    except Exception:
-        pass
-    return None
