@@ -11,7 +11,7 @@ import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
 import EmailBadge from '../shared/EmailBadge'
 import ConfirmDialog from '../shared/ConfirmDialog'
-import type { ContactStatus } from '../../types'
+import type { Contact, ContactStatus } from '../../types'
 import { contactDisplayName, isGenericName } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
 
@@ -51,7 +51,12 @@ export default function Send() {
   // Mirror the backend guard: a contact already actioned (emailed in any later
   // state) must not be re-sent a first-touch. Keeps the "Send All (N)" count honest.
   const ACTIONED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced']
-  const unsent = withDraft.filter(c => !ACTIONED.includes(c.status) && !c.last_emailed_at)
+  // Ungrounded role-inbox guesses (no real evidence the address exists) are
+  // excluded from bulk "Send All" — they're the leads most likely to bounce.
+  // Still shown in the list and individually sendable, just not auto-included.
+  const isUnverifiedGuess = (c: Contact) => (c.designation || '').toLowerCase().includes('unverified guess')
+  const sendable = withDraft.filter(c => !ACTIONED.includes(c.status) && !c.last_emailed_at)
+  const unsent = sendable.filter(c => !isUnverifiedGuess(c))
   const sentCount = contacts.filter(c =>
     ['emailed', 'followed_up', 'replied', 'interview'].includes(c.status)
   ).length
@@ -446,7 +451,7 @@ export default function Send() {
                       )}
                       {/* Direct SMTP send for THIS contact only — first-touch
                           contacts, when Gmail is connected. */}
-                      {!isFollowupSend && unsent.some(u => u.id === c.id) && !noCredentials && (
+                      {!isFollowupSend && sendable.some(u => u.id === c.id) && !noCredentials && (
                         <button
                           onClick={() => sendOne(c.id, c.name)}
                           disabled={sendingId !== null || sending}

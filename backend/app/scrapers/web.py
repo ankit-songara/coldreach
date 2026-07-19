@@ -36,6 +36,58 @@ def _clean(raw: list[str]) -> list[str]:
     return out
 
 
+# Standard hiring-inbox local parts, from real-world usage across startups,
+# Indian IT firms, and global companies -- the same prefixes a blind guess
+# picks from, but here used to RECOGNIZE a real one on the company's own page
+# instead of inventing one.
+HIRING_PREFIXES = frozenset({
+    "careers", "career", "hr", "jobs", "hiring", "recruitment", "recruiting",
+    "talent", "ta", "people",
+})
+_ROLE_EMAIL_PAGES = ("/careers", "/jobs")
+
+
+async def find_published_role_email(domain: str, timeout: int = 6) -> str | None:
+    """
+    Scan ONLY the highest-yield pages (/careers, /jobs) for an email that is
+    both (a) at the target domain and (b) a recognized hiring-inbox prefix
+    (careers@, hr@, jobs@, hiring@, recruitment@, talent@, ta@, people@).
+
+    An address a company actually publishes on its own careers page is real
+    evidence, not a guess -- this exists specifically so the P0 hiring-inbox
+    lead in hunt.py is grounded whenever possible instead of blind-guessing
+    "careers@domain" for every company (which bounces whenever the company
+    actually uses hr@/jobs@/hiring@/etc, or nothing at that exact local part).
+
+    Deliberately 2 pages with a short timeout, not the full 6-page
+    emails_from_company_pages() scan -- this runs on the P0 lead for EVERY
+    company in a hunt and must not consume the shared resolve time budget.
+    """
+    if not await asyncio.to_thread(resolves_public, domain):
+        return None
+
+    found: list[str] = []
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, headers={"User-Agent": _UA},
+        ) as client:
+            for path in _ROLE_EMAIL_PAGES:
+                try:
+                    resp = await client.get(f"https://{domain}{path}")
+                    if resp.is_success:
+                        found.extend(EMAIL_RE.findall(resp.text))
+                except Exception:
+                    pass
+    except Exception:
+        return None
+
+    for email in _clean(found):
+        local, _, mail_domain = email.partition("@")
+        if mail_domain == domain and local in HIRING_PREFIXES:
+            return email
+    return None
+
+
 async def emails_from_company_pages(domain: str, timeout: int = 8) -> list[str]:
     """Scrape a company's public pages for email addresses.
 

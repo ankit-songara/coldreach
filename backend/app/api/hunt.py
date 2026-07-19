@@ -31,7 +31,7 @@ from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
 )
-from app.scrapers.web import emails_from_company_pages
+from app.scrapers.web import emails_from_company_pages, find_published_role_email
 from app.scrapers import directory
 from app.scrapers.directory import looks_like_company
 from app.scrapers.resolver import (
@@ -51,7 +51,7 @@ _RESOLVE_BUDGET_SECONDS = 15 if os.environ.get("VERCEL") else 45
 # "careers@" and "jobs@" are the most universally standard convention across
 # company sizes and countries — tried first. "talent@"/"hr@" skew larger/tech-
 # forward; "people@"/"team@" skew startup-specific and are the least reliable.
-_ROLE_ADDRESSES = ("careers", "jobs", "talent", "hr", "recruiting", "people", "team")
+_ROLE_ADDRESSES = ("careers", "jobs", "hiring", "hr", "talent", "recruiting", "recruitment", "people", "team")
 
 # Minimum confidence to persist a resolver-generated email. Direct scraper emails
 # (confidence=0) are always kept; only resolver outputs are gated.
@@ -96,9 +96,12 @@ def _company_from_email(email: str) -> str:
 
 
 def _desig_priority(designation: str) -> int:
-    """Sort key. P0: careers/role inbox = 0. P1: Founder/CxO = 1, HR/TA = 2,
-    Engineer = 3, other = 4."""
+    """Sort key. P0: grounded role inbox = 0. P1: Founder/CxO = 1, HR/TA = 2,
+    Engineer = 3, other = 4. Unverified guesses = 5 (below every real lead —
+    only reached if nothing else was found for that company)."""
     d = designation.lower()
+    if "unverified guess" in d:
+        return 5
     if "role inbox" in d:
         return 0
     if any(k in d for k in ("founder", "co-founder", "ceo", "cto", "chief", "founding")):
@@ -330,11 +333,26 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
             out["email_status"] = "risky"   # deliverable but unprovable
         return out
 
-    # No name → try the company's own pages for a real, named person — except
-    # for P0 careers-inbox leads, which must stay fast: a corporate site's
-    # pages can consume the entire serverless resolve budget before the cheap
-    # role-inbox check below ever runs.
-    if raw.get("source") != "careers-inbox":
+    # P0 careers-inbox leads: try to GROUND the address in real evidence before
+    # ever falling back to a blind guess — a guessed "careers@domain" bounces
+    # whenever the company actually uses hr@/jobs@/hiring@/etc instead.
+    if raw.get("source") == "careers-inbox":
+        published = await find_published_role_email(domain)
+        if published:
+            prefix = published.split("@", 1)[0]
+            return {**raw, "email": published, "name": prefix.title(),
+                    "designation": "Talent/Recruiting (role inbox)",
+                    "confidence": 70, "email_status": "valid", "_domain": None}
+
+        if settings.hunter_api_key:
+            generic = await HunterEnricher(settings.hunter_api_key).search_generic(domain)
+            if generic:
+                prefix = generic.split("@", 1)[0]
+                return {**raw, "email": generic, "name": prefix.title(),
+                        "designation": "Talent/Recruiting (role inbox)",
+                        "confidence": 65, "email_status": "valid", "_domain": None}
+    else:
+        # No name → try the company's own pages for a real, named person.
         page_emails = await emails_from_company_pages(domain)
         personal = _personal_email(page_emails, domain)
         if personal:
@@ -351,12 +369,14 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
         return None
 
     def _optimistic_guess() -> dict:
-        # Unconfirmed but standard company convention (careers@ etc.) — a real
-        # deliverable lead. Confidence must clear _MIN_RESOLVER_CONFIDENCE or
-        # the downstream gate silently drops it.
+        # Nothing grounded this address in real evidence — an unverified
+        # guess at standard company convention. Labeled distinctly so it's
+        # ranked below every real lead (_desig_priority) and excluded from
+        # default bulk-send (Send.tsx). Confidence must still clear
+        # _MIN_RESOLVER_CONFIDENCE or the downstream gate silently drops it.
         prefix = _ROLE_ADDRESSES[0]
         return {**raw, "email": f"{prefix}@{domain}", "name": prefix.title(),
-                "designation": "Talent/Recruiting (role inbox)",
+                "designation": "Talent/Recruiting (unverified guess)",
                 "confidence": 40, "email_status": "risky", "_domain": None}
 
     if await cache.catch_all(domain, mx):

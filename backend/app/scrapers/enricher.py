@@ -44,6 +44,34 @@ class HunterEnricher(BaseScraper):
             if e.get("value") and "@" in e["value"]
         ]
 
+    async def search_generic(self, domain: str) -> str | None:
+        """
+        Look up a known role/generic inbox (careers@, hr@, jobs@, ...) that
+        Hunter has on file for this domain. type=personal (used by
+        search_domain) excludes these entirely, so this is a separate call —
+        used as a secondary grounding signal for the P0 hiring-inbox lead
+        when no published address was found on the company's own pages.
+        """
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://api.hunter.io/v2/domain-search",
+                params={
+                    "domain": domain,
+                    "api_key": self.api_key,
+                    "limit": 10,
+                    "type": "generic",
+                },
+            )
+            if not resp.is_success:
+                return None
+            data = resp.json().get("data", {})
+
+        for e in data.get("emails", []):
+            value = e.get("value")
+            if value and value.lower().endswith(f"@{domain.lower()}"):
+                return value.lower()
+        return None
+
 
 # ── Pattern derivation (no API needed) ───────────────────────────────────────
 

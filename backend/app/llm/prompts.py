@@ -390,7 +390,7 @@ def get_designation_key(designation: str) -> str:
     # Shared hiring inboxes (careers@/jobs@ role-inbox leads) get the formal
     # application template — checked first since the designation also contains
     # "talent"/"recruiting", which would otherwise match the recruiter branch.
-    if "role inbox" in d:
+    if "role inbox" in d or "unverified guess" in d:
         return "hiring_inbox"
 
     # C-suite founders always get the founder template
