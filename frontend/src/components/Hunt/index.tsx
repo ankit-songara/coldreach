@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Search, Trash2, Download, CheckSquare, X } from 'lucide-react'
+import { Search, Trash2, Download, CheckSquare, Check, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { useContacts } from '../../hooks/useContacts'
 import { huntApi } from '../../api/hunt'
 import ContactCard from './ContactCard'
 import ConfirmDialog from '../shared/ConfirmDialog'
-import { STATUS_META, type ContactStatus } from '../../types'
+import ContactDrawer from '../shared/ContactDrawer'
+import { STATUS_META, type Contact, type ContactStatus } from '../../types'
 
 const STATUS_FILTERS: Array<ContactStatus | 'all'> = [
   'all', 'new', 'emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced',
@@ -80,6 +81,40 @@ function emptyHuntMessage(query: string, found: number, duplicates: number, role
   return `No matches for "${query}". Try a role query like "react engineer remote", or a specific startup name (e.g. "Linear", "Supabase").`
 }
 
+// The pipeline stages of the "LIVE PROGRESS" panel. The store only exposes
+// the current stage as a display string (see HUNT_STAGES in store/index.ts),
+// so each stage here carries a matcher against that string to derive which
+// stages are done / active / pending. An unrecognised string (e.g. a future
+// store label) falls back to stage 0 rather than breaking the panel.
+const PIPELINE_STAGES: Array<{ label: string; match: RegExp }> = [
+  { label: 'Finding companies hiring',  match: /searching for companies/i },
+  { label: 'Matching decision-makers',  match: /matching people/i },
+  { label: 'Checking email addresses',  match: /finding and checking email/i },
+  { label: 'Putting results together',  match: /almost there/i },
+]
+
+function StageDot({ state }: { state: 'done' | 'active' | 'pending' }) {
+  if (state === 'done') {
+    return <Check size={12} strokeWidth={3} style={{ color: 'var(--success-text)', flexShrink: 0 }} aria-hidden />
+  }
+  if (state === 'active') {
+    return (
+      <span
+        className="w-3 h-3 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
+        style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--accent)' }}
+        aria-hidden
+      />
+    )
+  }
+  return (
+    <span
+      className="w-2 h-2 rounded-full flex-shrink-0"
+      style={{ background: 'var(--border-strong)', margin: '0 2px' }}
+      aria-hidden
+    />
+  )
+}
+
 function SkeletonCard() {
   return (
     <div className="card animate-pulse" aria-hidden>
@@ -105,6 +140,10 @@ export default function Hunt() {
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
+  // Detail drawer target. Stored as an id (not a Contact snapshot) so status
+  // and note edits made inside the drawer show up live — the object is
+  // re-derived from the store on every render.
+  const [drawerId, setDrawerId] = useState<number | null>(null)
   // Hunt state lives in the store: switching tabs mid-hunt no longer kills it —
   // the request finishes in the background and this tab restores progress/results.
   const {
@@ -240,6 +279,13 @@ export default function Hunt() {
     ? displayList
     : displayList.filter((c: any) => c.status === statusFilter)
 
+  // Live drawer contact — falls back to the saved list so the drawer keeps
+  // working when a hunt-result contact is also (or only) in `contacts`, and
+  // closes itself (derives to null) if the contact gets deleted.
+  const drawerContact: Contact | null = drawerId === null
+    ? null
+    : displayList.find(c => c.id === drawerId) ?? contacts.find(c => c.id === drawerId) ?? null
+
   return (
     <div className="space-y-5">
       <div>
@@ -300,27 +346,69 @@ export default function Hunt() {
       </div>
 
       {/* ── Live hunt progress ───────────────────────────────────────── */}
-      {hunting && (
-        <div className="space-y-3" aria-live="polite">
-          <div className="flex items-center gap-2.5 text-sm flex-wrap tnum" style={{ color: 'var(--text-muted)' }}>
-            <span
-              className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
-              style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--accent)' }}
-            />
-            {huntStage || 'Searching…'} <span style={{ color: 'var(--text-dim)' }}>— feel free to browse other tabs, this keeps running</span>
-            <button
-              onClick={cancelHunt}
-              className="btn btn-ghost text-xs flex items-center gap-1 ml-auto"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              <X size={11} /> Cancel
-            </button>
+      {hunting && (() => {
+        const activeIdx = Math.max(0, PIPELINE_STAGES.findIndex(s => s.match.test(huntStage)))
+        return (
+          <div className="space-y-3">
+            <div className="card" style={{ padding: '15px 18px' }}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <span className="text-[10px] font-mono font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>
+                  LIVE PROGRESS
+                </span>
+                <button
+                  onClick={cancelHunt}
+                  className="btn btn-ghost text-xs flex items-center gap-1"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <X size={11} /> Cancel
+                </button>
+              </div>
+              <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))' }}>
+                {PIPELINE_STAGES.map((stage, i) => {
+                  const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending'
+                  return (
+                    <div
+                      key={stage.label}
+                      className="flex items-center gap-2.5 rounded-[10px] border"
+                      style={{
+                        padding: '8px 12px',
+                        borderColor: 'var(--border)',
+                        background: state === 'done'
+                          ? 'color-mix(in srgb, var(--success) 8%, transparent)'
+                          : state === 'active' ? 'var(--accent-dim)' : 'transparent',
+                        transition: 'background .3s',
+                      }}
+                    >
+                      <StageDot state={state} />
+                      <span
+                        className="text-xs font-semibold"
+                        style={{ color: state === 'pending' ? 'var(--text-dim)' : 'var(--text)' }}
+                      >
+                        {stage.label}
+                      </span>
+                      <span
+                        className="ml-auto text-[11px] font-mono"
+                        style={{ color: state === 'done' ? 'var(--success-text)' : 'var(--text-dim)' }}
+                      >
+                        {state === 'done' ? 'done' : state === 'active' ? '…' : ''}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+              {/* Screen readers hear the store's own stage sentence as it changes. */}
+              <span className="sr-only" aria-live="polite">{huntStage}</span>
+              <p className="text-xs mt-3 mb-0" style={{ color: 'var(--text-muted)' }}>
+                Working — results land here the moment they're verified.{' '}
+                <span style={{ color: 'var(--text-dim)' }}>Feel free to browse other tabs — this keeps running.</span>
+              </p>
+            </div>
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+              <SkeletonCard /><SkeletonCard /><SkeletonCard />
+            </div>
           </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-            <SkeletonCard /><SkeletonCard /><SkeletonCard />
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── Toolbar: filters + actions ───────────────────────────────── */}
       {!hunting && displayList.length > 0 && (
@@ -465,6 +553,7 @@ export default function Hunt() {
               selectable={selectMode}
               selected={selectedIds.has(c.id)}
               onToggleSelect={() => toggleSelect(c.id)}
+              onOpenDetails={() => setDrawerId(c.id)}
             />
           ))}
         </div>
@@ -489,6 +578,9 @@ export default function Hunt() {
           </p>
         </div>
       ))}
+
+      {/* ── Contact detail drawer ────────────────────────────────────── */}
+      <ContactDrawer contact={drawerContact} onClose={() => setDrawerId(null)} />
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { X, Check } from 'lucide-react'
@@ -6,14 +7,32 @@ import { useStore } from '../../store'
 import { STATUS_META, type Contact, type ContactStatus } from '../../types'
 import { contactDisplayName, isGenericName } from '../../lib/display'
 
+// The API still sends email_status; the shared Contact type dropped it, so
+// it's typed locally and the chip simply doesn't render when it's absent.
+type ContactMeta = Contact & { email_status?: string }
+
+// Color only — the designation text itself says who this is. Exported for
+// the contact drawer so both render the same avatar tint.
+export function getDesigColor(d: string): string {
+  const dl = d.toLowerCase()
+  if (['founder', 'co-founder', 'ceo', 'cto', 'chief', 'founding'].some(x => dl.includes(x)))
+    return 'var(--tier-founder)'
+  if (['hr', 'human resource', 'talent', 'recruiter', 'recruiting', 'people ops', 'people partner'].some(x => dl.includes(x)))
+    return 'var(--tier-hr)'
+  if (['engineer', 'developer', 'swe', 'software', 'backend', 'frontend', 'fullstack', 'devops', 'data'].some(x => dl.includes(x)))
+    return 'var(--tier-engineer)'
+  return 'var(--tier-default)'
+}
+
 interface Props {
   contact: Contact
   selectable?: boolean
   selected?: boolean
   onToggleSelect?: () => void
+  onOpenDetails?: () => void
 }
 
-export default function ContactCard({ contact: c, selectable, selected, onToggleSelect }: Props) {
+export default function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenDetails }: Props) {
   const { upsertContact, removeContact, removeHuntResult, updateHuntResult } = useStore()
   const qc = useQueryClient()
 
@@ -39,31 +58,33 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
     onError: (e: Error) => toast.error(e.message),
   })
 
-  // Color only — the designation text itself says who this is.
-  const getDesigColor = (d: string) => {
-    const dl = d.toLowerCase()
-    if (['founder', 'co-founder', 'ceo', 'cto', 'chief', 'founding'].some(x => dl.includes(x)))
-      return 'var(--tier-founder)'
-    if (['hr', 'human resource', 'talent', 'recruiter', 'recruiting', 'people ops', 'people partner'].some(x => dl.includes(x)))
-      return 'var(--tier-hr)'
-    if (['engineer', 'developer', 'swe', 'software', 'backend', 'frontend', 'fullstack', 'devops', 'data'].some(x => dl.includes(x)))
-      return 'var(--tier-engineer)'
-    return 'var(--tier-default)'
-  }
-
   const displayName = contactDisplayName(c)
   const generic = isGenericName(c.name)
   const initials = displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const desigColor = getDesigColor(c.designation)
+  const verified = (c as ContactMeta).email_status === 'valid'
+
+  // The card body opens the detail drawer as a pointer convenience — clicks
+  // that land on any nested control (status pills, delete ×) are ignored so
+  // recording an outcome never accidentally opens the drawer. The card itself
+  // carries no button role: it nests real buttons, and nested interactive
+  // elements are invalid. The keyboard/AT path is the header region below,
+  // which contains no interactive children and so can be a proper button.
+  const handleCardClick = (e: ReactMouseEvent) => {
+    if (selectable) { onToggleSelect?.(); return }
+    if ((e.target as HTMLElement).closest('button, [role="button"]')) return
+    onOpenDetails?.()
+  }
 
   return (
     <div
       className="card relative group"
       style={{
         transition: 'border-color .15s',
+        cursor: selectable || onOpenDetails ? 'pointer' : undefined,
         ...(selected ? { borderColor: 'var(--accent)', boxShadow: 'var(--glow-accent)' } : {}),
       }}
-      onClick={selectable ? onToggleSelect : undefined}
+      onClick={selectable || onOpenDetails ? handleCardClick : undefined}
     >
       {/* ── Top-right controls ── */}
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 cr-reveal transition-opacity">
@@ -93,8 +114,26 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
         </div>
       )}
 
-      {/* ── Avatar + name ── */}
-      <div className="flex items-center gap-3 mb-3 pr-6" style={selectable ? { paddingLeft: 24 } : undefined}>
+      {/* ── Avatar + name — the accessible "details" affordance. This region
+          nests no interactive elements, so it can safely be a button for
+          keyboard/screen-reader users (the whole card is pointer-clickable). */}
+      <div
+        className="flex items-center gap-3 mb-3 pr-6"
+        style={selectable ? { paddingLeft: 24 } : undefined}
+        {...(onOpenDetails && !selectable ? {
+          role: 'button' as const,
+          tabIndex: 0,
+          'aria-label': `View details for ${displayName}`,
+          onKeyDown: (e: ReactKeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetails() }
+          },
+          // Must handle clicks itself: the card-level handler ignores clicks
+          // inside any [role="button"] — which includes THIS region — so
+          // without this, clicking the name/avatar (the most natural target)
+          // would do nothing.
+          onClick: (e: ReactMouseEvent) => { e.stopPropagation(); onOpenDetails() },
+        } : {})}
+      >
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
           style={{
@@ -123,8 +162,21 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
 
       {/* ── Company + email ── */}
       <div className="text-xs mb-1" style={{ color: generic ? 'var(--text)' : 'var(--text-muted)', fontWeight: generic ? 600 : 400 }}>🏢 {c.company}</div>
-      <div className="flex items-center gap-1.5 mb-3">
+      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         <span className="text-xs font-mono truncate" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
+        {/* Only when the verifier actually confirmed the address — never decorative. */}
+        {verified && (
+          <span
+            className="badge flex-shrink-0"
+            style={{
+              background: 'color-mix(in srgb, var(--success) 12%, transparent)',
+              color: 'var(--success-text)',
+              fontSize: 10,
+            }}
+          >
+            ✓ Verified email
+          </span>
+        )}
       </div>
       {/* ── Status pills ── */}
       <div className="flex flex-wrap gap-1">
