@@ -1,11 +1,11 @@
-import { useEffect, useState, useRef, createContext, lazy, Suspense, Component, type ReactNode } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback, createContext, lazy, Suspense, Component, type ReactNode } from 'react'
 import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2, Sun, Moon, Monitor, Inbox, BarChart3 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Analytics } from '@vercel/analytics/react'
 import { useStore } from './store'
-import { resumeApi } from './api/resume'
 import { authApi } from './api/auth'
 import { useContacts } from './hooks/useContacts'
+import { useResume } from './hooks/useResume'
 import { useAutomationConfig } from './hooks/useAutomationConfig'
 import { useAutoReplyCheck } from './hooks/useAutoReplyCheck'
 import { getStoredTheme, cycleTheme, type Theme } from './lib/theme'
@@ -182,8 +182,7 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, contacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
-  const [resumeReady, setResumeReady] = useState(false)
+  const { activeTab, setActiveTab, contacts, token, userEmail, logout, setAuth } = useStore()
   // Logged-out flow: marketing landing first; Log in / Sign up switch to Auth.
   const [authView, setAuthView] = useState<'landing' | 'login' | 'register'>('landing')
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -261,16 +260,61 @@ export default function App() {
   }, [activeTab])
 
   // On login from a fresh browser the local store has no résumé, but the backend
-  // may. Hydrate it so Compose works without forcing a re-upload.
-  // Track readiness so Compose doesn't flash "no resume" while the fetch is in-flight.
+  // may. Hydrate it (shared, deduped ['resume'] query) so Compose works without
+  // forcing a re-upload; resumeReady gates Compose so it doesn't flash
+  // "no resume" while the fetch is in-flight.
+  const { resumeReady } = useResume(!!token)
+
+  // Warm the not-yet-visited tab chunks while the browser is idle, so the
+  // first switch to each tab paints instantly instead of hitting the network.
+  // Runs after login + first paint; skipped when the user asked to save data.
   useEffect(() => {
     if (!token) return
-    if (resume.trim()) { setResumeReady(true); return }
-    resumeApi.getLatest()
-      .then(r => { if (r.text?.trim()) setResume(r.text) })
-      .catch(() => {})
-      .finally(() => setResumeReady(true))
-  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+    const conn = (navigator as { connection?: { saveData?: boolean } }).connection
+    if (conn?.saveData === true) return
+    const prefetchTabs = () => {
+      // Same specifiers as the lazy() imports above → same chunks, so a chunk
+      // already (being) loaded is a no-op.
+      void import('./components/Today')
+      void import('./components/Setup')
+      void import('./components/Hunt')
+      void import('./components/Compose')
+      void import('./components/Send')
+      void import('./components/Replies')
+      void import('./components/Analytics')
+    }
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(prefetchTabs, { timeout: 5000 })
+      return () => w.cancelIdleCallback?.(id)
+    }
+    const id = window.setTimeout(prefetchTabs, 2000)
+    return () => window.clearTimeout(id)
+  }, [token])
+
+  // Stable references for memoized children: Sidebar is React.memo'd, so
+  // rebuilding its `items` array (or the palette's commands) on every App
+  // render — App re-renders on ANY store change, e.g. each hunt-stage tick or
+  // draft written during bulk generate — would defeat the memo entirely.
+  const sidebarItems = useMemo(() => TABS.map(tab => ({
+    id: tab.id, icon: TAB_ICONS[tab.id], label: tab.label,
+    badge: tab.id === 'hunt' ? contacts.length : undefined,
+  })), [contacts.length])
+
+  const onSidebarSelect = useCallback((id: string) => {
+    if (isTabId(id)) setActiveTab(id)
+  }, [setActiveTab])
+
+  const commands = useMemo<Command[]>(() => [
+    ...TABS.map(tab => ({
+      id: tab.id, icon: TAB_ICONS[tab.id], label: tab.label, kind: 'view',
+      run: () => setActiveTab(tab.id),
+    })),
+    { id: 'signout', icon: LogOut, label: 'Sign out', kind: 'action', run: logout },
+  ], [setActiveTab, logout])
 
   if (!token) {
     if (authView === 'landing') {
@@ -289,25 +333,13 @@ export default function App() {
     c.last_emailed_at && new Date(c.last_emailed_at).toDateString() === todayStr
   ).length
 
-  const commands: Command[] = [
-    ...TABS.map(tab => ({
-      id: tab.id, icon: TAB_ICONS[tab.id], label: tab.label, kind: 'view',
-      run: () => setActiveTab(tab.id),
-    })),
-    { id: 'signout', icon: LogOut, label: 'Sign out', kind: 'action', run: logout },
-  ]
-
   return (
     <div className="min-h-screen flex flex-col md:pl-[232px]" style={{ background: 'var(--bg)' }}>
       {/* ── v2 shell: persistent sidebar on desktop ─────────────────────────── */}
       <Sidebar
-        items={TABS.map(tab => ({
-          id: tab.id, icon: TAB_ICONS[tab.id], label: tab.label,
-          badge: tab.id === 'hunt' ? contacts.length : undefined,
-        }))}
+        items={sidebarItems}
         activeId={activeTab}
-        onSelect={id => { if (isTabId(id)) setActiveTab(id) }}
-        onOpenPalette={() => setPaletteOpen(true)}
+        onSelect={onSidebarSelect}
         sentToday={sentToday}
         sendCap={25}
         email={userEmail}

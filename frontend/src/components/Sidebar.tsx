@@ -1,6 +1,6 @@
-import { Search, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import Logo from './shared/Logo'
 import { getStoredTheme, cycleTheme, type Theme } from '../lib/theme'
 import { Sun, Moon, Monitor } from 'lucide-react'
@@ -17,13 +17,15 @@ export interface SidebarItem {
 
 // v2 desktop shell: persistent left rail with nav, the ⌘K entry point, the
 // daily-send meter, theme, and the user row. Mobile keeps the bottom tab bar.
-export default function Sidebar({
-  items, activeId, onSelect, onOpenPalette, sentToday, sendCap, email, onLogout,
+// memo'd: App re-renders on every store change (hunt progress ticks, draft
+// writes), and all Sidebar props are referentially stable between those
+// renders (items/onSelect are memoized in App) — so the whole rail skips.
+function Sidebar({
+  items, activeId, onSelect, sentToday, sendCap, email, onLogout,
 }: {
   items: SidebarItem[]
   activeId: string
   onSelect: (id: string) => void
-  onOpenPalette: () => void
   sentToday: number
   sendCap: number
   email: string
@@ -48,30 +50,8 @@ export default function Sidebar({
         <Logo size={28} wordmark animated />
       </div>
 
-      {/* ⌘K entry */}
-      <button
-        onClick={onOpenPalette}
-        className="flex items-center gap-2 text-[13px] font-medium"
-        style={{
-          padding: '8px 12px', borderRadius: 10, cursor: 'pointer', marginBottom: 14,
-          background: 'var(--surface-2)', border: '1px solid var(--border)',
-          color: 'var(--text-muted)',
-        }}
-      >
-        <Search size={13} />
-        <span className="flex-1 text-left">Jump or act…</span>
-        <kbd
-          className="text-[10px] font-mono font-semibold"
-          style={{
-            padding: '2px 5px', borderRadius: 5, background: 'var(--surface-1)',
-            border: '1px solid var(--border)', color: 'var(--text-dim)',
-          }}
-        >
-          ⌘K
-        </kbd>
-      </button>
-
-      {/* Nav */}
+      {/* Nav (the command palette stays reachable via ⌘K/Ctrl+K — the visible
+          search bar was dropped per user request) */}
       <nav className="flex flex-col gap-0.5" aria-label="Sections">
         {items.map(item => {
           const Icon = item.icon
@@ -177,3 +157,5 @@ export default function Sidebar({
     </aside>
   )
 }
+
+export default memo(Sidebar)

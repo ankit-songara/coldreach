@@ -97,10 +97,13 @@ class BaseATSScraper(BaseScraper):
     """Shared discovery logic; subclasses only implement the per-ATS fetch."""
 
     ats_key: str = ""        # greenhouse | lever | ashby
-    MAX_TARGETS = 8          # cap companies probed per hunt (latency budget)
+    MAX_TARGETS = 12         # cap companies probed per hunt (latency budget)
+    # Per-scraper wall: boards that responded by then are kept, stragglers are
+    # cancelled — one slow board must not sink the whole source's results.
+    BOARD_BUDGET_SECONDS = 12
 
     @abstractmethod
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         """
         Fetch a board. Returns (company_name, api_domain, jobs) where each job is
         {"title": str, "location": str, "text": str}. api_domain may be "".
@@ -110,10 +113,32 @@ class BaseATSScraper(BaseScraper):
     async def search(self, query: str, **_) -> list[dict]:
         company_mode = looks_like_company(query)
         targets = self._targets(query, company_mode)[: self.MAX_TARGETS]
-        tasks = [self._collect(slug, dh, query, company_mode) for slug, dh in targets]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        if not targets:
+            return []
+        # ONE client per source: all this ATS's boards live on one API host, so
+        # connection reuse turns N TLS handshakes into 1 — without this, a
+        # hunt's ~80 parallel one-shot clients collapsed on slow uplinks.
+        sem = asyncio.Semaphore(4)
+
+        async def bounded(slug: str, dh: str) -> list[dict]:
+            async with sem:
+                return await self._collect(client, slug, dh, query, company_mode)
+
+        async with httpx.AsyncClient(
+            timeout=10, headers={"User-Agent": UA},
+            limits=httpx.Limits(max_connections=4, max_keepalive_connections=4),
+        ) as client:
+            tasks = [asyncio.create_task(bounded(slug, dh)) for slug, dh in targets]
+            done, pending = await asyncio.wait(tasks, timeout=self.BOARD_BUDGET_SECONDS)
+        if pending:
+            for t in pending:
+                t.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
         leads: list[dict] = []
-        for r in results:
+        for t in done:
+            if t.cancelled() or t.exception() is not None:
+                continue
+            r = t.result()
             if isinstance(r, list):
                 leads.extend(r)
         return leads
@@ -134,9 +159,9 @@ class BaseATSScraper(BaseScraper):
         # Unknown company: try derived slugs (only the right ATS will 200).
         return [(s, "") for s in slugify_company(query)]
 
-    async def _collect(self, slug: str, domain_hint: str, query: str, company_mode: bool) -> list[dict]:
+    async def _collect(self, client: httpx.AsyncClient, slug: str, domain_hint: str, query: str, company_mode: bool) -> list[dict]:
         try:
-            company, api_domain, jobs = await self._fetch(slug)
+            company, api_domain, jobs = await self._fetch(client, slug)
         except Exception:
             return []
         if not jobs:
@@ -204,10 +229,13 @@ class GreenhouseScraper(BaseATSScraper):
     name = "Greenhouse"
     ats_key = "greenhouse"
 
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA}) as client:
-            resp = await client.get(url, params={"content": "true"})
+        if True:  # shared client passed in by search() — one pool per source
+            # No content=true: with descriptions the payload for a big board is
+            # multiple MB and forced a 10-job cap — titles-only is small enough
+            # to scan the ENTIRE board, which is what makes role matches land.
+            resp = await client.get(url)
             if not resp.is_success:
                 return "", "", []
             data = resp.json()
@@ -220,7 +248,7 @@ class GreenhouseScraper(BaseATSScraper):
             "title":    j.get("title", ""),
             "location": (j.get("location") or {}).get("name", ""),
             "text":     _strip_html(j.get("content", "")),
-        } for j in jobs_raw[:10]]
+        } for j in jobs_raw[:200]]
         return company, "", jobs
 
 
@@ -230,10 +258,10 @@ class LeverScraper(BaseATSScraper):
     name = "Lever"
     ats_key = "lever"
 
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         url = f"https://api.lever.co/v0/postings/{slug}"
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA}) as client:
-            resp = await client.get(url, params={"mode": "json", "limit": "10"})
+        if True:  # shared client passed in by search() — one pool per source
+            resp = await client.get(url, params={"mode": "json", "limit": "50"})
             if not resp.is_success:
                 return "", "", []
             raw = resp.json()
@@ -248,7 +276,7 @@ class LeverScraper(BaseATSScraper):
                             (b.get("content") or "")
                             for b in (j.get("description") or {}).get("body", [])
                         ) or j.get("descriptionPlain", "")),
-        } for j in raw[:10]]
+        } for j in raw[:50]]
         return company, "", jobs
 
 
@@ -258,9 +286,9 @@ class AshbyScraper(BaseATSScraper):
     name = "Ashby"
     ats_key = "ashby"
 
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA}) as client:
+        if True:  # shared client passed in by search() — one pool per source
             resp = await client.get(url)
             if not resp.is_success:
                 return "", "", []
@@ -276,7 +304,7 @@ class AshbyScraper(BaseATSScraper):
             "title":    j.get("title") or j.get("name", ""),
             "location": (j.get("location") or {}).get("city", "") if isinstance(j.get("location"), dict) else (j.get("locationName") or ""),
             "text":     _strip_html(j.get("descriptionHtml") or j.get("description") or ""),
-        } for j in jobs_raw[:10]]
+        } for j in jobs_raw[:40]]
         return company, api_domain, jobs
 
 
@@ -292,9 +320,9 @@ class SmartRecruitersScraper(BaseATSScraper):
     name = "SmartRecruiters"
     ats_key = "smartrecruiters"
 
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings"
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA}) as client:
+        if True:  # shared client passed in by search() — one pool per source
             resp = await client.get(url, params={"limit": 100})
             if not resp.is_success:
                 return "", "", []
@@ -321,9 +349,9 @@ class RecruiteeScraper(BaseATSScraper):
     name = "Recruitee"
     ats_key = "recruitee"
 
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         url = f"https://{slug}.recruitee.com/api/offers/"
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA}) as client:
+        if True:  # shared client passed in by search() — one pool per source
             resp = await client.get(url)
             if not resp.is_success:
                 return "", "", []
@@ -349,9 +377,9 @@ class WorkableScraper(BaseATSScraper):
     name = "Workable"
     ats_key = "workable"
 
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         url = f"https://apply.workable.com/api/v1/widget/accounts/{slug}"
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA}) as client:
+        if True:  # shared client passed in by search() — one pool per source
             resp = await client.get(url, params={"details": "true"})
             if not resp.is_success:
                 return "", "", []
@@ -384,7 +412,7 @@ class BreezyScraper(BaseATSScraper):
     _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
            "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
-    async def _fetch(self, slug: str) -> tuple[str, str, list[dict]]:
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         url = f"https://{slug}.breezy.hr/json"
         async with httpx.AsyncClient(timeout=10, headers={"User-Agent": self._UA},
                                      follow_redirects=True) as client:

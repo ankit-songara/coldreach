@@ -46,11 +46,16 @@ from app.config import settings
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/hunt", tags=["hunt"])
 
-# Upper bound on the email-resolution phase so hunts stay responsive even when
-# outbound port 25 is blocked (every SMTP probe then burns its full timeout).
-# Serverless functions have a hard wall-clock limit (~60s incl. scraping), so
-# the budget shrinks there; SMTP probes are skipped entirely on Vercel anyway.
-_RESOLVE_BUDGET_SECONDS = 15 if os.environ.get("VERCEL") else 45
+# Phase budgets. The serverless function has a 60s maxDuration wall (frontend
+# axios timeout is 65s), so the two network phases are individually bounded
+# AND the resolve budget adapts to however long scraping actually took —
+# profiled hunts showed the old flat 15s resolve budget was the top yield
+# killer (~30% of leads left unresolved), while unbounded scraping could blow
+# the total past the wall once the ATS scan breadth was widened.
+_SCRAPE_BUDGET_SECONDS  = 18 if os.environ.get("VERCEL") else 40
+_RESOLVE_BUDGET_SECONDS = 35 if os.environ.get("VERCEL") else 45
+_TOTAL_HUNT_BUDGET_SECONDS = 52 if os.environ.get("VERCEL") else 120
+_MIN_RESOLVE_SECONDS = 8    # floor: always give resolution a real chance
 # "careers@" and "jobs@" are the most universally standard convention across
 # company sizes and countries — tried first. "talent@"/"hr@" skew larger/tech-
 # forward; "people@"/"team@" skew startup-specific and are the least reliable.
@@ -537,12 +542,26 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             _last_hunt.pop(uid, None)
 
     log.info(f"Hunt: {req.query!r}")
+    hunt_t0 = time.monotonic()
     scrapers = _build_scrapers(req.hunter_api_key)
 
-    # Sources hit distinct hosts, so run them fully concurrently (no staggering).
-    results_per_scraper = await asyncio.gather(
-        *(s.safe_search(req.query) for s in scrapers)
-    )
+    # Sources hit distinct hosts, so run them fully concurrently (no
+    # staggering) — but bounded: one slow board must not eat the wall-clock
+    # budget the resolve phase needs. Completed scrapers are harvested; the
+    # stragglers are cancelled and count as empty.
+    scrape_tasks = [asyncio.create_task(s.safe_search(req.query)) for s in scrapers]
+    done_scrape, pending_scrape = await asyncio.wait(scrape_tasks, timeout=_SCRAPE_BUDGET_SECONDS)
+    if pending_scrape:
+        for t in pending_scrape:
+            t.cancel()
+        await asyncio.gather(*pending_scrape, return_exceptions=True)
+        slow = [s.name for s, t in zip(scrapers, scrape_tasks) if t in pending_scrape]
+        log.info(f"Hunt: scrape budget hit — dropped slow sources: {', '.join(slow)}")
+    results_per_scraper = [
+        t.result() if (t in done_scrape and not t.cancelled() and t.exception() is None) else []
+        for t in scrape_tasks
+    ]
+    log.info(f"Hunt: scrape phase took {time.monotonic() - hunt_t0:.1f}s")
 
     # Self-grow the directory: a company-name query that resolved on a real ATS
     # board teaches us a new company→board mapping for everyone's future hunts.
@@ -685,7 +704,14 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     tasks = [asyncio.create_task(guarded_resolve(r))
              for r in careers_leads + needs_resolve[:40]]
     if tasks:
-        done, pending = await asyncio.wait(tasks, timeout=_RESOLVE_BUDGET_SECONDS)
+        # Adaptive: whatever wall-clock the scrape phase consumed comes out of
+        # the resolve budget so the total stays inside the serverless limit.
+        resolve_budget = max(
+            _MIN_RESOLVE_SECONDS,
+            min(_RESOLVE_BUDGET_SECONDS,
+                _TOTAL_HUNT_BUDGET_SECONDS - (time.monotonic() - hunt_t0)),
+        )
+        done, pending = await asyncio.wait(tasks, timeout=resolve_budget)
         if pending:
             for t in pending:
                 t.cancel()
