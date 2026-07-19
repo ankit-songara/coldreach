@@ -602,10 +602,19 @@ export default function Today() {
                 <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.015em', color: 'var(--text)' }}>Outreach pipeline</h2>
                 <p className="text-[13px]" style={{ color: 'var(--text-muted)', margin: 0 }}>Conversion at each stage of your funnel</p>
               </div>
-              <div className="flex items-center gap-1.5" style={{ padding: '5px 12px', borderRadius: 'var(--radius-full)', background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                <BarChart2 size={13} style={{ color: 'var(--text-muted)' }} />
-                <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Pipeline</span>
-              </div>
+              {/* Entry point to the full Analytics view — on phones (where
+                  Analytics has no bottom-bar slot) this is the way in. */}
+              <button
+                onClick={() => setActiveTab('analytics')}
+                className="flex items-center gap-1.5 hit-target"
+                style={{
+                  padding: '5px 12px', borderRadius: 'var(--radius-full)',
+                  background: 'var(--surface-2)', border: '1px solid var(--border)', cursor: 'pointer',
+                }}
+              >
+                <BarChart2 size={13} style={{ color: 'var(--accent-text)' }} />
+                <span className="text-xs font-semibold" style={{ color: 'var(--accent-text)' }}>All analytics →</span>
+              </button>
             </div>
 
             <FunnelRow label="Hunted"    count={total}     total={total}                 color="var(--accent)"         delay={100} onClick={() => setActiveTab('hunt')} />

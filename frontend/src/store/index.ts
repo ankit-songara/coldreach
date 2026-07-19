@@ -20,14 +20,14 @@ const HUNT_STAGES = [
   { after: 40_000, label: 'Almost there — putting your results together…' },
 ]
 
-type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send'
+type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send' | 'replies' | 'analytics'
 
 // Initial tab comes from the URL hash so a reload (or shared link) lands on
 // the right tab. Starting at 'today' and correcting in an effect loses the
 // race against the hash-sync effect, which rewrites the URL first.
 const initialTab = ((): TabId => {
   const h = window.location.hash.replace('#', '')
-  return (['today', 'setup', 'hunt', 'compose', 'send'] as const).includes(h as TabId)
+  return (['today', 'setup', 'hunt', 'compose', 'send', 'replies', 'analytics'] as const).includes(h as TabId)
     ? (h as TabId) : 'today'
 })()
 

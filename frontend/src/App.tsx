@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, createContext, lazy, Suspense, Component, type ReactNode } from 'react'
-import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2, Sun, Moon, Monitor } from 'lucide-react'
+import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2, Sun, Moon, Monitor, Inbox, BarChart3 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Analytics } from '@vercel/analytics/react'
 import { useStore } from './store'
@@ -17,14 +17,16 @@ import CommandPalette, { type Command } from './components/shared/CommandPalette
 // with the mountedTabs gating below), keeping the initial bundle to the shell
 // + whichever tab opens first. Auth stays eager — it's the shared login paint;
 // Landing is its own chunk so returning (logged-in) users never download it.
-const Landing = lazy(() => import('./components/Landing'))
-const Setup   = lazy(() => import('./components/Setup'))
-const Hunt    = lazy(() => import('./components/Hunt'))
-const Compose = lazy(() => import('./components/Compose'))
-const Send    = lazy(() => import('./components/Send'))
-const Today   = lazy(() => import('./components/Today'))
+const Landing   = lazy(() => import('./components/Landing'))
+const Setup     = lazy(() => import('./components/Setup'))
+const Hunt      = lazy(() => import('./components/Hunt'))
+const Compose   = lazy(() => import('./components/Compose'))
+const Send      = lazy(() => import('./components/Send'))
+const Today     = lazy(() => import('./components/Today'))
+const Replies   = lazy(() => import('./components/Replies'))
+const AnalyticsView = lazy(() => import('./components/Analytics'))
 
-type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send'
+type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send' | 'replies' | 'analytics'
 
 export const ResumeReadyCtx = createContext(false)
 
@@ -73,12 +75,17 @@ class TabErrorBoundary extends Component<{ children: ReactNode }, { failed: bool
 // columns on a ~375px screen give each label ~75px, and "Email Generation"
 // visibly wraps to multiple lines there. Desktop/tablet nav and every page
 // header always show the full `label`.
-const TABS: Array<{ id: TabId; num: string | null; label: string; shortLabel?: string }> = [
-  { id: 'today',   num: null, label: 'Dashboard'        },
-  { id: 'setup',   num: '01', label: 'Profile Setup',     shortLabel: 'Profile' },
-  { id: 'hunt',    num: '02', label: 'Hunt'             },
-  { id: 'compose', num: '03', label: 'Email Generation',  shortLabel: 'Emails'  },
-  { id: 'send',    num: '04', label: 'Send Mail',         shortLabel: 'Send'   },
+// `mobile: false` keeps an entry out of the phone bottom bar (five slots max
+// on ~375px): Setup moves to a gear in the mobile header, Analytics is
+// reachable from the Dashboard's "All analytics →" link.
+const TABS: Array<{ id: TabId; num: string | null; label: string; shortLabel?: string; mobile?: boolean }> = [
+  { id: 'today',     num: null, label: 'Dashboard'        },
+  { id: 'setup',     num: '01', label: 'Profile Setup',     shortLabel: 'Profile', mobile: false },
+  { id: 'hunt',      num: '02', label: 'Hunt'             },
+  { id: 'compose',   num: '03', label: 'Email Generation',  shortLabel: 'Emails'  },
+  { id: 'send',      num: '04', label: 'Send Mail',         shortLabel: 'Send'   },
+  { id: 'replies',   num: null, label: 'Replies'          },
+  { id: 'analytics', num: null, label: 'Analytics',                               mobile: false },
 ]
 
 const TAB_IDS = TABS.map(t => t.id)
@@ -87,6 +94,7 @@ const isTabId = (v: string): v is TabId => (TAB_IDS as string[]).includes(v)
 // Icons for the mobile bottom tab bar
 const TAB_ICONS: Record<TabId, LucideIcon> = {
   today: Home, setup: Settings, hunt: Search, compose: Wand2, send: SendIcon,
+  replies: Inbox, analytics: BarChart3,
 }
 
 const THEME_ICON: Record<Theme, typeof Sun> = { light: Sun, dark: Moon, system: Monitor }
@@ -318,7 +326,25 @@ export default function App() {
         }}
       >
         <Logo size={28} wordmark />
-        <UserMenu email={userEmail} onLogout={logout} />
+        <div className="flex items-center gap-2">
+          {/* Setup lives here on phones — the bottom bar's five slots go to
+              the daily-loop views (Replies took Profile's place). */}
+          <button
+            onClick={() => setActiveTab('setup')}
+            aria-label="Profile Setup"
+            aria-current={activeTab === 'setup' ? 'page' : undefined}
+            className="hit-target flex items-center justify-center"
+            style={{
+              width: 34, height: 34, borderRadius: 10, border: '1px solid var(--border)',
+              background: activeTab === 'setup' ? 'var(--accent-tint)' : 'var(--surface-1)',
+              color: activeTab === 'setup' ? 'var(--accent-text)' : 'var(--text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <Settings size={16} />
+          </button>
+          <UserMenu email={userEmail} onLogout={logout} />
+        </div>
       </header>
 
       {/* ── Content ──────────────────────────────────────────────────────────── */}
@@ -337,6 +363,7 @@ export default function App() {
           {(() => {
             const views: Record<TabId, ReactNode> = {
               today: <Today />, setup: <Setup />, hunt: <Hunt />, compose: <Compose />, send: <Send />,
+              replies: <Replies />, analytics: <AnalyticsView />,
             }
             return TABS.map(tab => {
               // Skip tabs never visited yet — lazy first mount keeps initial load light.
@@ -368,7 +395,7 @@ export default function App() {
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
-        {TABS.map(tab => {
+        {TABS.filter(tab => tab.mobile !== false).map(tab => {
           const Icon = TAB_ICONS[tab.id]
           const active = activeTab === tab.id
           return (
