@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Search, Trash2, Download, ShieldCheck, CheckSquare, X } from 'lucide-react'
+import { Search, Trash2, Download, CheckSquare, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { useContacts } from '../../hooks/useContacts'
-import { verifyApi } from '../../api/verify'
 import { huntApi } from '../../api/hunt'
 import ContactCard from './ContactCard'
 import ConfirmDialog from '../shared/ConfirmDialog'
@@ -101,7 +100,6 @@ export default function Hunt() {
   const [query, setQuery] = useState('')
   const [role, setRole]   = useState('')   // target-role filter ('' = any)
   const [statusFilter, setStatusFilter] = useState<ContactStatus | 'all'>('all')
-  const [verifying, setVerifying] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -131,25 +129,6 @@ export default function Hunt() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [resume, hiringCompanies.join('|')],
   )
-
-  const handleVerify = async () => {
-    setVerifying(true)
-    try {
-      const res = await verifyApi.run([])   // verify all not-yet-verified
-      const fresh = await contactsApi.list()
-      fresh.forEach(c => upsertContact(c))
-      qc.invalidateQueries({ queryKey: ['contacts'] })
-      if (res.results.length === 0) {
-        toast('All contacts already verified', { icon: '✅' })
-      } else {
-        toast.success(`Verified ${res.results.length} · ${res.valid} valid, ${res.risky} risky, ${res.invalid} invalid`)
-      }
-    } catch (e: any) {
-      toast.error(e.message)
-    } finally {
-      setVerifying(false)
-    }
-  }
 
   // Delete everything server-side FIRST, then clear the local store. (Clearing
   // only the store looks like it worked until the next refetch restores it all.)
@@ -369,15 +348,6 @@ export default function Hunt() {
             >
               {selectMode ? <X size={12} /> : <CheckSquare size={12} />}
               {selectMode ? 'Cancel' : 'Select'}
-            </button>
-            <button
-              onClick={handleVerify}
-              disabled={verifying}
-              title="Re-check whether each email address can actually receive mail"
-              className="btn btn-ghost flex items-center gap-1 text-xs"
-              style={{ color: '#3f8f43', borderColor: 'rgba(63,143,67,0.3)' }}
-            >
-              <ShieldCheck size={12} /> {verifying ? 'Verifying…' : 'Verify'}
             </button>
             <button onClick={exportCSV} className="btn btn-ghost flex items-center gap-1 text-xs">
               <Download size={12} /> CSV

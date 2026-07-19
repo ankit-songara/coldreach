@@ -295,16 +295,14 @@ class TestRoleInboxFallback:
         assert result["email"] == "careers@acme.com"
         assert result["email_status"] == "risky"
 
-    def test_vercel_env_skips_dead_smtp_loop_and_still_returns_a_guess(self, monkeypatch):
+    def test_vercel_ungrounded_lead_is_dropped_not_guessed(self, monkeypatch):
         """
-        Vercel blocks outbound port 25, so _smtp_probe always returns None
-        there (verified against resolver.py's own VERCEL check) — meaning
-        detect_catch_all always reports False and the confirmation loop can
-        NEVER succeed on the one platform this app is actually deployed to.
-        Without the VERCEL short-circuit, this fallback would be entirely
-        inert in production. Confirmed here by NOT mocking _smtp_probe at all
-        — if the code path reached it, this test would hang/fail on a real
-        network call instead of returning immediately.
+        THE bounce-storm rule: on Vercel (port 25 blocked → no SMTP, no
+        catch-all detection) a lead with no published/searchable/Hunter
+        evidence must be DROPPED, never guessed. Every persisted email is
+        grounded in real evidence. Confirmed here by NOT mocking _smtp_probe
+        at all — if the code path reached it, this test would hang/fail on a
+        real network call instead of returning immediately.
         """
         import asyncio
         from app.api import hunt as hunt_mod
@@ -314,7 +312,7 @@ class TestRoleInboxFallback:
             return ["mx.example.com"]
 
         async def fake_catch_all(self, domain, mx):
-            return False   # not catch-all — the SMTP loop would normally run here
+            return False   # not catch-all — nothing can ground the address
 
         async def fake_page_emails(domain):
             return []
@@ -328,9 +326,7 @@ class TestRoleInboxFallback:
         result = asyncio.run(hunt_mod._resolve_domain_contact(
             {"name": "", "company": "Acme", "_domain": "acme.com"}, cache,
         ))
-        assert result is not None
-        assert result["email"] == "careers@acme.com"
-        assert result["email_status"] == "risky"
+        assert result is None, "an ungrounded lead must be dropped, not guessed"
 
     def test_domain_guess_lead_skips_expensive_page_scrape(self, monkeypatch):
         """
@@ -362,8 +358,12 @@ class TestRoleInboxFallback:
         async def fake_published(domain):
             return None   # no grounded address on the company's own pages
 
+        async def fake_web_search(domain, company=""):
+            return None
+
         monkeypatch.setattr(hunt_mod, "emails_from_company_pages", tracking_page_emails)
         monkeypatch.setattr(hunt_mod, "find_published_role_email", fake_published)
+        monkeypatch.setattr(hunt_mod, "search_role_email_on_web", fake_web_search)
         monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
         monkeypatch.setattr(ResolutionCache, "catch_all", fake_catch_all)
 
@@ -430,8 +430,12 @@ class TestRoleInboxFallback:
         async def fake_generic(self, domain):
             return "jobs@acme.com"
 
+        async def fake_web_search(domain, company=""):
+            return None
+
         monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
         monkeypatch.setattr(hunt_mod, "find_published_role_email", fake_published)
+        monkeypatch.setattr(hunt_mod, "search_role_email_on_web", fake_web_search)
         monkeypatch.setattr(HunterEnricher, "search_generic", fake_generic)
         monkeypatch.setattr(hunt_mod.settings, "hunter_api_key", "fake-key")
 
@@ -444,12 +448,11 @@ class TestRoleInboxFallback:
         assert result["email"] == "jobs@acme.com"
         assert result["email_status"] == "valid"
 
-    def test_blind_guess_labeled_unverified_and_demoted(self, monkeypatch):
+    def test_catch_all_domain_keeps_deliverable_careers_lead(self, monkeypatch):
         """
-        When nothing grounds the address (no published page, no Hunter data),
-        the fallback guess must be honestly labeled '(unverified guess)' —
-        distinct from a grounded '(role inbox)' find — so it sorts below P1
-        named people and is excluded from Send.tsx's default bulk-send list.
+        Catch-all is the ONE case where the conventional careers@ is kept
+        without being published anywhere: the domain accepts every local
+        part, so the address physically cannot bounce.
         """
         import asyncio
         from app.api import hunt as hunt_mod
@@ -464,9 +467,13 @@ class TestRoleInboxFallback:
         async def fake_published(domain):
             return None
 
+        async def fake_web_search(domain, company=""):
+            return None
+
         monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
         monkeypatch.setattr(ResolutionCache, "catch_all", fake_catch_all)
         monkeypatch.setattr(hunt_mod, "find_published_role_email", fake_published)
+        monkeypatch.setattr(hunt_mod, "search_role_email_on_web", fake_web_search)
         monkeypatch.setattr(hunt_mod.settings, "hunter_api_key", "")
 
         cache = ResolutionCache()
@@ -475,10 +482,18 @@ class TestRoleInboxFallback:
             cache,
         ))
         assert result is not None
-        assert result["designation"] == "Talent/Recruiting (unverified guess)"
-        assert hunt_mod._desig_priority(result["designation"]) == 5
+        assert result["email"] == "careers@acme.com"
+        assert result["designation"] == "Talent/Recruiting (role inbox)"
+        assert result["confidence"] >= hunt_mod._MIN_RESOLVER_CONFIDENCE
+
+    def test_legacy_unverified_guess_rows_still_ranked_last(self):
+        """Pre-existing '(unverified guess)' contacts in user DBs (hunted
+        between the labeling fix and the drop-ungrounded fix) must keep
+        sorting below every real lead and using the formal template."""
+        from app.api.hunt import _desig_priority
         from app.llm.prompts import get_designation_key
-        assert get_designation_key(result["designation"]) == "hiring_inbox"
+        assert _desig_priority("Talent/Recruiting (unverified guess)") == 5
+        assert get_designation_key("Talent/Recruiting (unverified guess)") == "hiring_inbox"
 
 
 class TestHuntQuality:

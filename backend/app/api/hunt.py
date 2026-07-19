@@ -375,33 +375,29 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
                     "designation": raw.get("designation") or "Team",
                     "confidence": 50, "_domain": None}
 
-    # Fall back to probing role mailboxes (careers@, jobs@, …) — clearly
-    # labeled so the user and the email generator know this reaches an
-    # inbox, not a person.
+    # No published address anywhere. NEVER invent one — every persisted email
+    # must be grounded in real evidence (published page, web search, Hunter,
+    # SMTP confirmation, or a catch-all domain that physically can't bounce).
+    # Blind careers@ guesses caused a real production bounce storm; a company
+    # with no findable address is simply dropped from the results.
     mx = await cache.mx(domain)
     if not mx:
         return None
 
-    def _optimistic_guess() -> dict:
-        # Nothing grounded this address in real evidence — an unverified
-        # guess at standard company convention. Labeled distinctly so it's
-        # ranked below every real lead (_desig_priority) and excluded from
-        # default bulk-send (Send.tsx). Confidence must still clear
-        # _MIN_RESOLVER_CONFIDENCE or the downstream gate silently drops it.
+    if await cache.catch_all(domain, mx):
+        # Catch-all accepts EVERY local part — a conventional careers@ there
+        # is deliverable by definition (it cannot bounce), so this is the one
+        # case where using the convention isn't a guess about deliverability.
         prefix = _ROLE_ADDRESSES[0]
         return {**raw, "email": f"{prefix}@{domain}", "name": prefix.title(),
-                "designation": "Talent/Recruiting (unverified guess)",
-                "confidence": 40, "email_status": "risky", "_domain": None}
-
-    if await cache.catch_all(domain, mx):
-        # Catch-all accepts every local part — the guess can't bounce, it just
-        # can't be individually confirmed. Still a usable lead.
-        return _optimistic_guess()
+                "designation": "Talent/Recruiting (role inbox)",
+                "confidence": 45, "email_status": "risky", "_domain": None}
 
     if os.environ.get("VERCEL"):
         # Outbound port 25 is blocked on Vercel, so _smtp_probe can never
-        # confirm anything there (see resolver.py) — skip the dead loop.
-        return _optimistic_guess()
+        # confirm anything there (see resolver.py) — no grounding is possible,
+        # so the lead is dropped rather than guessed.
+        return None
 
     loop = asyncio.get_running_loop()
     for prefix in _ROLE_ADDRESSES:
@@ -471,9 +467,16 @@ async def hunt_suggestions(user: User = Depends(get_current_user)):
                             continue
                         comp = (j.get("company") or "").strip()
                         pos  = (j.get("position") or "").lower()
-                        # Only engineering-ish postings, plausible company names.
+                        tags = " ".join(t.lower() for t in (j.get("tags") or []) if isinstance(t, str))
+                        hay  = f"{pos} {tags}"
+                        # Tech postings only (position OR tags), plausible company names.
                         if (comp and comp.lower() not in seen and 2 < len(comp) <= 30
-                                and any(k in pos for k in ("engineer", "developer", "sde", "devops", "backend", "frontend", "full"))):
+                                and any(k in hay for k in (
+                                    "engineer", "developer", "sde", "devops", "backend",
+                                    "frontend", "full", "software", "sre", "platform",
+                                    "data", "mobile", "ios", "android", "golang", "python",
+                                    "react", "node", "java", "rust",
+                                ))):
                             seen.add(comp.lower())
                             companies.append(comp)
                         if len(companies) >= 12:

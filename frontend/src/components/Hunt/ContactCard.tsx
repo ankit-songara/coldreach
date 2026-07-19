@@ -39,22 +39,23 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const getDesigTier = (d: string) => {
+  // Color only — tier labels (P1/P2/…) were internal ranking jargon that
+  // confused more than informed; the designation text says who this is.
+  const getDesigColor = (d: string) => {
     const dl = d.toLowerCase()
     if (['founder', 'co-founder', 'ceo', 'cto', 'chief', 'founding'].some(x => dl.includes(x)))
-      return { color: '#6f5ae0', label: 'P1 · Founder/CxO' }
+      return '#6f5ae0'
     if (['hr', 'human resource', 'talent', 'recruiter', 'recruiting', 'people ops', 'people partner'].some(x => dl.includes(x)))
-      return { color: '#c47d1e', label: 'P2 · HR/TA' }
+      return '#c47d1e'
     if (['engineer', 'developer', 'swe', 'software', 'backend', 'frontend', 'fullstack', 'devops', 'data'].some(x => dl.includes(x)))
-      return { color: '#0e9d88', label: 'P3 · Engineer' }
-    return { color: '#8a7f70', label: '' }
+      return '#0e9d88'
+    return '#8a7f70'
   }
 
   const displayName = contactDisplayName(c)
   const generic = isGenericName(c.name)
   const initials = displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-  const tier = getDesigTier(c.designation)
-  const desigColor = tier.color
+  const desigColor = getDesigColor(c.designation)
 
   return (
     <div
@@ -101,17 +102,7 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
           {initials}
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <div className="text-sm font-medium truncate">{displayName}</div>
-            {tier.label && (
-              <span
-                className="badge flex-shrink-0"
-                style={{ background: `${desigColor}22`, color: desigColor, fontSize: '8px', fontWeight: 700, letterSpacing: '0.03em' }}
-              >
-                {tier.label}
-              </span>
-            )}
-          </div>
+          <div className="text-sm font-medium truncate">{displayName}</div>
           <span
             className="badge"
             style={{ background: `${desigColor}18`, color: desigColor, fontSize: '9px', marginTop: '2px' }}
@@ -125,22 +116,6 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
       <div className="text-xs mb-1" style={{ color: generic ? 'var(--text)' : 'var(--text-muted)', fontWeight: generic ? 600 : 400 }}>🏢 {c.company}</div>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="text-xs font-mono truncate" style={{ color: generic ? 'var(--text-muted)' : 'var(--text-dim)' }}>{c.email}</span>
-        {(c.confidence ?? 0) > 0 && (
-          <span
-            className="badge flex-shrink-0"
-            title={`Email confidence: ${c.confidence}%`}
-            style={{
-              fontSize: '8px', fontWeight: 700,
-              ...((c.confidence ?? 0) >= 80
-                ? { background: 'rgba(63,143,67,0.14)', color: '#3f8f43' }
-                : (c.confidence ?? 0) >= 50
-                ? { background: 'rgba(196,125,30,0.14)', color: '#c47d1e' }
-                : { background: 'rgba(210,72,58,0.14)', color: '#d2483a' }),
-            }}
-          >
-            {c.confidence}%
-          </span>
-        )}
       </div>
       {/* ── Status pills ── */}
       <div className="flex flex-wrap gap-1">

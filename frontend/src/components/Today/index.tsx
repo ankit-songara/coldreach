@@ -394,7 +394,6 @@ export default function Today() {
   const SENT_STATUSES = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected']
 
   const total     = contacts.length
-  const verified  = contacts.filter(c => c.email_status === 'valid' || c.email_status === 'risky').length
   const hasDraft  = contacts.filter(c => hasDraftFor(c.id)).length
   const sent      = contacts.filter(c => SENT_STATUSES.includes(c.status)).length
   // Funnel buckets are cumulative: an offer implies they interviewed + replied.
@@ -582,8 +581,7 @@ export default function Today() {
             </div>
 
             <FunnelRow label="Hunted"    count={total}     total={total}                 color="#e2603f" delay={100} onClick={() => setActiveTab('hunt')} />
-            <FunnelRow label="Verified"  count={verified}  total={total}                 color="#c47d1e" delay={200} />
-            <FunnelRow label="Drafted"   count={hasDraft}  total={total}                 color="#6f5ae0" delay={300} onClick={() => setActiveTab('compose')} />
+            <FunnelRow label="Drafted"   count={hasDraft}  total={total}                 color="#6f5ae0" delay={200} onClick={() => setActiveTab('compose')} />
             <FunnelRow label="Sent"      count={sent}      total={total}                 color="#0e9d88" delay={400} onClick={() => setActiveTab('send')} />
             <FunnelRow label="Replied"   count={replied}   total={Math.max(sent, 1)}     color="#3f8f43" delay={500} onClick={() => setActiveTab('send')} />
             <FunnelRow label="Interview" count={interview} total={Math.max(replied, 1)}  color="#c47d1e" delay={600} onClick={() => setActiveTab('send')} />
