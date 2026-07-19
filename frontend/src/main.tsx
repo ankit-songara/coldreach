@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { Toaster } from 'react-hot-toast'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import App from './App'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 import { queryClient } from './lib/queryClient'
@@ -35,6 +36,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             boxShadow: 'var(--shadow-md)',
           },
         }} />
+        <SpeedInsights />
       </QueryClientProvider>
     </GoogleOAuthProvider>
     </ErrorBoundary>
