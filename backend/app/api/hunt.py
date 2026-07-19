@@ -450,6 +450,21 @@ _SUGGEST_TTL_SECONDS = 900
 # "fetched < TTL ago" and the first request would serve [] without fetching.
 _suggest_cache: dict = {"at": float("-inf"), "companies": []}
 
+# RemoteOK company names arrive as filed: "LOTHIAN BUSES LIMITED", "Acme Pvt.
+# Ltd." — legalese and shouting make the suggestion chips look like junk data.
+_LEGAL_SUFFIX_RE = re.compile(
+    r"[\s,]+(private\s+limited|pvt\.?\s*ltd\.?|limited|ltd\.?|llc|inc\.?|corp\.?|gmbh)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _display_company(raw: str) -> str:
+    name = " ".join(raw.split())
+    name = _LEGAL_SUFFIX_RE.sub("", name).strip(" .,|-")
+    if name.isupper() and len(name) > 4:   # keep real acronyms (IBM, SAP) intact
+        name = name.title()
+    return name
+
 
 @router.get("/suggestions")
 async def hunt_suggestions(user: User = Depends(get_current_user)):
@@ -468,7 +483,7 @@ async def hunt_suggestions(user: User = Depends(get_current_user)):
                     for j in r.json():
                         if not isinstance(j, dict):
                             continue
-                        comp = (j.get("company") or "").strip()
+                        comp = _display_company(j.get("company") or "")
                         pos  = (j.get("position") or "").lower()
                         tags = " ".join(t.lower() for t in (j.get("tags") or []) if isinstance(t, str))
                         hay  = f"{pos} {tags}"

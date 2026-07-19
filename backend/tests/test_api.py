@@ -1262,6 +1262,7 @@ class TestHuntSuggestions:
                 {"company": "Acme Labs", "position": "SDE II"},
                 {"company": "Marketing Co", "position": "Growth Marketer"},
                 {"company": "Zed", "position": "Fullstack Developer"},
+                {"company": "LOTHIAN BUSES LIMITED", "position": "Data Engineer"},
             ])
 
         real_client = httpx.AsyncClient
@@ -1279,6 +1280,9 @@ class TestHuntSuggestions:
         assert companies.count("Acme Labs") == 1
         assert "Marketing Co" not in companies   # non-engineering posting
         assert "Zed" in companies
+        # Filed legal names are cleaned for display: suffix stripped, de-shouted.
+        assert "Lothian Buses" in companies
+        assert "LOTHIAN BUSES LIMITED" not in companies
 
 
 class TestGroundedStatusSurvivesVerification:

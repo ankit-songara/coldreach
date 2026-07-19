@@ -147,9 +147,12 @@ def clear_demo(db: Session = Depends(get_db), user: User = Depends(get_current_u
         for c in demo_contacts:
             db.delete(c)
 
-    # Remove the seeded résumé (only the one we created, matched by filename).
+    # Remove the seeded résumé — matched by filename AND content, so a real
+    # user upload that merely shares the demo filename is never deleted.
     db.query(Resume).filter(
-        Resume.user_id == user.id, Resume.filename == RESUME_FILENAME
+        Resume.user_id == user.id,
+        Resume.filename == RESUME_FILENAME,
+        Resume.text == _SAMPLE_RESUME,
     ).delete(synchronize_session=False)
     db.commit()
 

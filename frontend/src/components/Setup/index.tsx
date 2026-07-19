@@ -68,8 +68,17 @@ export default function Setup() {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       setResume(data.text)
-      refreshSignatureFromResume()
-      toast.success(`Extracted ${data.text.length.toLocaleString()} chars from ${file.name}`)
+      // Persist server-side immediately — before this, the extracted text only
+      // lived in localStorage until the user separately clicked "Save Resume",
+      // and logging out (or switching devices) silently lost it.
+      try {
+        await resumeApi.save(data.text)
+        refreshSignatureFromResume()
+        toast.success(`Resume saved — ${data.text.length.toLocaleString()} chars from ${file.name}`)
+      } catch {
+        refreshSignatureFromResume()
+        toast(`Extracted ${file.name} — click "Save Resume" to store it`, { icon: '⚠️' })
+      }
     } catch (e: any) {
       toast.error(e.message)
     } finally {

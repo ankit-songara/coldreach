@@ -103,7 +103,7 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
     {
       n: 5, done: false,
       title: 'Send & track',
-      body: 'Send via Gmail SMTP, check replies in one click, and track every outcome from first touch to offer.',
+      body: 'Send from your own Gmail, check replies in one click, and track every outcome from first touch to offer.',
       cta: 'Send Mail', tab: 'send' as const, color: '#3f8f43', bg: 'rgba(63,143,67,.10)',
     },
   ]
@@ -339,7 +339,7 @@ export default function Today() {
 
   // Contacts + drafts come from the shared queries (also used by App, Hunt,
   // Compose, Send) — one fetch each per load instead of one per tab.
-  const { contactsLoaded } = useContacts()
+  const { contactsLoaded, contactsError, refetchContacts } = useContacts()
   useAllDrafts()
 
   // Server-stored config: Gmail connection + sender name for greeting (shared
@@ -468,6 +468,25 @@ export default function Today() {
   const name = senderName ? senderName.split(' ')[0] : firstName(userEmail)
   // Brand-new user: no contacts and no resume uploaded yet
   const isNewUser = total === 0 && !resume.trim()
+
+  // A failed contacts fetch must not masquerade as "you're a brand-new user"
+  // (onboarding + zeroed funnel). Show the truth and a retry.
+  if (contactsError && total === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+          Couldn't load your contacts — check your connection and try again.
+        </p>
+        <button
+          onClick={() => refetchContacts()}
+          className="px-5 py-2 rounded-full text-sm font-bold"
+          style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   // Until the first contacts fetch resolves we don't know whether this is a new
   // user or a returning one — render a quiet skeleton instead of flashing the

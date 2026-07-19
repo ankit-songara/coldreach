@@ -11,7 +11,7 @@ import { useStore } from '../store'
 export function useContacts(enabled = true) {
   const setContacts = useStore(s => s.setContacts)
 
-  const { data, isFetched } = useQuery({
+  const { data, isFetched, isError, refetch } = useQuery({
     queryKey: ['contacts'],
     queryFn:  contactsApi.list,
     enabled,
@@ -21,6 +21,9 @@ export function useContacts(enabled = true) {
     if (data) setContacts(data)
   }, [data, setContacts])
 
-  // True once the first fetch settled (success OR error) — skeleton gating.
-  return { contactsLoaded: isFetched }
+  // contactsLoaded is true once the first fetch settled (success OR error) —
+  // skeleton gating. contactsError lets callers distinguish "you have no
+  // contacts" from "the request failed": without it, a transient GET failure
+  // rendered a returning user as brand-new (onboarding view, zeroed funnel).
+  return { contactsLoaded: isFetched, contactsError: isError, refetchContacts: refetch }
 }
