@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, createContext, lazy, Suspense, Component, type ReactNode } from 'react'
 import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2, Sun, Moon, Monitor } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { Analytics } from '@vercel/analytics/react'
 import { useStore } from './store'
 import { resumeApi } from './api/resume'
 import { authApi } from './api/auth'
@@ -389,6 +390,7 @@ export default function App() {
           )
         })}
       </nav>
+      <Analytics />
     </div>
   )
 }
