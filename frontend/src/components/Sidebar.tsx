@@ -43,9 +43,9 @@ export default function Sidebar({
         background: 'var(--surface-1)', borderRight: '1px solid var(--border)',
       }}
     >
-      {/* Brand */}
+      {/* Brand — the nav mark is one of the kit's sanctioned animated spots */}
       <div style={{ padding: '0 8px', marginBottom: 18 }}>
-        <Logo size={28} wordmark />
+        <Logo size={28} wordmark animated />
       </div>
 
       {/* ⌘K entry */}

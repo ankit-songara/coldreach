@@ -77,6 +77,11 @@
   --tier-engineer: #0b7d6c;
   --tier-default:  #6f6457;
 
+  /* Brand mark — Logo Kit V1 "They're typing". ONLY these four colors:
+     ink tile + bright-coral dots on light; cream tile + coral dots on dark. */
+  --logo-tile: #241d17;
+  --logo-dot:  #f0765c;
+
   /* Fonts */
   --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-sans:    'Plus Jakarta Sans', system-ui, sans-serif;
@@ -156,6 +161,9 @@
   --tier-engineer: #1ab89e;
   --tier-default:  #a89c8d;
 
+  --logo-tile: #f0e9e0;
+  --logo-dot:  #e2603f;
+
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2), 0 3px 8px -3px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.2), 0 14px 30px -10px rgba(0, 0, 0, 0.45);
@@ -189,6 +197,16 @@ body {
 
 /* Shared micro-motion */
 @keyframes cr-pop     { 0% { transform: scale(.96); opacity: 0; } 60% { transform: scale(1.02); } 100% { transform: scale(1); opacity: 1; } }
+
+/* Logo Kit V1 motion spec: 1.2s/dot ease-in-out infinite, .15s stagger —
+   rest at .35, peak (opacity 1 + 8% lift) at 30%, settled by 60%. Animated
+   ONLY on loading/waiting surfaces and the nav mark; static everywhere else.
+   The global prefers-reduced-motion block freezes it (falls back to the
+   static 40/70/100 fade set inline by the component). */
+@keyframes crDot {
+  0%, 60%, 100% { opacity: .35; transform: translateY(0); }
+  30%           { opacity: 1;   transform: translateY(-8%); }
+}
 
 /* ── Interaction layer ─────────────────────────────────────────────────── */
 

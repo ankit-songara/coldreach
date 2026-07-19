@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { MailOpen } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { inboxApi } from '../../api/inbox'
 import type { ReplyMessage } from '../../api/inbox'
+import Logo from '../shared/Logo'
 import { STATUS_META } from '../../types'
 import type { ContactStatus } from '../../types'
 
@@ -118,7 +118,9 @@ export default function Replies() {
       {/* ── Empty state ─────────────────────────────────────────────────────── */}
       {!isLoading && !isError && replies?.length === 0 && (
         <div className="flex flex-col items-center text-center py-20">
-          <MailOpen size={22} style={{ color: 'var(--text-dim)', marginBottom: 12 }} />
+          {/* Animated brand mark: "empty inbox" is a sanctioned waiting
+              surface in the logo kit — the typing dots ARE the message. */}
+          <div style={{ marginBottom: 14 }}><Logo size={34} animated /></div>
           <p className="text-sm font-mono" style={{ color: 'var(--text-muted)' }}>
             No replies yet — they land here automatically after you send
           </p>

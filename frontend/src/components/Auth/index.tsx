@@ -80,14 +80,10 @@ export default function Auth({ initialMode = 'login', onBack }: {
           </button>
         )}
         <div className="flex flex-col items-center mb-8">
-          <div className="mb-3">
-            <Logo size={44} />
-          </div>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', lineHeight: 1 }}>
-            ColdReach
-          </span>
-          <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
-            open-source cold outreach engine
+          {/* Kit lockup: horizontal tile + lowercase cold↗reach */}
+          <Logo size={40} wordmark />
+          <p className="text-sm mt-3" style={{ color: 'var(--text-muted)' }}>
+            Email the people who decide.
           </p>
         </div>
 

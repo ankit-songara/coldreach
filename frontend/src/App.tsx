@@ -32,12 +32,11 @@ export const ResumeReadyCtx = createContext(false)
 
 // Brief fallback shown while a lazily-loaded tab chunk downloads on first visit.
 function TabLoading() {
+  // The animated brand mark IS the loading state (Logo Kit V1: "app loading"
+  // is a sanctioned animated surface — the dots read as "they're typing").
   return (
     <div className="flex items-center justify-center py-20" aria-live="polite" aria-busy="true">
-      <div
-        className="w-6 h-6 rounded-full animate-spin"
-        style={{ border: '2px solid var(--border)', borderTopColor: 'var(--accent)' }}
-      />
+      <Logo size={34} animated />
     </div>
   )
 }
@@ -325,7 +324,7 @@ export default function App() {
           borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow-xs)',
         }}
       >
-        <Logo size={28} wordmark />
+        <Logo size={28} wordmark animated />
         <div className="flex items-center gap-2">
           {/* Setup lives here on phones — the bottom bar's five slots go to
               the daily-loop views (Replies took Profile's place). */}

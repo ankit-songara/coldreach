@@ -1,47 +1,64 @@
-// Brand mark: "The Dart" (direction 1a) — a paper dart mid-flight on the
-// coral tile — with the restrained single-ink wordmark from direction 1b.
-// Pure CSS geometry, so it inherits theme tokens and scales crisply.
+// Brand mark — Logo Kit V1 "They're typing": three typing-indicator dots on
+// the tile — a reply being typed, the moment every job-seeker is waiting for.
+//
+// Geometry (everything scales from tile width W): radius .26W · dot .14W ·
+// gap .07W · static dot opacities .40/.70/1.00 (implying the motion).
+// Colors are the kit's four brand constants via --logo-tile/--logo-dot
+// (light: ink tile + bright coral; dark: cream tile + coral) — never
+// theme-accent tokens, and never a coral background behind the tile.
+//
+// `animated` is for loading/waiting surfaces and the app nav mark ONLY
+// (kit rule 04/06): static everywhere else. The base opacity stays the
+// static fade even when animating, so prefers-reduced-motion (which kills
+// the animation globally) falls back to the correct static mark.
 
-export default function Logo({ size = 26, wordmark = false }: { size?: number; wordmark?: boolean }) {
-  // Proportions from the design spec (76px reference tile).
-  const dart = size * 0.37
-  const echo = size * 0.17
+const STATIC_FADE = [0.4, 0.7, 1] as const
+
+// Brand constant from the kit ("Coral — dots on cream, ↗"): the wordmark
+// arrow is #e2603f in BOTH themes.
+const ARROW_CORAL = '#e2603f'
+
+export default function Logo({ size = 30, wordmark = false, animated = false }: {
+  size?: number
+  wordmark?: boolean
+  animated?: boolean
+}) {
+  const dot = (i: number) => ({
+    width: size * 0.14, height: size * 0.14, borderRadius: '50%',
+    background: 'var(--logo-dot)',
+    opacity: STATIC_FADE[i],
+    animation: animated ? `crDot 1.2s ${i * 0.15}s ease-in-out infinite` : undefined,
+  })
+
   const tile = (
     <span
       aria-hidden
       style={{
         width: size, height: size,
-        borderRadius: size * 0.28,
-        background: 'var(--accent)',
-        position: 'relative', overflow: 'hidden',
-        display: 'inline-block', flexShrink: 0,
+        borderRadius: size * 0.26,
+        background: 'var(--logo-tile)',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        gap: size * 0.07, flexShrink: 0,
       }}
     >
-      <span style={{
-        position: 'absolute', top: size * 0.315, left: size * 0.315,
-        width: dart, height: dart,
-        background: 'var(--on-accent)',
-        transform: 'rotate(45deg)', borderRadius: Math.max(1, size * 0.05),
-      }} />
-      <span style={{
-        position: 'absolute', top: size * 0.58, left: size * 0.18,
-        width: echo, height: echo,
-        background: 'var(--on-accent)', opacity: 0.45,
-        transform: 'rotate(45deg)', borderRadius: Math.max(1, size * 0.026),
-      }} />
+      <span style={dot(0)} />
+      <span style={dot(1)} />
+      <span style={dot(2)} />
     </span>
   )
 
   if (!wordmark) return tile
 
+  // Lockup: lowercase, weight 800, tracking −0.04em, coral ↗ between the words.
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: size * 0.31 }}>
       {tile}
       <span style={{
-        fontSize: size * 0.65, fontWeight: 800, letterSpacing: '-0.03em',
-        color: 'var(--text)', fontFamily: 'var(--font-display)', lineHeight: 1,
+        fontFamily: 'var(--font-display)',
+        fontSize: Math.round(size * 0.64), fontWeight: 800, lineHeight: 1,
+        letterSpacing: '-0.04em', color: 'var(--text)', whiteSpace: 'nowrap',
       }}>
-        ColdReach
+        cold<span style={{ color: ARROW_CORAL, fontSize: '.8em', verticalAlign: '.18em' }}>↗</span>reach
       </span>
     </span>
   )
