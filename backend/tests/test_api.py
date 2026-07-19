@@ -1246,3 +1246,50 @@ class TestHuntSuggestions:
         assert companies.count("Acme Labs") == 1
         assert "Marketing Co" not in companies   # non-engineering posting
         assert "Zed" in companies
+
+
+class TestGroundedStatusSurvivesVerification:
+    """
+    Live-hunt bug found by manual verification: the resolver marks a
+    grounded, actually-published address email_status="valid", but the
+    downstream cheap-verifier merge only preserved a "risky" preset and
+    silently overwrote "valid" with the verifier's own (usually "unknown")
+    result -- so a real, found address showed up in the UI as "risky",
+    indistinguishable from an unverified guess.
+    """
+
+    def test_grounded_valid_status_not_overwritten_by_cheap_verifier(self, monkeypatch, auth_client):
+        from app.api import hunt as hunt_mod
+        from app.scrapers.base import BaseScraper
+
+        class FakeScraper(BaseScraper):
+            name = "Fake"
+            async def search(self, query, **_):
+                return [{
+                    "name": "", "email": "", "company": "Acme",
+                    "designation": "", "source": "careers-inbox",
+                    "_domain": "acme.com",
+                }]
+
+        async def fake_resolve(raw, cache):
+            # Simulates a successful grounding (web-page scan / web search).
+            return {**raw, "email": "hr@acme.com", "name": "Hr",
+                    "designation": "Talent/Recruiting (role inbox)",
+                    "confidence": 70, "email_status": "valid", "_domain": None}
+
+        def fake_verify_email(email):
+            # The cheap heuristic verifier has no SMTP/Hunter signal here —
+            # this is the realistic "unknown" it returns absent a paid check.
+            return "unknown"
+
+        monkeypatch.setattr(hunt_mod, "_build_scrapers", lambda key: [FakeScraper()])
+        monkeypatch.setattr(hunt_mod, "_resolve_domain_contact", fake_resolve)
+        monkeypatch.setattr(hunt_mod, "verify_email", fake_verify_email)
+
+        r = auth_client.post("/api/hunt", json={"query": "Acme"})
+        assert r.status_code == 200
+        contacts = r.json()["contacts"]
+        acme = next(c for c in contacts if c["email"] == "hr@acme.com")
+        assert acme["email_status"] == "valid", (
+            "grounded lead's 'valid' status must survive the cheap-verifier merge"
+        )

@@ -723,10 +723,12 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             dropped_invalid += 1
             continue
         preset = r.get("email_status")
-        # Honour an upstream "risky" set by the resolver (catch-all domain, role inbox)
-        # regardless of what the cheap verifier returns — "unknown" is the common result
-        # when there's no Hunter key, and must not silently overwrite "risky".
-        r["email_status"] = "risky" if preset == "risky" else verdict
+        # Honour an upstream "risky" or "valid" set by the resolver (catch-all
+        # domain / unverified guess = risky; a grounded, actually-published
+        # address = valid) regardless of what the cheap verifier returns —
+        # "unknown" is the common result when there's no Hunter key, and must
+        # not silently overwrite either.
+        r["email_status"] = preset if preset in ("risky", "valid") else verdict
         verified.append(r)
     with_email = verified
     if dropped_invalid:
