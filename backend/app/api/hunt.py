@@ -31,7 +31,10 @@ from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
 )
-from app.scrapers.web import emails_from_company_pages, find_published_role_email, HIRING_PREFIXES
+from app.scrapers.web import (
+    emails_from_company_pages, find_published_role_email,
+    search_role_email_on_web, HIRING_PREFIXES,
+)
 from app.scrapers import directory
 from app.scrapers.directory import looks_like_company
 from app.scrapers.resolver import (
@@ -338,6 +341,10 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
     # whenever the company actually uses hr@/jobs@/hiring@/etc instead.
     if raw.get("source") == "careers-inbox":
         published = await find_published_role_email(domain)
+        if not published:
+            # Not on the company's own pages (JS-rendered site, bot wall) —
+            # try the wider web: job posts, directories, press pages.
+            published = await search_role_email_on_web(domain, raw.get("company") or "")
         if published:
             prefix = published.split("@", 1)[0]
             # A dedicated hiring inbox beats a general company inbox, but both
@@ -434,6 +441,51 @@ def _learn_companies(db: Session, results_per_scraper: list) -> None:
                 log.info(f"Hunt: learned new company {r.get('company') or slug} ({ats}/{slug})")
             except Exception:
                 db.rollback()
+
+
+# ── Live "who's hiring" suggestions ──────────────────────────────────────────
+# Company names with active engineering postings right now, for the Hunt page's
+# suggestion chips — clicking one runs a company hunt directly. Cached
+# module-level so the chips cost one RemoteOK fetch per process per TTL, not
+# one per page load.
+_SUGGEST_TTL_SECONDS = 900
+_suggest_cache: dict = {"at": 0.0, "companies": []}
+
+
+@router.get("/suggestions")
+async def hunt_suggestions(user: User = Depends(get_current_user)):
+    now = time.monotonic()
+    if now - _suggest_cache["at"] > _SUGGEST_TTL_SECONDS:
+        companies: list[str] = []
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(
+                timeout=8, follow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0"},
+            ) as client:
+                r = await client.get("https://remoteok.com/api")
+                if r.is_success:
+                    seen: set[str] = set()
+                    for j in r.json():
+                        if not isinstance(j, dict):
+                            continue
+                        comp = (j.get("company") or "").strip()
+                        pos  = (j.get("position") or "").lower()
+                        # Only engineering-ish postings, plausible company names.
+                        if (comp and comp.lower() not in seen and 2 < len(comp) <= 30
+                                and any(k in pos for k in ("engineer", "developer", "sde", "devops", "backend", "frontend", "full"))):
+                            seen.add(comp.lower())
+                            companies.append(comp)
+                        if len(companies) >= 12:
+                            break
+        except Exception as e:
+            log.debug(f"Suggestions: RemoteOK fetch failed: {e}")
+        # Serve stale data over nothing if the refresh failed.
+        if companies:
+            _suggest_cache.update(at=now, companies=companies)
+        else:
+            _suggest_cache["at"] = now - _SUGGEST_TTL_SECONDS + 60  # retry in 1 min
+    return {"hiring_companies": _suggest_cache["companies"]}
 
 
 @router.post("", response_model=HuntResult)

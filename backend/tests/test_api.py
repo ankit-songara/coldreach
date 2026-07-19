@@ -1121,3 +1121,128 @@ class TestHunterGenericLookup:
 
         result = asyncio.run(web_mod.find_published_role_email("acme.com"))
         assert result == "careers@acme.com"
+
+    def test_web_search_grounding_extracts_hiring_email(self, monkeypatch):
+        """search_role_email_on_web: a hiring address seen in search-result
+        snippets (job posts, directories) grounds the lead when the company's
+        own site renders nothing server-side."""
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert "duckduckgo.com" in str(request.url)
+            return httpx.Response(
+                200, text="Apply at careers@acme.com ... or support@acme.com",
+            )
+
+        real_client = httpx.AsyncClient
+        def fake_async_client(*a, **kw):
+            kw.pop("timeout", None)
+            kw.pop("follow_redirects", None)
+            kw.pop("headers", None)
+            return real_client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake_async_client)
+
+        result = asyncio.run(web_mod.search_role_email_on_web("acme.com", "Acme"))
+        assert result == "careers@acme.com"
+
+    def test_web_search_ignores_support_and_other_domains(self, monkeypatch):
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, text="support@acme.com careers@othersite.com",
+            )
+
+        real_client = httpx.AsyncClient
+        def fake_async_client(*a, **kw):
+            kw.pop("timeout", None)
+            kw.pop("follow_redirects", None)
+            kw.pop("headers", None)
+            return real_client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake_async_client)
+
+        result = asyncio.run(web_mod.search_role_email_on_web("acme.com", "Acme"))
+        assert result is None
+
+
+class TestGuessedContactPurge:
+    """Startup cleanup of pre-grounding-fix blind guesses (the bounce storm)."""
+
+    def test_purges_only_never_emailed_risky_role_inboxes(self, auth_client, db_session):
+        from datetime import datetime
+        from app.db.models import Contact, User
+        from app.db.migrations import purge_unverified_role_inbox_guesses
+
+        user = db_session.query(User).first()
+        rows = [
+            # pre-fix blind guess, never emailed → purged
+            Contact(user_id=user.id, name="Careers", email="careers@gone1.com",
+                    designation="Talent/Recruiting (role inbox)",
+                    company="Gone1", email_status="risky", status="new"),
+            # already bounced (actioned) → kept for history
+            Contact(user_id=user.id, name="Careers", email="careers@gone2.com",
+                    designation="Talent/Recruiting (role inbox)",
+                    company="Gone2", email_status="risky", status="bounced",
+                    last_emailed_at=datetime(2026, 7, 18)),
+            # post-fix grounded lead (valid) → kept
+            Contact(user_id=user.id, name="Hiring", email="hiring@keep.com",
+                    designation="Talent/Recruiting (role inbox)",
+                    company="Keep", email_status="valid", status="new"),
+            # post-fix honest guess → kept (already excluded from bulk send)
+            Contact(user_id=user.id, name="Careers", email="careers@keep2.com",
+                    designation="Talent/Recruiting (unverified guess)",
+                    company="Keep2", email_status="risky", status="new"),
+            # a normal person lead → untouched
+            Contact(user_id=user.id, name="Sarah Chen", email="sarah@keep3.com",
+                    designation="Recruiter", company="Keep3",
+                    email_status="risky", status="new"),
+        ]
+        db_session.add_all(rows)
+        db_session.commit()
+
+        purged = purge_unverified_role_inbox_guesses(db_session)
+        assert purged == 1
+        remaining = {c.email for c in db_session.query(Contact).all()}
+        assert "careers@gone1.com" not in remaining
+        assert {"careers@gone2.com", "hiring@keep.com",
+                "careers@keep2.com", "sarah@keep3.com"} <= remaining
+
+        # Idempotent — second run is a no-op.
+        assert purge_unverified_role_inbox_guesses(db_session) == 0
+
+
+class TestHuntSuggestions:
+    def test_suggestions_returns_hiring_companies(self, auth_client, monkeypatch):
+        import httpx
+        from app.api import hunt as hunt_mod
+
+        hunt_mod._suggest_cache.update(at=0.0, companies=[])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[
+                {"legal": "meta"},
+                {"company": "Acme Labs", "position": "Senior Backend Engineer"},
+                {"company": "Acme Labs", "position": "SDE II"},
+                {"company": "Marketing Co", "position": "Growth Marketer"},
+                {"company": "Zed", "position": "Fullstack Developer"},
+            ])
+
+        real_client = httpx.AsyncClient
+        def fake_async_client(*a, **kw):
+            kw.pop("timeout", None)
+            kw.pop("follow_redirects", None)
+            kw.pop("headers", None)
+            return real_client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(httpx, "AsyncClient", fake_async_client)
+
+        r = auth_client.get("/api/hunt/suggestions")
+        assert r.status_code == 200
+        companies = r.json()["hiring_companies"]
+        assert "Acme Labs" in companies          # engineering posting, deduped
+        assert companies.count("Acme Labs") == 1
+        assert "Marketing Co" not in companies   # non-engineering posting
+        assert "Zed" in companies

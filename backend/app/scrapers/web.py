@@ -73,6 +73,10 @@ async def find_published_role_email(domain: str, timeout: int = 4) -> str | None
     lead for EVERY company in a hunt and must fit many leads inside the shared
     resolve time budget (15s total on Vercel).
     """
+    cached, value = _cache_get("pages", domain)
+    if cached:
+        return value
+
     if not await asyncio.to_thread(resolves_public, domain):
         return None
 
@@ -98,15 +102,99 @@ async def find_published_role_email(domain: str, timeout: int = 4) -> str | None
     cleaned = _clean(found)
 
     general: str | None = None
+    result: str | None = None
     for email in cleaned:
         local, _, mail_domain = email.partition("@")
         if mail_domain != domain:
             continue
         if local in HIRING_PREFIXES:
-            return email
+            result = email
+            break
         if general is None and local in GENERAL_PREFIXES:
             general = email
-    return general
+    result = result or general
+    _cache_put("pages", domain, result)
+    return result
+
+
+# DDG blocks bursts — a small concurrency cap keeps a 30-lead hunt from
+# tripping rate limits (individual failures degrade to None, never raise).
+_WEB_SEARCH_SEM = asyncio.Semaphore(3)
+
+# Per-domain result cache (hits AND misses) so repeat hunts and multi-source
+# leads for the same company never re-scan or re-search within a process
+# lifetime — matters doubly for DDG, which rate-limits repeated queries.
+_GROUND_TTL = 6 * 3600
+_ground_cache: dict[str, tuple[float, str | None]] = {}
+
+
+def _cache_get(kind: str, domain: str) -> tuple[bool, str | None]:
+    import time
+    hit = _ground_cache.get(f"{kind}:{domain}")
+    if hit and time.monotonic() - hit[0] < _GROUND_TTL:
+        return True, hit[1]
+    return False, None
+
+
+def _cache_put(kind: str, domain: str, value: str | None) -> None:
+    import time
+    if len(_ground_cache) > 2048:
+        _ground_cache.clear()
+    _ground_cache[f"{kind}:{domain}"] = (time.monotonic(), value)
+
+
+async def search_role_email_on_web(domain: str, company: str = "",
+                                   timeout: int = 6) -> str | None:
+    """
+    Web-search grounding: query DuckDuckGo for the company's published
+    careers/HR email and extract addresses at the target domain from the
+    result snippets. Catches addresses published on third-party sites (job
+    posts, directories, press pages) that the company's own site never
+    renders server-side — live-verified to surface careers@talkcharge.com
+    and hiring@astrotalk.com where the direct page scan finds nothing.
+
+    Same trust bar as the page scan: only addresses actually seen in the
+    wild, hiring prefixes first, then a general company inbox.
+    """
+    cached, value = _cache_get("search", domain)
+    if cached:
+        return value
+
+    name = company.strip() or domain.rsplit(".", 1)[0].replace("-", " ").title()
+    domain_re = re.compile(
+        r"[A-Za-z0-9._%+\-]+@" + re.escape(domain), re.IGNORECASE,
+    )
+    async with _WEB_SEARCH_SEM:
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout, follow_redirects=True,
+                headers={"User-Agent": _BROWSER_UA},
+            ) as client:
+                resp = await client.get(
+                    "https://html.duckduckgo.com/html/",
+                    params={"q": f"{name} careers email hr contact"},
+                )
+                # DDG signals rate-limiting with a 202 challenge page — a
+                # transient condition that must NOT be cached as "no email
+                # published for this domain".
+                if resp.status_code != 200:
+                    return None
+                text = resp.text
+        except Exception:
+            return None
+
+    general: str | None = None
+    result: str | None = None
+    for email in _clean(domain_re.findall(text)):
+        local = email.split("@", 1)[0]
+        if local in HIRING_PREFIXES:
+            result = email
+            break
+        if general is None and local in GENERAL_PREFIXES:
+            general = email
+    result = result or general
+    _cache_put("search", domain, result)
+    return result
 
 
 async def emails_from_company_pages(domain: str, timeout: int = 8) -> list[str]:
