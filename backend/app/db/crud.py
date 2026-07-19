@@ -10,7 +10,9 @@ import re
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.db.models import Contact, EmailDraft, Resume, AppConfig, User, KnownCompany, EmailPattern
+from app.db.models import (
+    Contact, EmailDraft, Resume, ResumeFile, AppConfig, User, KnownCompany, EmailPattern,
+)
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
 from app import security
@@ -293,6 +295,31 @@ class ResumeRepository:
         self.db.commit()
         self.db.refresh(resume)
         return resume
+
+    def save_file(self, filename: str, mime: str, data: bytes) -> ResumeFile:
+        """Upsert the original uploaded file — one per user, latest upload wins."""
+        existing = self.get_file()
+        if existing:
+            existing.filename, existing.mime, existing.data = filename, mime, data
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+        rf = ResumeFile(user_id=self.user_id, filename=filename, mime=mime, data=data)
+        self.db.add(rf)
+        self.db.commit()
+        self.db.refresh(rf)
+        return rf
+
+    def get_file(self) -> ResumeFile | None:
+        return self.db.query(ResumeFile).filter(ResumeFile.user_id == self.user_id).first()
+
+    def has_file(self) -> bool:
+        """Existence check without loading the (potentially large) blob."""
+        return (
+            self.db.query(ResumeFile.user_id)
+            .filter(ResumeFile.user_id == self.user_id)
+            .first()
+        ) is not None
 
 
 # ── Sender-name resolution (for email greetings/signatures) ───────────────────

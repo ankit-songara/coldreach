@@ -48,10 +48,13 @@ async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User
         raise HTTPException(400, "No résumé provided. Upload one in Setup or include resume text.")
 
     # Prefer user-supplied context; otherwise fall back to the genuine context
-    # we captured at hunt time (HN post, GitHub repos, …).
+    # captured at hunt time.
     company_context = req.company_context.strip() or (contact.context or "")
     sender_name  = resolve_sender_name(db, user.id, user.email)
     sender_links = resolve_signature_links(db, user.id)
+    # Formal templates only mention an attached résumé when a file actually
+    # exists to attach at send time.
+    has_attachment = ResumeRepository(db, user.id).has_file()
 
     try:
         email_text = await generator.generate(
@@ -63,6 +66,7 @@ async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User
             source=contact.source or "",
             sender_name=sender_name,
             sender_links=sender_links,
+            has_attachment=has_attachment,
         )
     except Exception as e:
         # Full details go to the server log only — raw provider errors (rate

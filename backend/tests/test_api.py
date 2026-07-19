@@ -170,6 +170,18 @@ class TestRoleFilter:
         assert _role_match_rank("Founder", "engineering") == 1          # gatekeeper kept
         assert _role_match_rank("Product Manager", "engineering") is None  # off-target dropped
 
+    @pytest.mark.parametrize("designation, priority", [
+        ("Talent/Recruiting (role inbox)", 0),   # P0: careers@/jobs@ inbox first
+        ("Founder",                        1),   # P1 tier 1
+        ("CTO",                            1),
+        ("Technical Recruiter",            2),   # P1 tier 2 (named HR/TA person)
+        ("Software Engineer",              3),   # P1 tier 3
+        ("Office Manager",                 4),
+    ])
+    def test_p0_careers_inbox_sorts_before_named_people(self, designation, priority):
+        from app.api.hunt import _desig_priority
+        assert _desig_priority(designation) == priority
+
     @pytest.mark.parametrize("query, expected", [
         # the reported bug: a bare domain word must carry role intent on its own
         ("product",                        "product"),
@@ -324,12 +336,12 @@ class TestRoleInboxFallback:
         """
         Live-observed bug: a real corporate site's page-scrape step can burn
         the entire resolve budget before ever reaching the role-inbox check,
-        starving the domain-guess fallback of the tiny bit of time it needs.
-        The synthetic lead (source="domain-guess") must skip straight to the
+        starving the careers-inbox fallback of the tiny bit of time it needs.
+        The synthetic lead (source="careers-inbox") must skip straight to the
         role-inbox check. A normal ATS-sourced lead (no such source tag) must
         still go through the page-scrape as before — proven by NOT mocking
         emails_from_company_pages and instead asserting it's simply never
-        called for the domain-guess lead.
+        called for the careers-inbox lead.
         """
         import asyncio
         from app.api import hunt as hunt_mod
@@ -353,13 +365,13 @@ class TestRoleInboxFallback:
 
         cache = ResolutionCache()
         result = asyncio.run(hunt_mod._resolve_domain_contact(
-            {"name": "", "company": "Acme", "_domain": "acme.com", "source": "domain-guess"},
+            {"name": "", "company": "Acme", "_domain": "acme.com", "source": "careers-inbox"},
             cache,
         ))
         assert result is not None
-        assert calls == [], "domain-guess lead must not trigger the page scrape"
+        assert calls == [], "careers-inbox lead must not trigger the page scrape"
 
-        # A normal (non-domain-guess) identity-only lead still gets scraped.
+        # A normal (non-careers-inbox) identity-only lead still gets scraped.
         calls.clear()
         asyncio.run(hunt_mod._resolve_domain_contact(
             {"name": "", "company": "Acme", "_domain": "acme.com", "source": "greenhouse/acme"},
@@ -612,6 +624,24 @@ class TestDraftScoring:
         clean, flagged = scrub_ungrounded_numbers(body, "resume with no numbers")
         assert flagged == [] and clean == body
 
+    def test_formal_register_keeps_application_style(self):
+        from app.llm.generator import _clean_subject, _humanize
+        from app.llm.prompts import get_designation_key, FORMAL_KEYS
+        # Careers-inbox contacts route to the formal application template.
+        assert get_designation_key("Talent/Recruiting (role inbox)") == "hiring_inbox"
+        assert get_designation_key("Technical Recruiter") == "recruiter"
+        assert {"hiring_inbox", "recruiter"} == set(FORMAL_KEYS)
+        # Formal subjects keep Title Case and the dash; em-dash normalized.
+        assert _clean_subject("SDE Application — Priya Nair", "Acme", formal=True) \
+            == "SDE Application - Priya Nair"
+        # Direct subjects still get the internal-note treatment.
+        assert _clean_subject("Sde Application For Your Team", "Acme") \
+            == "sde application for your team"
+        # Formal bodies keep the single courtesy line; direct bodies lose it.
+        courteous = "I hope you're doing well. I am asking about open SDE roles."
+        assert "hope" in _humanize(courteous, formal=True).lower()
+        assert "hope" not in _humanize(courteous).lower()
+
     def test_subject_detitlecased_preserving_acronyms_and_company(self):
         from app.llm.generator import _clean_subject
         assert _clean_subject("Backend Expertise For Brightmind AI", "Brightmind AI") \
@@ -785,3 +815,55 @@ class TestCorsOriginRegex:
             )
             assert r.status_code == 200, f"{origin} got {r.status_code}"
             assert r.headers.get("access-control-allow-origin") == origin
+
+
+class TestResumeAttachment:
+    """Original uploaded file is stored and attachable to formal emails."""
+
+    # Minimal PDF with real extractable text so /extract succeeds.
+    PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+           b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+           b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
+           b"/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
+           b"4 0 obj<</Length 44>>stream\nBT /F1 24 Tf 72 720 Td (Hello resume) Tj ET\nendstream endobj\n"
+           b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+           b"trailer<</Root 1 0 R>>")
+
+    def test_extract_stores_original_file(self, auth_client, db_session):
+        from app.db.models import ResumeFile
+        r = auth_client.post(
+            "/api/resume/extract",
+            files={"file": ("my-resume.pdf", self.PDF, "application/pdf")},
+        )
+        assert r.status_code == 200, r.text
+        stored = db_session.query(ResumeFile).first()
+        assert stored is not None, "original file bytes must be persisted"
+        assert stored.filename == "my-resume.pdf"
+        assert stored.mime == "application/pdf"
+        assert stored.data == self.PDF
+
+        # A second upload replaces, never duplicates.
+        r2 = auth_client.post(
+            "/api/resume/extract",
+            files={"file": ("v2.pdf", self.PDF, "application/pdf")},
+        )
+        assert r2.status_code == 200
+        db_session.expire_all()
+        rows = db_session.query(ResumeFile).all()
+        assert len(rows) == 1 and rows[0].filename == "v2.pdf"
+
+    def test_build_message_with_attachment(self):
+        from app.mailer import build_message
+        msg = build_message("me@x.com", "you@y.com", "SDE Application - A",
+                            "Body text", attachment=("resume.pdf", b"%PDF-fake"))
+        raw = msg.as_string()
+        assert 'filename="resume.pdf"' in raw
+        assert "multipart/mixed" in raw
+        assert "Body text" in raw
+
+    def test_build_message_without_attachment_stays_plain(self):
+        from app.mailer import build_message
+        msg = build_message("me@x.com", "you@y.com", "subj", "Body")
+        raw = msg.as_string()
+        assert "multipart/alternative" in raw
+        assert "attachment" not in raw

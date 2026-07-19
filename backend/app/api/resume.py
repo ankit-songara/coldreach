@@ -72,8 +72,14 @@ async def extract_resume(
         raise HTTPException(422, "No readable text found. Try saving as a different format.")
 
     text = text.strip()
-    # Persist so compose can default to it without re-uploading.
-    ResumeRepository(db, user.id).save(text, file.filename)
+    repo = ResumeRepository(db, user.id)
+    # Persist the text so compose can default to it without re-uploading, and
+    # the ORIGINAL file so formal application emails can attach the real résumé.
+    repo.save(text, file.filename)
+    mime = "application/pdf" if ext == "pdf" else (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    repo.save_file(file.filename, mime, raw)
 
     return ExtractResponse(text=text, chars=len(text), filename=file.filename)
 

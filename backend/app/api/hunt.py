@@ -21,8 +21,6 @@ from app.scrapers.base import (
     is_valid_email, person_name_from_email, ROLE_LOCALS,
     is_test_identity, plausible_person_name,
 )
-from app.scrapers.hn import HackerNewsScraper, HNJobsScraper
-from app.scrapers.github import GitHubScraper
 from app.scrapers.enricher import HunterEnricher
 from app.scrapers.ats import (
     GreenhouseScraper, LeverScraper, AshbyScraper,
@@ -58,6 +56,9 @@ _ROLE_ADDRESSES = ("careers", "jobs", "talent", "hr", "recruiting", "people", "t
 # Minimum confidence to persist a resolver-generated email. Direct scraper emails
 # (confidence=0) are always kept; only resolver outputs are gated.
 _MIN_RESOLVER_CONFIDENCE = 40
+
+# Cap on P0 careers-inbox leads per hunt (one per unique company domain).
+_MAX_CAREERS_LEADS = 30
 
 # Per-user hunt rate limit: prevent rapid repeated scraping that could get the
 # server IP blocked by ATS APIs.
@@ -95,8 +96,11 @@ def _company_from_email(email: str) -> str:
 
 
 def _desig_priority(designation: str) -> int:
-    """Return sort key: 1 = Founder/CxO, 2 = HR/TA, 3 = Engineer, 4 = other."""
+    """Sort key. P0: careers/role inbox = 0. P1: Founder/CxO = 1, HR/TA = 2,
+    Engineer = 3, other = 4."""
     d = designation.lower()
+    if "role inbox" in d:
+        return 0
     if any(k in d for k in ("founder", "co-founder", "ceo", "cto", "chief", "founding")):
         return 1
     if any(k in d for k in ("hr", "human resource", "talent", "recruiter", "recruiting", "people ops", "people partner")):
@@ -227,9 +231,6 @@ def _guess_company_domain(query: str) -> str:
 
 def _build_scrapers(hunter_key: str) -> list:
     scrapers = [
-        HackerNewsScraper(),
-        HNJobsScraper(),
-        GitHubScraper(),
         GreenhouseScraper(),
         LeverScraper(),
         AshbyScraper(),
@@ -329,17 +330,11 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
             out["email_status"] = "risky"   # deliverable but unprovable
         return out
 
-    # No name → first try the company's own pages for a real, named person —
-    # UNLESS this is the universal domain-guess fallback lead itself, whose
-    # entire purpose is being a fast, always-available last resort. A real
-    # corporate site's /about and /contact pages can take most of the resolve
-    # budget to load (observed live: Nike's site alone burned the full 15s
-    # Vercel budget before even reaching the role-inbox check below), starving
-    # this lead of the tiny bit of time its own fallback actually needs.
-    # Every OTHER identity-only lead still gets the page-scrape — those come
-    # from a real source (an ATS board, a job post) where finding a named
-    # person is worth the cost.
-    if raw.get("source") != "domain-guess":
+    # No name → try the company's own pages for a real, named person — except
+    # for P0 careers-inbox leads, which must stay fast: a corporate site's
+    # pages can consume the entire serverless resolve budget before the cheap
+    # role-inbox check below ever runs.
+    if raw.get("source") != "careers-inbox":
         page_emails = await emails_from_company_pages(domain)
         personal = _personal_email(page_emails, domain)
         if personal:
@@ -356,37 +351,22 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
         return None
 
     def _optimistic_guess() -> dict:
-        # Used whenever we can't SMTP-confirm an address either way (catch-all
-        # domain, or SMTP probing unavailable at all — see below): a standard
-        # address like careers@ overwhelmingly exists and won't bounce even
-        # unconfirmed. Unlike a blind first.last personal-name guess (20-30 in
-        # resolver.py's confidence bands), this IS a known, deliberate company
-        # convention, not a guess about how a specific person's name is
-        # formatted — so it sits at the top of the "catch-all domain, pattern
-        # learned" band (35-45) rather than down with "no pattern" guesses.
-        # 40 exactly clears _MIN_RESOLVER_CONFIDENCE below (a lower value here
-        # was live-verified to get this lead silently dropped by that gate
-        # even though the function itself resolves it correctly).
+        # Unconfirmed but standard company convention (careers@ etc.) — a real
+        # deliverable lead. Confidence must clear _MIN_RESOLVER_CONFIDENCE or
+        # the downstream gate silently drops it.
         prefix = _ROLE_ADDRESSES[0]
         return {**raw, "email": f"{prefix}@{domain}", "name": prefix.title(),
                 "designation": "Talent/Recruiting (role inbox)",
                 "confidence": 40, "email_status": "risky", "_domain": None}
 
     if await cache.catch_all(domain, mx):
-        # A catch-all domain accepts EVERY local part by definition, so the
-        # guess will never bounce — we just can't confirm it reaches anyone
-        # in particular. Previously this returned None here, silently
-        # discarding a perfectly usable address on every catch-all domain.
+        # Catch-all accepts every local part — the guess can't bounce, it just
+        # can't be individually confirmed. Still a usable lead.
         return _optimistic_guess()
 
     if os.environ.get("VERCEL"):
-        # Serverless platforms including Vercel block outbound port 25, so
-        # _smtp_probe below is a guaranteed no-op there (it short-circuits to
-        # None for every candidate — see resolver.py). Looping through
-        # candidates that can NEVER return a confirmation wastes the request's
-        # time budget for zero benefit; go straight to the same optimistic
-        # guess the catch-all path uses, so this fallback actually works in
-        # the one environment the app is actually deployed to.
+        # Outbound port 25 is blocked on Vercel, so _smtp_probe can never
+        # confirm anything there (see resolver.py) — skip the dead loop.
         return _optimistic_guess()
 
     loop = asyncio.get_running_loop()
@@ -435,10 +415,12 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     Multi-source email hunt with pattern-resolution + SMTP verification.
 
     Flow:
-    1. All scrapers run in parallel (HN, GitHub, Web, Greenhouse, Lever, Ashby, Hunter)
-    2. Contacts with emails → validated immediately
-    3. Contacts with _domain but no email → resolver pipeline (pattern learning + SMTP probe)
-    4. All resolved contacts saved, sorted by designation priority
+    1. ATS/job-board scrapers run in parallel (Greenhouse, Lever, Ashby, …, Hunter)
+    2. P0: every discovered company domain yields a careers@/jobs@ role-inbox lead
+    3. P1: contacts with emails validated directly; identity-only leads go through
+       the resolver pipeline (pattern learning + SMTP probe)
+    4. All resolved contacts saved — role inboxes first, then founders, HR/TA,
+       then role-relevant people
     """
     # Rate limit: one hunt per user per cooldown window.
     now = time.monotonic()
@@ -496,33 +478,37 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     if dropped_junk:
         log.info(f"Hunt: dropped {dropped_junk} test-identity leads")
 
-    # ── Universal fallback: guess the standard role-inbox address (careers@,
-    #    jobs@, …) at the company's OWN domain, independent of whether any
-    #    scraper found anything at all. This is the one source that needs no
-    #    GitHub presence, no HN post, and no board on a supported ATS — nearly
-    #    every real company accepts mail at its own careers/jobs/hr inbox, so
-    #    a company-name search should never come back empty just because no
-    #    scraper happened to have coverage for it. Prefers the directory's
-    #    REAL domain when the company is already known; otherwise guesses
-    #    from the query using the single best base slug — real companies
-    #    overwhelmingly use their short name as a domain, not the full legal
-    #    name concatenated ("Acme Corp" -> acme.com, not acmecorp.com) — and
-    #    leans on _resolve_domain_contact's existing TLD alternation (now
-    #    covering .in/.org too) if that .com guess has no MX. Merges into the
-    #    same by-domain dedup as everything else below, so it only "wins" a
-    #    domain when nothing better already covers it.
+    # ── P0: careers@/jobs@ role-inbox lead for EVERY company discovered ────────
+    # The primary product output of a hunt. One synthetic lead per unique
+    # corporate domain, gathered from every source: identity-only leads,
+    # direct-email leads, and (for company-name queries) the query itself.
+    # Resolved via the fast path in _resolve_domain_contact — no page-scrape,
+    # TLD alternation when the guess has no MX. Kept in a SEPARATE list so a
+    # domain can yield BOTH its careers@ inbox (P0) and a named person (P1).
+    domain_company: dict[str, str] = {}
+    for r in needs_resolve:
+        d = (r.get("_domain") or "").lower().strip()
+        if d and d not in _FREEMAIL and d not in domain_company:
+            domain_company[d] = (r.get("company") or "").strip()
+    for r in with_email:
+        d = r["email"].rsplit("@", 1)[-1]
+        if d and d not in _FREEMAIL and d not in domain_company:
+            domain_company[d] = (r.get("company") or "").strip()
     if looks_like_company(req.query):
-        guess_domain = _guess_company_domain(req.query)
-        if guess_domain:
-            needs_resolve.append({
-                "name": "", "company": req.query.strip(),
-                "designation": "", "source": "domain-guess",
-                "_domain": guess_domain,
-            })
-            source_counts["domain-guess"] = source_counts.get("domain-guess", 0) + 1
-            log.debug(f"Hunt: added domain-guess fallback lead for {guess_domain!r}")
+        guess = _guess_company_domain(req.query)
+        if guess and guess not in domain_company:
+            domain_company[guess] = req.query.strip()
 
-    log.info(f"Hunt: {len(with_email)} direct emails, {len(needs_resolve)} identity-only leads")
+    careers_leads = [
+        {"name": "", "company": comp or _company_from_email(f"x@{dom}"),
+         "designation": "", "source": "careers-inbox", "_domain": dom}
+        for dom, comp in list(domain_company.items())[:_MAX_CAREERS_LEADS]
+    ]
+    if careers_leads:
+        source_counts["careers-inbox"] = len(careers_leads)
+
+    log.info(f"Hunt: {len(with_email)} direct emails, {len(careers_leads)} P0 careers leads, "
+             f"{len(needs_resolve)} identity-only leads")
 
     # ── Seed a shared cache with every real email found, so cross-source pattern
     #    learning works for free (e.g. GitHub emails at acme.com teach acme.com's
@@ -589,7 +575,10 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         async with semaphore:
             return await _resolve_domain_contact(raw, cache)
 
-    tasks = [asyncio.create_task(guarded_resolve(r)) for r in needs_resolve[:40]]
+    # P0 careers leads first — they're cheap (MX lookup, no page-scrape) and are
+    # the hunt's primary output, so they must land inside the time budget.
+    tasks = [asyncio.create_task(guarded_resolve(r))
+             for r in careers_leads + needs_resolve[:40]]
     if tasks:
         done, pending = await asyncio.wait(tasks, timeout=_RESOLVE_BUDGET_SECONDS)
         if pending:
@@ -678,15 +667,18 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         role_filtered = len(with_email) - len(ranked)
         if role_filtered:
             log.info(f"Hunt: role filter '{target}' dropped {role_filtered} off-target leads")
+        # Careers inboxes stay first even under a role filter — they're the P0
+        # product output regardless of which people the filter targets.
         ranked.sort(key=lambda pr: (
+            0 if "role inbox" in (pr[1].get("designation") or "").lower() else 1,
             pr[0],                                                     # role relevance
             _status_rank.get(pr[1].get("email_status") or "unknown", 1),
             -(pr[1].get("confidence") or 0),
         ))
         with_email = [r for _, r in ranked]
     else:
-        # No role filter: Founders → HR/TA → Engineers → rest; within each tier,
-        # verified emails before risky/unknown, then higher confidence first.
+        # P0 careers inboxes → Founders → HR/TA → Engineers → rest; within each
+        # tier, verified emails before risky/unknown, then higher confidence.
         with_email.sort(key=lambda r: (
             _desig_priority(r.get("designation") or ""),
             _status_rank.get(r.get("email_status") or "unknown", 1),

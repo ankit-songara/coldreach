@@ -32,7 +32,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.llm.factory import detect_provider, create_llm
 
-from app.llm.prompts import TEMPLATES, WORD_RANGES, get_designation_key
+from app.llm.prompts import TEMPLATES, WORD_RANGES, FORMAL_KEYS, get_designation_key
 
 from app.llm.parsing import parse_subject_body
 
@@ -170,29 +170,43 @@ _OPENER_RES = (
 
 
 
-def _humanize(text: str) -> str:
+def _humanize(text: str, formal: bool = False) -> str:
 
-    """Mechanically remove machine-writing tells from a generated body."""
+    """Mechanically remove machine-writing tells from a generated body.
+
+    Formal register keeps its courtesy lines and structured phrasing — only
+
+    the universal cleanups apply (quote normalization, dashes, exclamations).
+
+    """
 
     t = text.translate(_CURLY_MAP)
 
     t = _NUM_DASH_RE.sub("-", t)
 
-    t = _DASH_RE.sub(", ", t)
+    if formal:
+
+        t = re.sub(r"\s*[—–]\s*", " - ", t)
+
+    else:
+
+        t = _DASH_RE.sub(", ", t)
 
     t = t.replace("!", ".")            # exclamation marks read as fake enthusiasm
 
-    for rx in _PLEASANTRY_RES:
+    if not formal:
 
-        t = rx.sub("", t).lstrip()
+        for rx in _PLEASANTRY_RES:
 
-    for rx in _OPENER_RES:
+            t = rx.sub("", t).lstrip()
 
-        stripped = rx.sub("", t, count=1)
+        for rx in _OPENER_RES:
 
-        if stripped != t and stripped:
+            stripped = rx.sub("", t, count=1)
 
-            t = stripped[0].upper() + stripped[1:]
+            if stripped != t and stripped:
+
+                t = stripped[0].upper() + stripped[1:]
 
     t = re.sub(r"[ \t]{2,}", " ", t)
 
@@ -308,7 +322,7 @@ def _strip_affixes(body: str) -> str:
 
 def _wrap(body: str, contact_name: str, sender_name: str, sender_links: str = "",
 
-          company: str = "") -> str:
+          company: str = "", formal: bool = False) -> str:
 
     """Add a deterministic greeting and 'Best regards,' sign-off.
 
@@ -340,7 +354,7 @@ def _wrap(body: str, contact_name: str, sender_name: str, sender_links: str = ""
 
         return body.strip()
 
-    core = _humanize(_strip_affixes(body))
+    core = _humanize(_strip_affixes(body), formal=formal)
 
     first = _first_name(contact_name, company)
 
@@ -378,9 +392,11 @@ def _wrap(body: str, contact_name: str, sender_name: str, sender_links: str = ""
 
 
 
-def _clean_subject(subject: str, company: str = "") -> str:
+def _clean_subject(subject: str, company: str = "", formal: bool = False) -> str:
 
-    """Normalise the LLM-generated subject line."""
+    """Normalise the LLM-generated subject line. Formal subjects keep their
+
+    application-style casing; direct subjects get the internal-note treatment."""
 
     s = subject.strip()
 
@@ -404,6 +420,16 @@ def _clean_subject(subject: str, company: str = "") -> str:
 
         s = s[4:].strip()
 
+    if formal:
+
+        # Formal application subjects keep their casing and their dash
+
+        # ("SDE Application - Priya Nair") — normalize dash style only.
+
+        s = re.sub(r"\s*[—–]\s*", " - ", s)
+
+        return s.rstrip("!.").strip()
+
     s = _DASH_RE.sub(", ", s)
 
     s = s.rstrip("!.")   # trailing bang/period reads as odd in a subject line
@@ -418,15 +444,11 @@ def _clean_subject(subject: str, company: str = "") -> str:
 
         words = s.split()
 
-    # De-Title-Case: "Backend Expertise For Brightmind AI" reads as a campaign
+    # De-Title-Case: Title Case Every Word reads as a campaign blast; lowercase
 
-    # blast; "backend expertise for Brightmind AI" reads as a note someone
+    # reads as a note someone typed. Acronyms, digit tokens, and the company
 
-    # typed. Only fires when most words are capitalized (the LLM Title Case
-
-    # tell); acronyms (LLM, AWS), digit-bearing tokens, and the company name
-
-    # keep their casing.
+    # name keep their casing.
 
     if len(words) >= 3:
 
@@ -546,6 +568,8 @@ class EmailGenerator:
 
         word_range: tuple[int, int] = (60, 120), ground_numbers: str = "",
 
+        formal: bool = False,
+
     ) -> tuple[str, str]:
 
         """
@@ -560,15 +584,21 @@ class EmailGenerator:
 
           2. scrub ungrounded company claims (fact-check against context)
 
-          3. cut cover-letter filler sentences
+          3. scrub invented candidate numbers (grounded against résumé/context)
 
-          4. score reply-worthiness deterministically (opener, fact density,
+          4. DIRECT register only: cut cover-letter filler and score
 
-             length, closing question, subject shape)
+             reply-worthiness (opener, fact density, length, closing question)
 
           5. below the bar → regenerate once, then keep whichever attempt
 
              scored higher (attempt 1 is never thrown away for a worse retry)
+
+
+
+        Formal register (hiring inboxes, recruiters) keeps its application
+
+        structure — fact-checking still applies, style scrubbing doesn't.
 
 
 
@@ -588,7 +618,9 @@ class EmailGenerator:
 
             if _PLACEHOLDER in raw:
 
-                return _clean_subject(subject, company), _wrap(body, contact_name, sender_name, sender_links, company)
+                return (_clean_subject(subject, company, formal),
+
+                        _wrap(body, contact_name, sender_name, sender_links, company, formal))
 
 
 
@@ -598,45 +630,47 @@ class EmailGenerator:
 
             )
 
-            # Numbers claimed about the candidate must exist in the résumé or
-
-            # context — an invented "under 500ms" survives until an interviewer
-
-            # asks about it.
-
             bad_numbers: list[str] = []
 
             if ground_numbers:
 
                 clean, bad_numbers = scrub_ungrounded_numbers(clean, ground_numbers)
 
-            clean, n_filler = strip_filler(clean)
+            if formal:
 
-            quality = score_draft(clean, subject, word_range=word_range,
+                n_filler, quality = 0, 100
 
-                                  context=context, company=company)
+                below_bar = bool(fabricated or bad_numbers)
+
+            else:
+
+                clean, n_filler = strip_filler(clean)
+
+                quality = score_draft(clean, subject, word_range=word_range,
+
+                                      context=context, company=company)
+
+                below_bar = bool(
+
+                    fabricated or bad_numbers or n_filler
+
+                    or not ends_with_question(clean) or quality < self._QUALITY_BAR
+
+                )
 
             if len(clean.strip()) >= _MIN_BODY_CHARS:
 
                 candidates.append((quality, subject, clean))
 
-            if attempt == 1 and (
-
-                not candidates or fabricated or bad_numbers or n_filler
-
-                or not ends_with_question(clean) or quality < self._QUALITY_BAR
-
-            ):
+            if attempt == 1 and (not candidates or below_bar):
 
                 log.info(
 
-                    f"LLM draft below bar on attempt 1 (score={quality}, "
+                    f"LLM draft below bar on attempt 1 (formal={formal}, score={quality}, "
 
                     f"ungrounded={len(fabricated)}, invented_numbers={len(bad_numbers)}, "
 
-                    f"filler={n_filler}, "
-
-                    f"ends_with_question={ends_with_question(clean)}) — regenerating"
+                    f"filler={n_filler}) — regenerating"
 
                 )
 
@@ -662,9 +696,9 @@ class EmailGenerator:
 
             log.info(f"LLM draft: kept best of {len(candidates)} attempts (score={quality})")
 
-        wrapped = _wrap(body, contact_name, sender_name, sender_links, company)
+        wrapped = _wrap(body, contact_name, sender_name, sender_links, company, formal)
 
-        return _clean_subject(subject, company), wrapped
+        return _clean_subject(subject, company, formal), wrapped
 
 
 
@@ -690,11 +724,15 @@ class EmailGenerator:
 
         sender_links: str = "",
 
+        has_attachment: bool = False,
+
     ) -> str:
 
         await self._ensure_llm()
 
         key = get_designation_key(designation)
+
+        formal = key in FORMAL_KEYS
 
         chain = self._get_chain(key)
 
@@ -814,6 +852,20 @@ class EmailGenerator:
 
                 "source_hint":   _source_hint(source),
 
+                "sender_name":   (sender_name or "").strip() or "the candidate",
+
+                # Only formal templates reference this; the résumé line must
+
+                # never appear unless a file will actually be attached.
+
+                "attachment_note": (
+
+                    "\n5. Mention that the resume is attached for review."
+
+                    if has_attachment and formal else ""
+
+                ),
+
             },
 
             contact_name=name, sender_name=sender_name, sender_links=sender_links,
@@ -823,6 +875,8 @@ class EmailGenerator:
             word_range=WORD_RANGES.get(key, (60, 120)),
 
             ground_numbers=f"{resume}\n{company_context}",
+
+            formal=formal,
 
         )
 

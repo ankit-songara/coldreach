@@ -14,8 +14,6 @@ import random
 import smtplib
 import logging
 from datetime import datetime, timedelta, timezone
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -23,13 +21,14 @@ from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.db.crud import (
-    ContactRepository, DraftRepository, ConfigRepository,
+    ContactRepository, DraftRepository, ConfigRepository, ResumeRepository,
     already_first_touched,
 )
+from app.llm.prompts import get_designation_key, FORMAL_KEYS
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
-from app.mailer import normalize_app_password
+from app.mailer import normalize_app_password, build_message
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/send", tags=["send"])
@@ -166,6 +165,18 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         log.warning(f"Gmail SMTP connect failed: {e}")
         raise HTTPException(502, "Couldn't connect to Gmail right now. Please try again in a moment.")
 
+    # Résumé attachment: loaded once per request, attached only when the
+    # recipient is a hiring inbox or recruiter — the recipients whose formal
+    # templates may say "resume attached", so the email never lies.
+    resume_file = ResumeRepository(db, user.id).get_file()
+
+    def _attachment_for(contact) -> tuple[str, bytes] | None:
+        if resume_file is None:
+            return None
+        if get_designation_key(contact.designation or "") in FORMAL_KEYS:
+            return (resume_file.filename, resume_file.data)
+        return None
+
     def send_batch(batch) -> list[SendResult]:
         """Open ONE authenticated SMTP connection and reuse it for the batch.
 
@@ -193,11 +204,10 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
                     # Tiny human-like jitter — trimmed on serverless to stay
                     # inside the function's execution limit.
                     time.sleep(random.uniform(0.1, 0.4) if _SERVERLESS else random.uniform(0.2, 1.2))
-                    msg = MIMEMultipart("alternative")
-                    msg["From"]    = gmail_address
-                    msg["To"]      = contact.email
-                    msg["Subject"] = draft.subject
-                    msg.attach(MIMEText(draft.body, "plain"))
+                    msg = build_message(
+                        gmail_address, contact.email, draft.subject, draft.body,
+                        attachment=_attachment_for(contact),
+                    )
                     smtp.sendmail(gmail_address, contact.email, msg.as_string())
                     log.info(f"Sent to {contact.email}")
                     out.append(SendResult(contact_id=contact.id, name=contact.name,

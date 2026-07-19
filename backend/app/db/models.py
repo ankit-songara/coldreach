@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for ColdReach."""
 
 from datetime import datetime
-from sqlalchemy import String, Text, DateTime, Boolean, UniqueConstraint, func
+from sqlalchemy import String, Text, DateTime, Boolean, LargeBinary, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.database import Base
 
@@ -84,6 +84,22 @@ class Resume(Base):
     text:       Mapped[str]      = mapped_column(Text)
     filename:   Mapped[str|None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ResumeFile(Base):
+    """
+    The original uploaded résumé file (PDF/DOCX), one per user — attached to
+    formal application emails (careers@ inboxes, recruiters). A separate table
+    rather than columns on `resumes` so it needs no ALTER on pre-existing
+    tables: create_all builds new tables on both SQLite and Postgres.
+    """
+    __tablename__ = "resume_files"
+
+    user_id:    Mapped[int]      = mapped_column(primary_key=True)
+    filename:   Mapped[str]      = mapped_column(String(255))
+    mime:       Mapped[str]      = mapped_column(String(100))
+    data:       Mapped[bytes]    = mapped_column(LargeBinary)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class AppConfig(Base):

@@ -220,12 +220,9 @@ export default function App() {
                 onClick={() => setActiveTab(tab.id)}
                 className="inline-flex items-center gap-1.5 text-[13px] font-semibold transition-all"
                 style={{
-                  // The 01/02/03/04 step-number badges were dropped (below) to
-                  // make room for the longer renamed labels ("Email Generation",
-                  // "Profile Setup", "Dashboard") — with them, five tabs left
-                  // ZERO spare width in the header at exactly 768px, the tablet
-                  // breakpoint where this nav first appears; one extra
-                  // character anywhere would have overflowed it.
+                  // Tight padding: at 768px (the breakpoint where this nav
+                  // first appears) the five full-length labels barely fit —
+                  // widening anything here overflows the header.
                   padding: '7px 7px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
                   background: active ? 'var(--surface-1)' : 'transparent',
                   color: active ? 'var(--text)' : 'var(--text-muted)',

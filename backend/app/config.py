@@ -25,20 +25,12 @@ class Settings(BaseSettings):
     debug: bool         = False
     cors_origins: str   = "http://localhost:5173"   # Vite dev server
 
-    # Vercel gives a project BOTH stable aliases (coldreach-niyp.vercel.app,
-    # coldreach-niyp-<team>.vercel.app, coldreach-niyp-git-<branch>-<team>.vercel.app)
-    # AND a brand-new unique per-deployment URL on every single deploy
-    # (coldreach-niyp-<hash>-<team>.vercel.app). A static comma-separated
-    # allowlist (cors_origins above) can only ever cover the aliases known at
-    # the time it was set — it will always eventually miss a valid, real
-    # deployment URL, and a blocked CORS request is indistinguishable from
-    # "server unreachable" to the browser (confirmed live: coldreach-niyp.vercel.app
-    # got a clean 200 preflight while coldreach-niyp-cold-reach.vercel.app and
-    # coldreach-niyp-git-master-cold-reach.vercel.app — same frontend project,
-    # different URL — got 400s). A regex matching every URL Vercel generates
-    # FOR THIS PROJECT closes that gap permanently instead of chasing it one
-    # missing origin at a time. Override via CORS_ORIGIN_REGEX if the Vercel
-    # project name ever changes.
+    # Vercel serves the frontend project from stable aliases AND a unique
+    # per-deployment URL on every deploy — a static allowlist always eventually
+    # misses one, and a blocked CORS request looks identical to "server
+    # unreachable" in the browser. This regex covers every URL shape Vercel
+    # generates for the frontend project. Override via CORS_ORIGIN_REGEX if the
+    # project name changes.
     cors_origin_regex: str = r"^https://coldreach-niyp(-[a-z0-9]+)*\.vercel\.app$"
 
     # ── Auth ─────────────────────────────────────────────────────────────────

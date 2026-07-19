@@ -1,13 +1,46 @@
 """
 Cold email prompt templates, keyed by designation type.
 Add new templates here without touching generator.py.
+
+Two registers:
+  - FORMAL (hiring_inbox, recruiter): a proper job application — hiring inboxes
+    and recruiters expect clear, professional structure. These bypass the
+    casual-voice scrubbing in the generator (FORMAL_KEYS).
+  - DIRECT (everyone else): short, casual, reply-optimized — founders and
+    engineers pattern-match formal mass-mail instantly and delete it.
+Fabrication rules apply to both.
 """
 
-# Shared tone rules injected into every template.
-# Built around the known tells of machine-written email (em dashes, rule-of-three
-# lists, "-ing" tack-ons, negative parallelisms, stock phrases): recipients who
-# read hundreds of emails pattern-match these instantly, and the email dies.
-_TONE_RULES = """\
+# Shared no-fabrication block — both registers.
+_NO_FABRICATION = """\
+DO NOT FABRICATE - this is the most important rule:
+- NEVER invent facts about the company: no made-up product names, funding rounds, metrics,
+  tech stack, team size, or "I saw you shipped X" unless X appears in the context below.
+- If you have no real detail about them, say something honest and direct instead.
+- A generic-but-true line beats an impressive-but-invented one. Recipients can tell instantly.
+- Never say a resume is attached unless the structure below explicitly tells you to."""
+
+# Rules for the FORMAL register (hiring inboxes, recruiters).
+_FORMAL_RULES = f"""\
+REGISTER - a professional job application, not a marketing email:
+- Clear, courteous, direct. First person. Plain professional language.
+- At most ONE opening courtesy line; every other sentence must carry a fact
+  (a role, a system, a number).
+- No exclamation marks. No emojis. No bold text. Use "-" for any dash.
+- Real numbers and real system names from the candidate's background only.
+
+{_NO_FABRICATION}
+
+FORMAT - write the BODY only:
+- Do NOT write any greeting ("Hi", "Dear ...") - added automatically.
+- Do NOT write any sign-off or signature - added automatically.
+- Start directly with the first sentence. Nothing before or after the body.
+- No paragraph longer than 3 sentences."""
+
+# Rules for the DIRECT register — built around the known tells of
+# machine-written email; recipients who read hundreds of emails pattern-match
+# these instantly, and the email dies.
+_TONE_RULES = f"""\
 VOICE - sound like a person, not a language model:
 - First person, contractions, plain verbs. "built" not "architected", "use" not "utilize".
 - Vary sentence length. A short sentence is fine. Follow it with a longer, ordinary one.
@@ -83,11 +116,7 @@ FORMAT - write the BODY only:
 - Start directly with the first sentence of the message. End on the CTA line. Nothing before or after.
 - No paragraph longer than 2 sentences.
 
-DO NOT FABRICATE - this is the most important rule:
-- NEVER invent facts about the company: no made-up product names, funding rounds, metrics,
-  tech stack, team size, or "I saw you shipped X" unless X appears in the context below.
-- If you have no real detail about them, say something honest and direct instead.
-- A generic-but-true line beats an impressive-but-invented one. Recipients can tell instantly.
+{_NO_FABRICATION}
 
 DON'T ORBIT ONE THING:
 - Don't build the whole email around a single detail repeated three ways.
@@ -98,31 +127,78 @@ DON'T ORBIT ONE THING:
 
 TEMPLATES: dict[str, str] = {
 
-    "recruiter": f"""\
-You are writing a cold email on behalf of a job seeker to a recruiter or talent acquisition person.
+    # ── FORMAL register ───────────────────────────────────────────────────────
 
-Recipient: {{name}}, {{designation}} at {{company}}
+    "hiring_inbox": f"""\
+You are writing a job application email to a company's hiring inbox
+(careers@ / jobs@) on behalf of a candidate. This is a shared team mailbox:
+address the team, never an individual, and make it easy to route to the
+right recruiter.
+
+Company: {{company}}
 How you found them: {{source_hint}}
 {{context_block}}
+Candidate: {{sender_name}}
 Candidate background:
 {{resume}}
 
-{_TONE_RULES}
+{_FORMAL_RULES}
 
-Length: 80–110 words. Recruiters see hundreds of emails — get to the point immediately.
-Structure: 1 line hook (tie strongest skill to their hiring context) → 2 lines of most relevant
-experience with real numbers → 1 soft CTA question.
-Do NOT open with "I'm a [title]" — that's what every email starts with. Lead with value.
-If the designation says "role inbox", you are writing to a shared team mailbox
-(careers@ / talent@), not a person: address the team ("you're hiring for…"),
-never an individual, and make the ask easy to forward to the right recruiter.
+Length: 90-130 words.
+Structure:
+1. One line: who the candidate is (name + current role) and the role type they
+   are applying for - the exact open role from the context if one is named,
+   otherwise a sensible role family from their background (e.g. "SDE/backend roles").
+2. Two or three lines: their most relevant experience for THIS company - real
+   systems and real numbers, drawn from the MOST RELEVANT list when present.
+3. One line: why this company (only from verified context; with no context, one
+   plain honest line about wanting to work on their kind of problems).
+4. Close: ask to be considered for relevant current or upcoming openings, and
+   thank them for their time.{{attachment_note}}
+
+Subject line: "<Role> Application - <Candidate Name>" using the real role and
+the candidate's real name (e.g. "SDE Application - Priya Nair"). If the
+candidate's name is unknown, just "<Role> Application".
 
 Return EXACTLY this format (no extra text):
 SUBJECT: [subject]
 
 BODY:
-[message body only — no greeting, no sign-off, no signature]
+[message body only - no greeting, no sign-off, no signature]
 """,
+
+    "recruiter": f"""\
+You are writing a professional email on behalf of a job seeker to a named
+recruiter / talent-acquisition person, asking about open roles.
+
+Recipient: {{name}}, {{designation}} at {{company}}
+How you found them: {{source_hint}}
+{{context_block}}
+Candidate: {{sender_name}}
+Candidate background:
+{{resume}}
+
+{_FORMAL_RULES}
+
+Length: 80-110 words. Recruiters scan; front-load the essentials.
+Structure:
+1. One line: asking about open roles that fit the candidate - name the exact
+   role from the context if one is present.
+2. Two lines: current role plus the most relevant skills/systems with real
+   numbers, drawn from the MOST RELEVANT list when present.
+3. Close: ask them to review the profile and share any suitable opening.{{attachment_note}}
+
+Subject line: "<Role> Opportunity - <Candidate Name>" (e.g. "SDE Opportunity -
+Priya Nair"). If the candidate's name is unknown, "<Role> opportunity inquiry".
+
+Return EXACTLY this format (no extra text):
+SUBJECT: [subject]
+
+BODY:
+[message body only - no greeting, no sign-off, no signature]
+""",
+
+    # ── DIRECT register ───────────────────────────────────────────────────────
 
     "engineering_leader": f"""\
 You are writing a cold email from a software engineer to a senior technical leader
@@ -201,7 +277,8 @@ Length: 60–85 words MAX. Founders are perpetually busy. Every single word must
 Open with something specific about what {{company}} is building or the problem they're solving —
 NOT generic praise ("I love what you're building" is useless noise to a founder).
 One sentence on why you specifically are relevant right now.
-One soft ask that respects their time.
+One soft ask that respects their time — best shapes: consideration for an
+engineering role, or "could you point me to the right person on your team?".
 Show you've done your homework without being sycophantic.
 
 Return EXACTLY this format (no extra text):
@@ -287,10 +364,15 @@ BODY:
 }
 
 
+# Templates in the FORMAL register — the generator skips casual-voice
+# scrubbing/scoring for these (fabrication checks still apply).
+FORMAL_KEYS = frozenset({"hiring_inbox", "recruiter"})
+
 # Acceptable body length per template (words), used by the deterministic
 # quality scorer. Slightly wider than the prose targets in the templates so a
 # draft a few words outside the ideal isn't needlessly regenerated.
 WORD_RANGES: dict[str, tuple[int, int]] = {
+    "hiring_inbox":       (70, 140),
     "recruiter":          (55, 115),
     "engineering_leader": (75, 145),
     "peer_engineer":      (35, 85),
@@ -304,6 +386,12 @@ WORD_RANGES: dict[str, tuple[int, int]] = {
 def get_designation_key(designation: str) -> str:
     """Map a designation string to the best email template."""
     d = designation.lower()
+
+    # Shared hiring inboxes (careers@/jobs@ role-inbox leads) get the formal
+    # application template — checked first since the designation also contains
+    # "talent"/"recruiting", which would otherwise match the recruiter branch.
+    if "role inbox" in d:
+        return "hiring_inbox"
 
     # C-suite founders always get the founder template
     if any(x in d for x in ("founder", "ceo", "coo", "co-founder", "owner",

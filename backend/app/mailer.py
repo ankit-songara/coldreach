@@ -3,6 +3,7 @@
 import smtplib
 import logging
 from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 
 log = logging.getLogger(__name__)
@@ -54,13 +55,29 @@ def auth_error_message(e: smtplib.SMTPAuthenticationError) -> str:
             f"Gmail said: {detail}")
 
 
-def _build_message(address: str, to: str, subject: str, body: str) -> MIMEMultipart:
-    msg = MIMEMultipart("alternative")
+def build_message(
+    address: str, to: str, subject: str, body: str,
+    attachment: tuple[str, bytes] | None = None,
+) -> MIMEMultipart:
+    """Build the outgoing message. `attachment` is (filename, data) — used to
+    attach the candidate's résumé on formal application emails."""
+    if attachment is None:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body, "plain"))
+    else:
+        msg = MIMEMultipart("mixed")
+        msg.attach(MIMEText(body, "plain"))
+        filename, data = attachment
+        part = MIMEApplication(data, Name=filename)
+        part["Content-Disposition"] = f'attachment; filename="{filename}"'
+        msg.attach(part)
     msg["From"]    = address
     msg["To"]      = to
     msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
     return msg
+
+
+_build_message = build_message  # internal alias for send_email below
 
 
 def send_email(address: str, app_password: str, to: str, subject: str, body: str) -> None:
