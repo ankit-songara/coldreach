@@ -15,7 +15,6 @@ from app.scrapers.base import BaseScraper
 from app.netguard import resolves_public
 
 EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
-_UA    = "ColdReach/1.0 (contact finder)"
 _PAGES = ("/contact", "/about", "/team", "/careers", "/about-us", "/company")
 
 # Image filenames and vendor domains that regex matches as "emails" — skip them.
@@ -56,6 +55,82 @@ _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
 
+# ── Shared page-fetch cache ───────────────────────────────────────────────────
+# A hunt schedules a company's careers-inbox lead (find_published_role_email)
+# and its identity-only lead (emails_from_company_pages) at the SAME time, and
+# both scan overlapping pages of the SAME domain — so without sharing, every
+# company domain is fetched twice per hunt. This memoizes page text per-process
+# and de-duplicates concurrent fetches of one URL, so the second lead reuses
+# the first's fetches and repeat hunts are near-instant.
+#
+# Failure semantics ("" = miss): failures get a SHORT TTL — a transient blip
+# must not poison a domain for the full hour — and a miss recorded under a
+# shorter timeout never binds a caller willing to wait longer (the careers
+# scan runs at 4s, the full page scan at 8s; a page that answers in 6s must
+# stay reachable to the 8s scan, exactly as it was before this cache existed).
+# Oversized bodies are served but not stored, bounding memory by bytes, not
+# just entry count. Keyed on the full URL, deterministic given the shared
+# browser UA + redirects.
+_PAGE_TTL      = 3600       # pages we actually got
+_PAGE_NEG_TTL  = 180        # failures: retryable in minutes, not an hour
+_PAGE_MAX_BODY = 1_000_000  # don't hold multi-MB pages in memory for an hour
+_page_cache: dict[str, tuple[float, str, float]] = {}   # url -> (stamp, text, timeout)
+_page_inflight: dict[str, tuple["asyncio.Future[str]", float]] = {}
+
+
+async def _cached_get(client: httpx.AsyncClient, url: str, timeout: float) -> str:
+    import time
+    hit = _page_cache.get(url)
+    if hit is not None:
+        stamp, text, fetched_with = hit
+        ttl = _PAGE_TTL if text else _PAGE_NEG_TTL
+        if time.monotonic() - stamp < ttl and (text or timeout <= fetched_with):
+            return text
+
+    entry = _page_inflight.get(url)
+    if entry is not None:
+        inflight, owner_timeout = entry
+        # shield(): an un-shielded `await fut` makes the SHARED future this
+        # task's cancellation target — cancelling one hunt's task would then
+        # cancel the future out from under every OTHER hunt awaiting this URL.
+        try:
+            text = await asyncio.shield(inflight)
+        except asyncio.CancelledError:
+            if inflight.cancelled():
+                text = ""   # the fetch itself died — treat as a miss
+            else:
+                raise       # WE were cancelled — propagate normally
+        if text or timeout <= owner_timeout:
+            return text
+        # Owner gave up sooner than we would — fall through and fetch ourselves.
+
+    loop = asyncio.get_running_loop()
+    fut: "asyncio.Future[str]" = loop.create_future()
+    _page_inflight[url] = (fut, timeout)
+    try:
+        try:
+            resp = await client.get(url)
+            text = resp.text if resp.is_success else ""
+        except Exception:   # CancelledError is BaseException — deliberately not caught
+            text = ""
+        if len(_page_cache) > 4096:
+            _page_cache.clear()
+        if len(text) <= _PAGE_MAX_BODY:
+            _page_cache[url] = (time.monotonic(), text, timeout)
+        if not fut.done():
+            fut.set_result(text)
+        return text
+    finally:
+        _page_inflight.pop(url, None)
+        if not fut.done():
+            # Cancelled mid-fetch. NEVER fut.cancel() here: piggybackers can
+            # belong to other, healthy hunts, and CancelledError sails past
+            # their `except Exception` guards, killing scans that should have
+            # survived. Hand them a miss instead — nothing is cached for this
+            # URL, so it stays immediately retryable.
+            fut.set_result("")
+
+
 async def find_published_role_email(domain: str, timeout: int = 4) -> str | None:
     """
     Scan the highest-yield pages (/careers, /jobs, /contact, /contact-us,
@@ -85,14 +160,10 @@ async def find_published_role_email(domain: str, timeout: int = 4) -> str | None
             timeout=timeout, follow_redirects=True,
             headers={"User-Agent": _BROWSER_UA},
         ) as client:
-            async def _fetch(path: str) -> str:
-                try:
-                    resp = await client.get(f"https://{domain}{path}")
-                    return resp.text if resp.is_success else ""
-                except Exception:
-                    return ""
-
-            texts = await asyncio.gather(*(_fetch(p) for p in _ROLE_EMAIL_PAGES))
+            texts = await asyncio.gather(
+                *(_cached_get(client, f"https://{domain}{p}", timeout)
+                  for p in _ROLE_EMAIL_PAGES)
+            )
     except Exception:
         return None
 
@@ -242,19 +313,19 @@ async def _scrape_scrapling(domain: str, timeout: int) -> list[str]:
 
 
 async def _scrape_httpx(domain: str, timeout: int) -> list[str]:
+    # Browser UA (not the bot UA) both dodges 403 walls and matches the UA
+    # find_published_role_email uses, so the two share _cached_get entries for
+    # the pages they scan in common (/careers, /contact).
     found: list[str] = []
     try:
         async with httpx.AsyncClient(
             timeout=timeout, follow_redirects=True,
-            headers={"User-Agent": _UA},
+            headers={"User-Agent": _BROWSER_UA},
         ) as client:
             for path in _PAGES:
-                try:
-                    resp = await client.get(f"https://{domain}{path}")
-                    if resp.is_success:
-                        found.extend(EMAIL_RE.findall(resp.text))
-                except Exception:
-                    pass
+                text = await _cached_get(client, f"https://{domain}{path}", timeout)
+                if text:
+                    found.extend(EMAIL_RE.findall(text))
                 if len(found) >= 12:
                     break
     except Exception:

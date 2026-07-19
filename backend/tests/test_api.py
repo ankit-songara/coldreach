@@ -1251,7 +1251,9 @@ class TestHuntSuggestions:
         import httpx
         from app.api import hunt as hunt_mod
 
-        hunt_mod._suggest_cache.update(at=0.0, companies=[])
+        # -inf = "definitely expired". 0.0 only reads as expired when the
+        # machine has been up longer than the TTL (monotonic() is since-boot).
+        hunt_mod._suggest_cache.update(at=float("-inf"), companies=[])
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json=[
@@ -1324,3 +1326,146 @@ class TestGroundedStatusSurvivesVerification:
         assert acme["email_status"] == "valid", (
             "grounded lead's 'valid' status must survive the cheap-verifier merge"
         )
+
+
+class TestSharedPageFetchCache:
+    """The page-fetch cache halves per-hunt HTTP work: a company scheduled as
+    BOTH a careers-inbox lead and an identity-only lead (which happens for
+    every company by construction) must fetch each URL once, not twice."""
+
+    def test_same_url_fetched_once_across_both_scanners(self, monkeypatch):
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        hits: dict[str, int] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            hits[url] = hits.get(url, 0) + 1
+            # /careers is the ONE page both scanners fetch in common.
+            if request.url.path == "/careers":
+                return httpx.Response(200, text="jobs are at careers@acme.com")
+            return httpx.Response(404)
+
+        monkeypatch.setattr(web_mod, "resolves_public", lambda d: True)
+        # Scrapling (headless) is excluded from the Vercel build, so production
+        # uses the httpx path — force that path here too (and keep the test fast).
+        async def no_scrapling(domain, timeout):
+            return []
+        monkeypatch.setattr(web_mod, "_scrape_scrapling", no_scrapling)
+        real_client = httpx.AsyncClient
+        def fake_async_client(*a, **kw):
+            for k in ("timeout", "follow_redirects", "headers"):
+                kw.pop(k, None)
+            return real_client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake_async_client)
+
+        async def run():
+            # Careers-inbox scan and the full page scan for the SAME domain,
+            # concurrently — exactly how a hunt schedules them.
+            role, pages = await asyncio.gather(
+                web_mod.find_published_role_email("acme.com"),
+                web_mod.emails_from_company_pages("acme.com"),
+            )
+            return role, pages
+
+        role, pages = asyncio.run(run())
+        assert role == "careers@acme.com"
+        assert "careers@acme.com" in pages
+        # The shared, in-flight-deduped cache means /careers is fetched exactly
+        # once even though two scanners requested it concurrently.
+        careers_hits = hits.get("https://acme.com/careers", 0)
+        assert careers_hits == 1, f"/careers fetched {careers_hits}x, expected 1 (cache/inflight dedup failed)"
+
+    def test_owner_cancellation_hands_piggybackers_a_miss(self):
+        """A hunt's resolve budget expiring cancels its fetch tasks mid-flight.
+        A task from ANOTHER hunt piggybacking on the same URL must receive a
+        plain miss ("") — never a CancelledError, which bypasses `except
+        Exception` guards and would tear down a healthy scan."""
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        async def run():
+            started = asyncio.Event()
+
+            async def handler(request: httpx.Request) -> httpx.Response:
+                started.set()
+                await asyncio.sleep(30)   # hold the fetch open until cancelled
+                return httpx.Response(200, text="never reached")
+
+            client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            url = "https://acme.com/careers"
+            owner = asyncio.create_task(web_mod._cached_get(client, url, 4))
+            await started.wait()
+            piggy = asyncio.create_task(web_mod._cached_get(client, url, 4))
+            await asyncio.sleep(0.01)     # let piggy park on the shared future
+            owner.cancel()
+            result = await asyncio.wait_for(piggy, 5)
+            assert result == ""           # a miss — not an exception
+            assert owner.cancelled()
+            # Nothing cached: the URL stays immediately retryable.
+            assert url not in web_mod._page_cache
+            await client.aclose()
+
+        asyncio.run(run())
+
+    def test_piggybacker_cancellation_leaves_owner_and_others_intact(self):
+        """One hunt giving up must not cancel the SHARED future other hunts
+        are awaiting (the un-shielded-await bug: Task.cancel() cancels the
+        future the task is parked on)."""
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        async def run():
+            started = asyncio.Event()
+            release = asyncio.Event()
+
+            async def handler(request: httpx.Request) -> httpx.Response:
+                started.set()
+                await release.wait()
+                return httpx.Response(200, text="reach us at careers@acme.com")
+
+            client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            url = "https://acme.com/careers"
+            owner  = asyncio.create_task(web_mod._cached_get(client, url, 4))
+            await started.wait()
+            piggy1 = asyncio.create_task(web_mod._cached_get(client, url, 4))
+            piggy2 = asyncio.create_task(web_mod._cached_get(client, url, 4))
+            await asyncio.sleep(0.01)
+            piggy1.cancel()               # one hunt gives up…
+            await asyncio.sleep(0.01)
+            release.set()                 # …the fetch still completes normally
+            assert await asyncio.wait_for(owner, 5)  == "reach us at careers@acme.com"
+            assert await asyncio.wait_for(piggy2, 5) == "reach us at careers@acme.com"
+            assert piggy1.cancelled()
+            await client.aclose()
+
+        asyncio.run(run())
+
+    def test_short_timeout_miss_does_not_bind_longer_timeout_caller(self):
+        """A page that failed under the careers scan's 4s budget must stay
+        reachable to the 8s page scan (pre-cache behavior for slow pages),
+        while same-budget callers reuse the miss within its short TTL."""
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        async def run():
+            failing = httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda r: httpx.Response(503)))
+            working = httpx.AsyncClient(
+                transport=httpx.MockTransport(
+                    lambda r: httpx.Response(200, text="hi careers@acme.com")))
+            url = "https://acme.com/careers"
+            assert await web_mod._cached_get(failing, url, 4) == ""   # miss @4s
+            # Same budget inside the negative TTL: miss is reused, no refetch.
+            assert await web_mod._cached_get(working, url, 4) == ""
+            # Longer budget: the miss doesn't bind — refetch succeeds.
+            assert "careers@acme.com" in await web_mod._cached_get(working, url, 8)
+            await failing.aclose()
+            await working.aclose()
+
+        asyncio.run(run())

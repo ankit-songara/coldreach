@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, createContext, type ReactNode } from 'react'
+import { useEffect, useState, useRef, createContext, lazy, Suspense, Component, type ReactNode } from 'react'
 import { LogOut, Send as SendIcon, ChevronDown, Home, Settings, Search, Wand2, Sun, Moon, Monitor } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useStore } from './store'
@@ -9,15 +9,59 @@ import { useAutomationConfig } from './hooks/useAutomationConfig'
 import { useAutoReplyCheck } from './hooks/useAutoReplyCheck'
 import { getStoredTheme, cycleTheme, type Theme } from './lib/theme'
 import Auth    from './components/Auth'
-import Setup   from './components/Setup'
-import Hunt    from './components/Hunt'
-import Compose from './components/Compose'
-import Send    from './components/Send'
-import Today   from './components/Today'
+// Tab views are code-split: each loads its own chunk on first visit (paired
+// with the mountedTabs gating below), keeping the initial bundle to the shell
+// + whichever tab opens first. Auth stays eager — it's the pre-login paint.
+const Setup   = lazy(() => import('./components/Setup'))
+const Hunt    = lazy(() => import('./components/Hunt'))
+const Compose = lazy(() => import('./components/Compose'))
+const Send    = lazy(() => import('./components/Send'))
+const Today   = lazy(() => import('./components/Today'))
 
 type TabId = 'today' | 'setup' | 'hunt' | 'compose' | 'send'
 
 export const ResumeReadyCtx = createContext(false)
+
+// Brief fallback shown while a lazily-loaded tab chunk downloads on first visit.
+function TabLoading() {
+  return (
+    <div className="flex items-center justify-center py-20" aria-live="polite" aria-busy="true">
+      <div
+        className="w-6 h-6 rounded-full animate-spin"
+        style={{ border: '2px solid var(--border)', borderTopColor: 'var(--accent)' }}
+      />
+    </div>
+  )
+}
+
+// Catches a tab chunk that fails to load — which happens whenever a new deploy
+// goes live while the app is open (Vercel stops serving the old hashed assets,
+// so the first visit to a not-yet-loaded tab 404s). Without this boundary the
+// rejection climbs past Suspense to the root ErrorBoundary and unmounts the
+// WHOLE app, killing in-flight work in other tabs. Scoped per-tab, the other
+// tabs keep running and the user gets a one-click refresh.
+class TabErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch(error: unknown) { console.error('ColdReach tab load error:', error) }
+  render() {
+    if (!this.state.failed) return this.props.children
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+          ColdReach was updated — refresh to load the newest version.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-5 py-2 rounded-full text-sm font-bold"
+          style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}
+        >
+          Refresh
+        </button>
+      </div>
+    )
+  }
+}
 
 // shortLabel is for the mobile bottom tab bar only — five equal-width flex
 // columns on a ~375px screen give each label ~75px, and "Email Generation"
@@ -287,7 +331,11 @@ export default function App() {
                 // display:none (not unmount) keeps the tab's state and any in-flight
                 // work alive while it's in the background.
                 <div key={tab.id} style={{ display: active ? 'block' : 'none' }} aria-hidden={!active}>
-                  {views[tab.id]}
+                  <TabErrorBoundary>
+                    <Suspense fallback={<TabLoading />}>
+                      {views[tab.id]}
+                    </Suspense>
+                  </TabErrorBoundary>
                 </div>
               )
             })

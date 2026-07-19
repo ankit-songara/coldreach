@@ -445,7 +445,10 @@ def _learn_companies(db: Session, results_per_scraper: list) -> None:
 # module-level so the chips cost one RemoteOK fetch per process per TTL, not
 # one per page load.
 _SUGGEST_TTL_SECONDS = 900
-_suggest_cache: dict = {"at": 0.0, "companies": []}
+# "at" starts at -inf, NOT 0.0: time.monotonic() is time-since-boot, so on a
+# freshly booted host (or a cold-started serverless microVM) 0.0 would read as
+# "fetched < TTL ago" and the first request would serve [] without fetching.
+_suggest_cache: dict = {"at": float("-inf"), "companies": []}
 
 
 @router.get("/suggestions")
@@ -506,7 +509,9 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     """
     # Rate limit: one hunt per user per cooldown window.
     now = time.monotonic()
-    last = _last_hunt.get(user.id, 0)
+    # -inf, not 0: monotonic() is time-since-boot, so 0 would 429 a user's very
+    # first hunt during the first cooldown-window after a (micro-VM) boot.
+    last = _last_hunt.get(user.id, float("-inf"))
     if now - last < _HUNT_COOLDOWN_SECONDS:
         wait = int(_HUNT_COOLDOWN_SECONDS - (now - last)) + 1
         raise HTTPException(429, f"Please wait {wait}s before hunting again.")

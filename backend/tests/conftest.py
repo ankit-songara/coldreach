@@ -102,9 +102,14 @@ def auth_client(client):
 
 @pytest.fixture(autouse=True)
 def _clear_grounding_cache():
-    """The role-email grounding cache is module-level (per-process) — clear it
-    so tests that reuse a domain with different mock responses stay isolated."""
+    """The role-email grounding and page-fetch caches are module-level
+    (per-process) — clear them so tests that reuse a domain with different
+    mock responses stay isolated."""
     from app.scrapers import web
     web._ground_cache.clear()
+    web._page_cache.clear()
+    web._page_inflight.clear()
     yield
     web._ground_cache.clear()
+    web._page_cache.clear()
+    web._page_inflight.clear()
