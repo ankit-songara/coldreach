@@ -1,0 +1,22 @@
+name: Keep backend warm
+
+# Vercel Python cold starts measured at ~18s (imports + Supabase round-trips
+# at boot) while warm requests take ~0.5s. A ping every 10 minutes keeps the
+# function's instance alive so real users effectively never pay the cold tax.
+# GitHub cron is best-effort (may drift a few minutes) — good enough.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /api/health
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://coldreach-psi.vercel.app/api/health)
+          echo "health returned $code"
+          test "$code" = "200"
