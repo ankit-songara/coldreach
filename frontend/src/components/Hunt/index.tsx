@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Search, Trash2, Download, ShieldCheck, CheckSquare, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { useContacts } from '../../hooks/useContacts'
 import { verifyApi } from '../../api/verify'
+import { huntApi } from '../../api/hunt'
 import ContactCard from './ContactCard'
 import ConfirmDialog from '../shared/ConfirmDialog'
 import { STATUS_META, type ContactStatus } from '../../types'
@@ -53,14 +54,17 @@ const ROLE_OPTIONS: Array<[value: string, label: string]> = [
   ['data',         'Data / ML'],
 ]
 
-function buildChips(resume: string): string[] {
+function buildChips(resume: string, hiringCompanies: string[]): string[] {
   const matched = SKILL_QUERIES.filter(([re]) => re.test(resume)).map(([, q]) => q)
   // Shuffle the general pool so returning users see variety
   const extras = [...GENERAL_QUERIES].sort(() => Math.random() - 0.5)
   const chips: string[] = []
-  for (const q of [...matched, ...extras]) {
+  // Live currently-hiring companies first (clicking hunts that company
+  // directly — the highest-yield query type), then resume-personalised roles.
+  const companies = [...hiringCompanies].sort(() => Math.random() - 0.5).slice(0, 3)
+  for (const q of [...companies, ...matched, ...extras]) {
     if (!chips.includes(q)) chips.push(q)
-    if (chips.length >= 6) break
+    if (chips.length >= 7) break
   }
   return chips
 }
@@ -111,8 +115,22 @@ export default function Hunt() {
   } = useStore()
   const qc = useQueryClient()
 
-  // Suggestions personalised from the résumé, stable for this visit.
-  const chips = useMemo(() => buildChips(resume), [resume])
+  // Live "who's hiring right now" companies for the suggestion chips —
+  // cached server-side, refreshed at most every 15 min.
+  const { data: suggestions } = useQuery({
+    queryKey: ['hunt-suggestions'],
+    queryFn: huntApi.suggestions,
+    staleTime: 15 * 60_000,
+    retry: false,
+  })
+
+  // Suggestions: live hiring companies + résumé-personalised role queries.
+  const hiringCompanies = suggestions?.hiring_companies ?? []
+  const chips = useMemo(
+    () => buildChips(resume, hiringCompanies),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [resume, hiringCompanies.join('|')],
+  )
 
   const handleVerify = async () => {
     setVerifying(true)

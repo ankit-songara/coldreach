@@ -34,8 +34,9 @@ class TestEmailValidation:
     @pytest.mark.parametrize("email,expected", [
         ("ankit@razorpay.com",          True),
         ("founder@startup.io",          True),
-        ("jobs@company.com",            True),  # valid for outreach
+        ("jobs@stripe.com",             True),  # role inbox — valid for outreach
         ("hr@startup.com",              True),
+        ("jobs@company.com",            False),  # company.com is a placeholder junk domain
         ("noreply@github.com",          False),
         ("mailer-daemon@server.com",    False),
         ("bounce@sendgrid.net",         False),

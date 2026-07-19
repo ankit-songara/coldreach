@@ -31,7 +31,10 @@ from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
 )
-from app.scrapers.web import emails_from_company_pages
+from app.scrapers.web import (
+    emails_from_company_pages, find_published_role_email,
+    search_role_email_on_web, HIRING_PREFIXES,
+)
 from app.scrapers import directory
 from app.scrapers.directory import looks_like_company
 from app.scrapers.resolver import (
@@ -51,7 +54,7 @@ _RESOLVE_BUDGET_SECONDS = 15 if os.environ.get("VERCEL") else 45
 # "careers@" and "jobs@" are the most universally standard convention across
 # company sizes and countries — tried first. "talent@"/"hr@" skew larger/tech-
 # forward; "people@"/"team@" skew startup-specific and are the least reliable.
-_ROLE_ADDRESSES = ("careers", "jobs", "talent", "hr", "recruiting", "people", "team")
+_ROLE_ADDRESSES = ("careers", "jobs", "hiring", "hr", "talent", "recruiting", "recruitment", "people", "team")
 
 # Minimum confidence to persist a resolver-generated email. Direct scraper emails
 # (confidence=0) are always kept; only resolver outputs are gated.
@@ -96,9 +99,12 @@ def _company_from_email(email: str) -> str:
 
 
 def _desig_priority(designation: str) -> int:
-    """Sort key. P0: careers/role inbox = 0. P1: Founder/CxO = 1, HR/TA = 2,
-    Engineer = 3, other = 4."""
+    """Sort key. P0: grounded role inbox = 0. P1: Founder/CxO = 1, HR/TA = 2,
+    Engineer = 3, other = 4. Unverified guesses = 5 (below every real lead —
+    only reached if nothing else was found for that company)."""
     d = designation.lower()
+    if "unverified guess" in d:
+        return 5
     if "role inbox" in d:
         return 0
     if any(k in d for k in ("founder", "co-founder", "ceo", "cto", "chief", "founding")):
@@ -330,11 +336,37 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
             out["email_status"] = "risky"   # deliverable but unprovable
         return out
 
-    # No name → try the company's own pages for a real, named person — except
-    # for P0 careers-inbox leads, which must stay fast: a corporate site's
-    # pages can consume the entire serverless resolve budget before the cheap
-    # role-inbox check below ever runs.
-    if raw.get("source") != "careers-inbox":
+    # P0 careers-inbox leads: try to GROUND the address in real evidence before
+    # ever falling back to a blind guess — a guessed "careers@domain" bounces
+    # whenever the company actually uses hr@/jobs@/hiring@/etc instead.
+    if raw.get("source") == "careers-inbox":
+        published = await find_published_role_email(domain)
+        if not published:
+            # Not on the company's own pages (JS-rendered site, bot wall) —
+            # try the wider web: job posts, directories, press pages.
+            published = await search_role_email_on_web(domain, raw.get("company") or "")
+        if published:
+            prefix = published.split("@", 1)[0]
+            # A dedicated hiring inbox beats a general company inbox, but both
+            # are REAL published addresses — either way this lead can't be the
+            # kind of blind guess that bounces.
+            if prefix in HIRING_PREFIXES:
+                desig, conf = "Talent/Recruiting (role inbox)", 70
+            else:
+                desig, conf = "Company Inbox (role inbox)", 60
+            return {**raw, "email": published, "name": prefix.title(),
+                    "designation": desig,
+                    "confidence": conf, "email_status": "valid", "_domain": None}
+
+        if settings.hunter_api_key:
+            generic = await HunterEnricher(settings.hunter_api_key).search_generic(domain)
+            if generic:
+                prefix = generic.split("@", 1)[0]
+                return {**raw, "email": generic, "name": prefix.title(),
+                        "designation": "Talent/Recruiting (role inbox)",
+                        "confidence": 65, "email_status": "valid", "_domain": None}
+    else:
+        # No name → try the company's own pages for a real, named person.
         page_emails = await emails_from_company_pages(domain)
         personal = _personal_email(page_emails, domain)
         if personal:
@@ -351,12 +383,14 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
         return None
 
     def _optimistic_guess() -> dict:
-        # Unconfirmed but standard company convention (careers@ etc.) — a real
-        # deliverable lead. Confidence must clear _MIN_RESOLVER_CONFIDENCE or
-        # the downstream gate silently drops it.
+        # Nothing grounded this address in real evidence — an unverified
+        # guess at standard company convention. Labeled distinctly so it's
+        # ranked below every real lead (_desig_priority) and excluded from
+        # default bulk-send (Send.tsx). Confidence must still clear
+        # _MIN_RESOLVER_CONFIDENCE or the downstream gate silently drops it.
         prefix = _ROLE_ADDRESSES[0]
         return {**raw, "email": f"{prefix}@{domain}", "name": prefix.title(),
-                "designation": "Talent/Recruiting (role inbox)",
+                "designation": "Talent/Recruiting (unverified guess)",
                 "confidence": 40, "email_status": "risky", "_domain": None}
 
     if await cache.catch_all(domain, mx):
@@ -407,6 +441,51 @@ def _learn_companies(db: Session, results_per_scraper: list) -> None:
                 log.info(f"Hunt: learned new company {r.get('company') or slug} ({ats}/{slug})")
             except Exception:
                 db.rollback()
+
+
+# ── Live "who's hiring" suggestions ──────────────────────────────────────────
+# Company names with active engineering postings right now, for the Hunt page's
+# suggestion chips — clicking one runs a company hunt directly. Cached
+# module-level so the chips cost one RemoteOK fetch per process per TTL, not
+# one per page load.
+_SUGGEST_TTL_SECONDS = 900
+_suggest_cache: dict = {"at": 0.0, "companies": []}
+
+
+@router.get("/suggestions")
+async def hunt_suggestions(user: User = Depends(get_current_user)):
+    now = time.monotonic()
+    if now - _suggest_cache["at"] > _SUGGEST_TTL_SECONDS:
+        companies: list[str] = []
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(
+                timeout=8, follow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0"},
+            ) as client:
+                r = await client.get("https://remoteok.com/api")
+                if r.is_success:
+                    seen: set[str] = set()
+                    for j in r.json():
+                        if not isinstance(j, dict):
+                            continue
+                        comp = (j.get("company") or "").strip()
+                        pos  = (j.get("position") or "").lower()
+                        # Only engineering-ish postings, plausible company names.
+                        if (comp and comp.lower() not in seen and 2 < len(comp) <= 30
+                                and any(k in pos for k in ("engineer", "developer", "sde", "devops", "backend", "frontend", "full"))):
+                            seen.add(comp.lower())
+                            companies.append(comp)
+                        if len(companies) >= 12:
+                            break
+        except Exception as e:
+            log.debug(f"Suggestions: RemoteOK fetch failed: {e}")
+        # Serve stale data over nothing if the refresh failed.
+        if companies:
+            _suggest_cache.update(at=now, companies=companies)
+        else:
+            _suggest_cache["at"] = now - _SUGGEST_TTL_SECONDS + 60  # retry in 1 min
+    return {"hiring_companies": _suggest_cache["companies"]}
 
 
 @router.post("", response_model=HuntResult)
@@ -569,14 +648,17 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
 
     # ── Resolve identity-only leads — concurrency-limited, with a time budget so
     #    a blocked port 25 can't make the hunt hang. ─────────────────────────────
-    semaphore = asyncio.Semaphore(6)
+    # Network-bound work (DNS, 2 small page fetches) — wide enough that all P0
+    # careers leads clear the budget now that each one costs a grounding scan.
+    semaphore = asyncio.Semaphore(10)
 
     async def guarded_resolve(raw: dict) -> dict | None:
         async with semaphore:
             return await _resolve_domain_contact(raw, cache)
 
-    # P0 careers leads first — they're cheap (MX lookup, no page-scrape) and are
-    # the hunt's primary output, so they must land inside the time budget.
+    # P0 careers leads first — they're the hunt's primary output and their
+    # grounding scan is capped tight (2 concurrent fetches, ~4s), so they
+    # must land inside the time budget.
     tasks = [asyncio.create_task(guarded_resolve(r))
              for r in careers_leads + needs_resolve[:40]]
     if tasks:
@@ -641,10 +723,12 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             dropped_invalid += 1
             continue
         preset = r.get("email_status")
-        # Honour an upstream "risky" set by the resolver (catch-all domain, role inbox)
-        # regardless of what the cheap verifier returns — "unknown" is the common result
-        # when there's no Hunter key, and must not silently overwrite "risky".
-        r["email_status"] = "risky" if preset == "risky" else verdict
+        # Honour an upstream "risky" or "valid" set by the resolver (catch-all
+        # domain / unverified guess = risky; a grounded, actually-published
+        # address = valid) regardless of what the cheap verifier returns —
+        # "unknown" is the common result when there's no Hunter key, and must
+        # not silently overwrite either.
+        r["email_status"] = preset if preset in ("risky", "valid") else verdict
         verified.append(r)
     with_email = verified
     if dropped_invalid:

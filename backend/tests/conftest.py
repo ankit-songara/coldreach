@@ -98,3 +98,13 @@ def auth_client(client):
     assert r.status_code == 200, r.text
     client.headers.update({"Authorization": f"Bearer {r.json()['token']}"})
     return client
+
+
+@pytest.fixture(autouse=True)
+def _clear_grounding_cache():
+    """The role-email grounding cache is module-level (per-process) — clear it
+    so tests that reuse a domain with different mock responses stay isolated."""
+    from app.scrapers import web
+    web._ground_cache.clear()
+    yield
+    web._ground_cache.clear()

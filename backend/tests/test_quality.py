@@ -116,8 +116,15 @@ class TestHNJobsExtraction:
 class TestFirstName:
     def test_real_names(self):
         assert _first_name("Sarah Chen") == "Sarah"
-        assert _first_name("john.doe") == "John"
         assert _first_name("PRIYA") == "Priya"
+
+    def test_placeholder_names_rejected(self):
+        # "john doe" is a canonical test fixture (TEST_IDENTITY_NAMES) and
+        # dotted email-style strings aren't display names — never greet with
+        # either. (This used to expect "John"; the plausibility check
+        # deliberately tightened.)
+        assert _first_name("john.doe") == ""
+        assert _first_name("John Doe") == ""
 
     def test_role_words_and_usernames_rejected(self):
         for bad in ("Hr", "Talent", "Jobs", "Careers", "jsmith84", "Contact",
@@ -235,7 +242,11 @@ class TestDesignationRouting:
         ("Founder / Hiring",    "founder"),
         ("CEO",                 "founder"),
         ("Recruiter",           "recruiter"),
-        ("Talent/Recruiting (role inbox)", "recruiter"),
+        # Shared inboxes (grounded or guessed) get the formal application
+        # template, not the person-to-person recruiter one.
+        ("Talent/Recruiting (role inbox)",        "hiring_inbox"),
+        ("Company Inbox (role inbox)",            "hiring_inbox"),
+        ("Talent/Recruiting (unverified guess)",  "hiring_inbox"),
         ("Product Manager",     "product"),
         ("VP Sales",            "business_leader"),
     ])

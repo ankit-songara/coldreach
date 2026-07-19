@@ -44,6 +44,23 @@ async def lifespan(_: FastAPI):
     finally:
         _db.close()
 
+    # One-time cleanup: hunts before the grounding fix persisted blind
+    # careers@ guesses labeled as real role inboxes ("risky" status), which
+    # bulk-send happily emailed — causing real bounces. Remove the ones that
+    # were never emailed; anything already actioned keeps its history.
+    # Idempotent: post-fix leads are either "valid" (grounded) or labeled
+    # "(unverified guess)", so this matcher can never touch them.
+    from app.db.migrations import purge_unverified_role_inbox_guesses
+    _db = SessionLocal()
+    try:
+        purged = purge_unverified_role_inbox_guesses(_db)
+        if purged:
+            log.info(f"✓ Cleanup: removed {purged} pre-fix guessed role-inbox contacts")
+    except Exception as e:
+        log.warning(f"Guessed-contact cleanup skipped: {e}")
+    finally:
+        _db.close()
+
     try:
         provider, model = await detect_provider()
         log.info(f"✓ LLM ready: {provider}/{model}")

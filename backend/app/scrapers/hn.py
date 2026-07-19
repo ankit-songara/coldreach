@@ -334,7 +334,9 @@ def _extract_pay(text: str) -> str:
         return f"${lo_n // 1000}k-${hi_n // 1000}k"
     if nums:
         n = int(nums[0].replace(",", ""))
-        return f"${n if n > 999 else n}k"
+        if n > 999:
+            n //= 1000
+        return f"${n}k"
     return ""
 
 

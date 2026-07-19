@@ -125,22 +125,6 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
       <div className="text-xs mb-1" style={{ color: generic ? 'var(--text)' : 'var(--text-muted)', fontWeight: generic ? 600 : 400 }}>🏢 {c.company}</div>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="text-xs font-mono truncate" style={{ color: generic ? 'var(--text-muted)' : 'var(--text-dim)' }}>{c.email}</span>
-        {c.email_status && c.email_status !== 'unknown' && (
-          <span
-            className="badge flex-shrink-0"
-            style={{
-              fontSize: '8px', fontWeight: 700,
-              ...(c.email_status === 'valid'
-                ? { background: 'rgba(63,143,67,0.14)', color: '#3f8f43' }
-                : c.email_status === 'risky'
-                ? { background: 'rgba(196,125,30,0.14)', color: '#c47d1e' }
-                : { background: 'rgba(210,72,58,0.14)', color: '#d2483a' }),
-            }}
-            title={`Email verification: ${c.email_status}`}
-          >
-            {c.email_status === 'valid' ? '✓' : c.email_status === 'risky' ? '~' : '✕'} {c.email_status}
-          </span>
-        )}
         {(c.confidence ?? 0) > 0 && (
           <span
             className="badge flex-shrink-0"

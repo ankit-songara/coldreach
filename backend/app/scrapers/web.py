@@ -36,6 +36,167 @@ def _clean(raw: list[str]) -> list[str]:
     return out
 
 
+# Standard hiring-inbox local parts, from real-world usage across startups,
+# Indian IT firms, and global companies -- the same prefixes a blind guess
+# picks from, but here used to RECOGNIZE a real one on the company's own page
+# instead of inventing one.
+HIRING_PREFIXES = frozenset({
+    "careers", "career", "hr", "jobs", "hiring", "recruitment", "recruiting",
+    "talent", "ta", "people",
+})
+# A published general inbox on the company's own site (contact@, hello@ …) is a
+# REAL deliverable address — a much better P0 lead than a guessed careers@ that
+# bounces. Excludes support@ (ticket systems) and sales@ (wrong audience).
+GENERAL_PREFIXES = frozenset({"contact", "hello", "info", "mail", "office", "team", "admin"})
+_ROLE_EMAIL_PAGES = ("/careers", "/jobs", "/contact", "/contact-us", "")
+# Some corporate sites 403 obvious bot user-agents (observed live on
+# controlf5.in) — this scanner needs a browser-like UA to see the same page a
+# candidate would.
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+
+async def find_published_role_email(domain: str, timeout: int = 4) -> str | None:
+    """
+    Scan the highest-yield pages (/careers, /jobs, /contact, /contact-us,
+    homepage) for an address the company actually PUBLISHES at its own domain:
+    a hiring-inbox prefix first (careers@, hr@, jobs@, hiring@ …), else a
+    general company inbox (contact@, hello@, info@ …).
+
+    A published address is real evidence, not a guess -- this exists
+    specifically so the P0 hiring-inbox lead in hunt.py is grounded whenever
+    possible instead of blind-guessing "careers@domain" for every company
+    (which bounces whenever the company actually uses a different local part).
+
+    Pages are fetched CONCURRENTLY with a short per-request timeout, not the
+    sequential 6-page emails_from_company_pages() scan -- this runs on the P0
+    lead for EVERY company in a hunt and must fit many leads inside the shared
+    resolve time budget (15s total on Vercel).
+    """
+    cached, value = _cache_get("pages", domain)
+    if cached:
+        return value
+
+    if not await asyncio.to_thread(resolves_public, domain):
+        return None
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True,
+            headers={"User-Agent": _BROWSER_UA},
+        ) as client:
+            async def _fetch(path: str) -> str:
+                try:
+                    resp = await client.get(f"https://{domain}{path}")
+                    return resp.text if resp.is_success else ""
+                except Exception:
+                    return ""
+
+            texts = await asyncio.gather(*(_fetch(p) for p in _ROLE_EMAIL_PAGES))
+    except Exception:
+        return None
+
+    found: list[str] = []
+    for text in texts:
+        found.extend(EMAIL_RE.findall(text))
+    cleaned = _clean(found)
+
+    general: str | None = None
+    result: str | None = None
+    for email in cleaned:
+        local, _, mail_domain = email.partition("@")
+        if mail_domain != domain:
+            continue
+        if local in HIRING_PREFIXES:
+            result = email
+            break
+        if general is None and local in GENERAL_PREFIXES:
+            general = email
+    result = result or general
+    _cache_put("pages", domain, result)
+    return result
+
+
+# DDG blocks bursts — a small concurrency cap keeps a 30-lead hunt from
+# tripping rate limits (individual failures degrade to None, never raise).
+_WEB_SEARCH_SEM = asyncio.Semaphore(3)
+
+# Per-domain result cache (hits AND misses) so repeat hunts and multi-source
+# leads for the same company never re-scan or re-search within a process
+# lifetime — matters doubly for DDG, which rate-limits repeated queries.
+_GROUND_TTL = 6 * 3600
+_ground_cache: dict[str, tuple[float, str | None]] = {}
+
+
+def _cache_get(kind: str, domain: str) -> tuple[bool, str | None]:
+    import time
+    hit = _ground_cache.get(f"{kind}:{domain}")
+    if hit and time.monotonic() - hit[0] < _GROUND_TTL:
+        return True, hit[1]
+    return False, None
+
+
+def _cache_put(kind: str, domain: str, value: str | None) -> None:
+    import time
+    if len(_ground_cache) > 2048:
+        _ground_cache.clear()
+    _ground_cache[f"{kind}:{domain}"] = (time.monotonic(), value)
+
+
+async def search_role_email_on_web(domain: str, company: str = "",
+                                   timeout: int = 6) -> str | None:
+    """
+    Web-search grounding: query DuckDuckGo for the company's published
+    careers/HR email and extract addresses at the target domain from the
+    result snippets. Catches addresses published on third-party sites (job
+    posts, directories, press pages) that the company's own site never
+    renders server-side — live-verified to surface careers@talkcharge.com
+    and hiring@astrotalk.com where the direct page scan finds nothing.
+
+    Same trust bar as the page scan: only addresses actually seen in the
+    wild, hiring prefixes first, then a general company inbox.
+    """
+    cached, value = _cache_get("search", domain)
+    if cached:
+        return value
+
+    name = company.strip() or domain.rsplit(".", 1)[0].replace("-", " ").title()
+    domain_re = re.compile(
+        r"[A-Za-z0-9._%+\-]+@" + re.escape(domain), re.IGNORECASE,
+    )
+    async with _WEB_SEARCH_SEM:
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout, follow_redirects=True,
+                headers={"User-Agent": _BROWSER_UA},
+            ) as client:
+                resp = await client.get(
+                    "https://html.duckduckgo.com/html/",
+                    params={"q": f"{name} careers email hr contact"},
+                )
+                # DDG signals rate-limiting with a 202 challenge page — a
+                # transient condition that must NOT be cached as "no email
+                # published for this domain".
+                if resp.status_code != 200:
+                    return None
+                text = resp.text
+        except Exception:
+            return None
+
+    general: str | None = None
+    result: str | None = None
+    for email in _clean(domain_re.findall(text)):
+        local = email.split("@", 1)[0]
+        if local in HIRING_PREFIXES:
+            result = email
+            break
+        if general is None and local in GENERAL_PREFIXES:
+            general = email
+    result = result or general
+    _cache_put("search", domain, result)
+    return result
+
+
 async def emails_from_company_pages(domain: str, timeout: int = 8) -> list[str]:
     """Scrape a company's public pages for email addresses.
 
