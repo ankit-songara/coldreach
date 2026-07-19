@@ -9,7 +9,6 @@ import { inboxApi } from '../../api/inbox'
 import { useAutomationConfig } from '../../hooks/useAutomationConfig'
 import type { SendResult } from '../../api/send'
 import { STATUS_META } from '../../types'
-import EmailBadge from '../shared/EmailBadge'
 import ConfirmDialog from '../shared/ConfirmDialog'
 import type { Contact, ContactStatus } from '../../types'
 import { contactDisplayName, isGenericName } from '../../lib/display'
@@ -434,7 +433,6 @@ export default function Send() {
                     <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
                       {st.label}
                     </span>
-                    <EmailBadge status={c.email_status} confidence={c.confidence} />
                   </div>
                   <div className="text-xs font-mono truncate mt-0.5" style={{ color: 'var(--text-dim)' }}>
                     {isGenericName(c.name) ? c.company : `${c.email} · ${c.company}`}

@@ -31,7 +31,7 @@ from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
 )
-from app.scrapers.web import emails_from_company_pages, find_published_role_email
+from app.scrapers.web import emails_from_company_pages, find_published_role_email, HIRING_PREFIXES
 from app.scrapers import directory
 from app.scrapers.directory import looks_like_company
 from app.scrapers.resolver import (
@@ -340,9 +340,16 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
         published = await find_published_role_email(domain)
         if published:
             prefix = published.split("@", 1)[0]
+            # A dedicated hiring inbox beats a general company inbox, but both
+            # are REAL published addresses — either way this lead can't be the
+            # kind of blind guess that bounces.
+            if prefix in HIRING_PREFIXES:
+                desig, conf = "Talent/Recruiting (role inbox)", 70
+            else:
+                desig, conf = "Company Inbox (role inbox)", 60
             return {**raw, "email": published, "name": prefix.title(),
-                    "designation": "Talent/Recruiting (role inbox)",
-                    "confidence": 70, "email_status": "valid", "_domain": None}
+                    "designation": desig,
+                    "confidence": conf, "email_status": "valid", "_domain": None}
 
         if settings.hunter_api_key:
             generic = await HunterEnricher(settings.hunter_api_key).search_generic(domain)
@@ -589,14 +596,17 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
 
     # ── Resolve identity-only leads — concurrency-limited, with a time budget so
     #    a blocked port 25 can't make the hunt hang. ─────────────────────────────
-    semaphore = asyncio.Semaphore(6)
+    # Network-bound work (DNS, 2 small page fetches) — wide enough that all P0
+    # careers leads clear the budget now that each one costs a grounding scan.
+    semaphore = asyncio.Semaphore(10)
 
     async def guarded_resolve(raw: dict) -> dict | None:
         async with semaphore:
             return await _resolve_domain_contact(raw, cache)
 
-    # P0 careers leads first — they're cheap (MX lookup, no page-scrape) and are
-    # the hunt's primary output, so they must land inside the time budget.
+    # P0 careers leads first — they're the hunt's primary output and their
+    # grounding scan is capped tight (2 concurrent fetches, ~4s), so they
+    # must land inside the time budget.
     tasks = [asyncio.create_task(guarded_resolve(r))
              for r in careers_leads + needs_resolve[:40]]
     if tasks:

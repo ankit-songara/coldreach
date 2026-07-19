@@ -1076,3 +1076,48 @@ class TestHunterGenericLookup:
         enricher = HunterEnricher("fake-key")
         result = asyncio.run(enricher.search_generic("acme.com"))
         assert result is None
+
+    def test_general_inbox_fallback_when_no_hiring_prefix(self, monkeypatch):
+        """A published contact@/hello@ on the company's own site is a real
+        deliverable address — used (labeled as a company inbox) when no
+        dedicated hiring inbox is published, instead of a blind guess."""
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path in ("/contact-us", "/contact"):
+                return httpx.Response(200, text="Say hi: hello@acme.com or sales@acme.com")
+            return httpx.Response(404)
+
+        monkeypatch.setattr(web_mod, "resolves_public", lambda d: True)
+        real_client = httpx.AsyncClient
+        def fake_async_client(*a, **kw):
+            kw.pop("timeout", None)
+            kw.pop("follow_redirects", None)
+            kw.pop("headers", None)
+            return real_client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake_async_client)
+
+        result = asyncio.run(web_mod.find_published_role_email("acme.com"))
+        assert result == "hello@acme.com"
+
+    def test_hiring_prefix_beats_general_inbox(self, monkeypatch):
+        import asyncio
+        import httpx
+        from app.scrapers import web as web_mod
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="contact@acme.com and careers@acme.com")
+
+        monkeypatch.setattr(web_mod, "resolves_public", lambda d: True)
+        real_client = httpx.AsyncClient
+        def fake_async_client(*a, **kw):
+            kw.pop("timeout", None)
+            kw.pop("follow_redirects", None)
+            kw.pop("headers", None)
+            return real_client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake_async_client)
+
+        result = asyncio.run(web_mod.find_published_role_email("acme.com"))
+        assert result == "careers@acme.com"

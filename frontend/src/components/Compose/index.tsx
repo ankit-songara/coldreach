@@ -7,7 +7,6 @@ import { composeApi } from '../../api/compose'
 import api from '../../api/client'
 import { STATUS_META } from '../../types'
 import type { Contact } from '../../types'
-import EmailBadge from '../shared/EmailBadge'
 import { ResumeReadyCtx } from '../../App'
 import { contactDisplayName, isGenericName } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
@@ -359,7 +358,6 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
             <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
               {st.label}
             </span>
-            <EmailBadge status={c.email_status} confidence={c.confidence} />
           </div>
           <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>
             {c.designation} · {c.company}
