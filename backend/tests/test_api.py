@@ -1174,7 +1174,7 @@ class TestGuessedContactPurge:
 
     def test_purges_only_never_emailed_risky_role_inboxes(self, auth_client, db_session):
         from datetime import datetime
-        from app.db.models import Contact, User
+        from app.db.models import Contact, EmailDraft, User
         from app.db.migrations import purge_unverified_role_inbox_guesses
 
         user = db_session.query(User).first()
@@ -1204,12 +1204,28 @@ class TestGuessedContactPurge:
         db_session.add_all(rows)
         db_session.commit()
 
+        # Drafts for a purged and a kept contact — no FK cascade exists, so
+        # the purge itself must remove the purged contact's drafts.
+        gone = db_session.query(Contact).filter_by(email="careers@gone1.com").one()
+        kept = db_session.query(Contact).filter_by(email="sarah@keep3.com").one()
+        db_session.add_all([
+            EmailDraft(user_id=user.id, contact_id=gone.id, subject="s", body="b"),
+            EmailDraft(user_id=user.id, contact_id=kept.id, subject="s", body="b"),
+        ])
+        db_session.commit()
+        gone_id, kept_id = gone.id, kept.id
+
         purged = purge_unverified_role_inbox_guesses(db_session)
         assert purged == 1
         remaining = {c.email for c in db_session.query(Contact).all()}
         assert "careers@gone1.com" not in remaining
         assert {"careers@gone2.com", "hiring@keep.com",
                 "careers@keep2.com", "sarah@keep3.com"} <= remaining
+
+        # The purged contact's draft went with it; the kept contact's survived.
+        draft_owners = {d.contact_id for d in db_session.query(EmailDraft).all()}
+        assert gone_id not in draft_owners
+        assert kept_id in draft_owners
 
         # Idempotent — second run is a no-op.
         assert purge_unverified_role_inbox_guesses(db_session) == 0
