@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db.database import create_tables
 from app.llm.factory import detect_provider
-from app.api import hunt, compose, contacts, resume, send, inbox, config as config_api, auth, demo, companies
+from app.api import hunt, compose, contacts, resume, send, inbox, config as config_api, auth, demo, companies, analytics
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -108,6 +108,7 @@ app.include_router(inbox.router,      prefix="/api")
 app.include_router(config_api.router, prefix="/api")
 app.include_router(demo.router,       prefix="/api")
 app.include_router(companies.router,  prefix="/api")
+app.include_router(analytics.router,  prefix="/api")
 
 
 @app.get("/api/health")

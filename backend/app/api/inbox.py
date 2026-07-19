@@ -14,7 +14,8 @@ import re
 import imaplib
 import email
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
+from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,7 +23,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.database import get_db
-from app.db.crud import ContactRepository, ConfigRepository, record_pattern_bounce
+from app.db.crud import (
+    ContactRepository, ConfigRepository, ReplyRepository, record_pattern_bounce,
+)
 from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
@@ -103,6 +106,37 @@ def _bounced_recipients(msg) -> set[str]:
     return found
 
 
+# Cap on the stored reply excerpt — enough for an inbox preview card.
+_SNIPPET_CHARS = 400
+
+
+def _decode_subject(raw: str | None) -> str:
+    """Decode an RFC 2047 Subject header to a plain string (best-effort)."""
+    if not raw:
+        return ""
+    try:
+        return str(make_header(decode_header(raw)))[:500]
+    except Exception:
+        return raw[:500]
+
+
+def _reply_snippet(msg) -> str:
+    """First ~400 chars of the reply's plain-text body, whitespace-normalized."""
+    text = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain":
+                payload = part.get_payload(decode=True)
+                if payload:
+                    text = payload.decode(errors="ignore")
+                    break
+    else:
+        payload = msg.get_payload(decode=True)
+        if payload:
+            text = payload.decode(errors="ignore")
+    return " ".join(text.split())[:_SNIPPET_CHARS]
+
+
 def _body_text(msg) -> str:
     """Best-effort plain-text extraction of a message body."""
     parts = []
@@ -160,14 +194,18 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
     awaiting_emails = set(awaiting.keys())
     sender_emails: set[str] = set()     # genuine replies
     bounced_emails: set[str] = set()    # addresses named in bounce reports
+    # Captured reply content per sender, for the Replies inbox. When a sender
+    # replied more than once in the window, the EARLIEST message wins — that's
+    # the actual reply to our outreach; later ones are thread follow-ups.
+    reply_details: dict[str, dict] = {}
     try:
         imap.select("INBOX", readonly=True)
         typ, data = imap.search(None, f'(SINCE {since_str})')
         if typ == "OK" and data and data[0]:
             uids = data[0].split()
             for uid in uids:
-                # Cheap first pass: just the From + Date headers
-                typ, msg_data = imap.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM DATE)])")
+                # Cheap first pass: just the From + Date + Subject headers
+                typ, msg_data = imap.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT)])")
                 if typ != "OK" or not msg_data or not msg_data[0]:
                     continue
                 raw = msg_data[0][1]
@@ -203,6 +241,21 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
                     cutoff = awaiting[addr].last_emailed_at
                     if cutoff is None or msg_dt is None or msg_dt >= cutoff:
                         sender_emails.add(addr)
+                        cur = reply_details.get(addr)
+                        if cur is None or (
+                            msg_dt is not None
+                            and (cur["received_at"] is None or msg_dt < cur["received_at"])
+                        ):
+                            # Fetch the body only for messages we're keeping.
+                            snippet = ""
+                            typ, full = imap.fetch(uid, "(BODY.PEEK[])")
+                            if typ == "OK" and full and full[0] and full[0][1]:
+                                snippet = _reply_snippet(email.message_from_bytes(full[0][1]))
+                            reply_details[addr] = {
+                                "subject":     _decode_subject(hdr.get("Subject")),
+                                "snippet":     snippet,
+                                "received_at": msg_dt,
+                            }
     finally:
         try:
             imap.logout()
@@ -213,10 +266,21 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
     hits: list[ReplyHit] = []
 
     # Replies win over bounces if somehow both appear
+    reply_repo = ReplyRepository(db, user.id)
     reply_addrs = (sender_emails & awaiting_emails) - bounced_emails
     for addr in reply_addrs:
         c = awaiting[addr]
         contact_repo.update(c.id, ContactUpdate(status="replied", replied_at=now))
+        # Persist the reply content for the Replies inbox. Deduped on
+        # (contact, received_at) so re-syncs are no-ops; a message with no
+        # parseable Date header falls back to sync time.
+        det = reply_details.get(addr) or {}
+        reply_repo.add_if_new(
+            contact_id=c.id,
+            subject=det.get("subject") or "",
+            snippet=det.get("snippet") or "",
+            received_at=det.get("received_at") or now,
+        )
         hits.append(ReplyHit(contact_id=c.id, name=c.name, email=c.email))
         log.info(f"Reply detected from {c.email} — marked replied")
 
@@ -237,3 +301,31 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
         bounces_found=len(bounced_emails - reply_addrs),
         hits=hits,
     )
+
+
+class ReplyMessageOut(BaseModel):
+    id:          int
+    contact_id:  int
+    name:        str
+    company:     str
+    designation: str
+    status:      str
+    subject:     str
+    snippet:     str
+    received_at: datetime | None
+
+
+@router.get("/replies", response_model=list[ReplyMessageOut])
+def list_replies(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Stored replies captured by sync, newest first, with the contact's current
+    identity/status joined in — powers the v2 Replies inbox screen."""
+    rows = ReplyRepository(db, user.id).latest_with_contacts(limit=100)
+    return [
+        ReplyMessageOut(
+            id=m.id, contact_id=m.contact_id,
+            name=c.name, company=c.company, designation=c.designation,
+            status=c.status, subject=m.subject, snippet=m.snippet,
+            received_at=m.received_at,
+        )
+        for m, c in rows
+    ]

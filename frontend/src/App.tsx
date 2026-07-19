@@ -10,9 +10,14 @@ import { useAutomationConfig } from './hooks/useAutomationConfig'
 import { useAutoReplyCheck } from './hooks/useAutoReplyCheck'
 import { getStoredTheme, cycleTheme, type Theme } from './lib/theme'
 import Auth    from './components/Auth'
+import Logo    from './components/shared/Logo'
+import Sidebar from './components/Sidebar'
+import CommandPalette, { type Command } from './components/shared/CommandPalette'
 // Tab views are code-split: each loads its own chunk on first visit (paired
 // with the mountedTabs gating below), keeping the initial bundle to the shell
-// + whichever tab opens first. Auth stays eager — it's the pre-login paint.
+// + whichever tab opens first. Auth stays eager — it's the shared login paint;
+// Landing is its own chunk so returning (logged-in) users never download it.
+const Landing = lazy(() => import('./components/Landing'))
 const Setup   = lazy(() => import('./components/Setup'))
 const Hunt    = lazy(() => import('./components/Hunt'))
 const Compose = lazy(() => import('./components/Compose'))
@@ -172,6 +177,22 @@ function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) 
 export default function App() {
   const { activeTab, setActiveTab, contacts, token, userEmail, logout, resume, setResume, setAuth } = useStore()
   const [resumeReady, setResumeReady] = useState(false)
+  // Logged-out flow: marketing landing first; Log in / Sign up switch to Auth.
+  const [authView, setAuthView] = useState<'landing' | 'login' | 'register'>('landing')
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // ⌘K / Ctrl+K toggles the command palette anywhere in the logged-in app.
+  useEffect(() => {
+    if (!token) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [token])
 
   // Hydrate contacts once at the top level via the SHARED query (Today and Hunt
   // reuse the same cache instead of firing their own fetches). Without this,
@@ -244,90 +265,60 @@ export default function App() {
       .finally(() => setResumeReady(true))
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!token) return <Auth />
+  if (!token) {
+    if (authView === 'landing') {
+      return (
+        <Suspense fallback={<TabLoading />}>
+          <Landing onLogin={() => setAuthView('login')} onSignup={() => setAuthView('register')} />
+        </Suspense>
+      )
+    }
+    return <Auth initialMode={authView} onBack={() => setAuthView('landing')} />
+  }
+
+  // Sidebar meter: sends made today vs the pacing cap (backend caps at 25/day).
+  const todayStr = new Date().toDateString()
+  const sentToday = contacts.filter(c =>
+    c.last_emailed_at && new Date(c.last_emailed_at).toDateString() === todayStr
+  ).length
+
+  const commands: Command[] = [
+    ...TABS.map(tab => ({
+      id: tab.id, icon: TAB_ICONS[tab.id], label: tab.label, kind: 'view',
+      run: () => setActiveTab(tab.id),
+    })),
+    { id: 'signout', icon: LogOut, label: 'Sign out', kind: 'action', run: logout },
+  ]
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
-      {/* ── Frosted premium header ───────────────────────────────────────────── */}
+    <div className="min-h-screen flex flex-col md:pl-[232px]" style={{ background: 'var(--bg)' }}>
+      {/* ── v2 shell: persistent sidebar on desktop ─────────────────────────── */}
+      <Sidebar
+        items={TABS.map(tab => ({
+          id: tab.id, icon: TAB_ICONS[tab.id], label: tab.label,
+          badge: tab.id === 'hunt' ? contacts.length : undefined,
+        }))}
+        activeId={activeTab}
+        onSelect={id => { if (isTabId(id)) setActiveTab(id) }}
+        onOpenPalette={() => setPaletteOpen(true)}
+        sentToday={sentToday}
+        sendCap={25}
+        email={userEmail}
+        onLogout={logout}
+      />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
+
+      {/* ── Slim header — phones only (desktop gets the sidebar) ─────────────── */}
       <header
-        className="sticky top-0 z-40 flex items-center gap-3 sm:gap-4"
+        className="md:hidden sticky top-0 z-40 flex items-center justify-between"
         style={{
-          height: 64, padding: '0 clamp(12px, 3vw, 28px)',
+          height: 60, padding: '0 clamp(12px, 3vw, 28px)',
           background: 'var(--header-bg)', backdropFilter: 'blur(12px)',
           borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow-xs)',
         }}
       >
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          <div
-            className="flex items-center justify-center"
-            style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--accent)', boxShadow: 'var(--shadow-sm)' }}
-          >
-            <SendIcon size={15} color="var(--on-accent)" />
-          </div>
-          {/* Wordmark hides on narrow phones so the tab nav keeps room */}
-          <span className="hidden min-[480px]:inline" style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--accent)', lineHeight: 1 }}>
-            Cold<span style={{ color: 'var(--text)' }}>Reach</span>
-          </span>
-        </div>
-
-        <div className="flex-1" />
-
-        {/* Segmented pill nav — desktop/tablet only; phones get the bottom tab
-            bar instead (a hidden-scrollbar overflow here made tabs invisible) */}
-        <nav
-          className="hidden md:inline-flex gap-0.5 max-w-full"
-          style={{ padding: 3, background: 'var(--surface-2)', borderRadius: 'var(--radius-full)', border: '1px solid var(--border)' }}
-        >
-          {TABS.map(tab => {
-            const active = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className="inline-flex items-center gap-1.5 text-[13px] font-semibold transition-all"
-                style={{
-                  // Tight padding: at 768px (the breakpoint where this nav
-                  // first appears) the five full-length labels barely fit —
-                  // widening anything here overflows the header.
-                  padding: '7px 7px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
-                  background: active ? 'var(--surface-1)' : 'transparent',
-                  color: active ? 'var(--text)' : 'var(--text-muted)',
-                  boxShadow: active ? 'var(--shadow-sm)' : 'none',
-                }}
-              >
-                {tab.label}
-                {tab.id === 'hunt' && contacts.length > 0 && (
-                  <span
-                    className="tnum"
-                    style={{
-                      padding: '1px 6px', borderRadius: 'var(--radius-full)', fontSize: 11,
-                      background: active ? 'var(--accent-tint)' : 'var(--surface-3)',
-                      color: active ? 'var(--accent)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {contacts.length}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </nav>
-
-        <div className="flex-1" />
-
-        {/* Right cluster — the contacts pill needs a wide viewport so the five
-            nav tabs always win the space fight at tablet widths */}
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          <div
-            className="hidden lg:flex items-center gap-1.5 text-[13px] font-medium tnum"
-            style={{ padding: '4px 10px', borderRadius: 'var(--radius-full)', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
-          >
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)' }} />
-            {contacts.length} contacts
-          </div>
-          <UserMenu email={userEmail} onLogout={logout} />
-        </div>
+        <Logo size={28} wordmark />
+        <UserMenu email={userEmail} onLogout={logout} />
       </header>
 
       {/* ── Content ──────────────────────────────────────────────────────────── */}

@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.db.models import (
     Contact, EmailDraft, Resume, ResumeFile, AppConfig, User, KnownCompany, EmailPattern,
+    ReplyMessage,
 )
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
@@ -206,6 +207,52 @@ class DraftRepository:
         self.db.commit()
         self.db.refresh(draft)
         return draft
+
+# ── ReplyMessage Repository ───────────────────────────────────────────────────
+class ReplyRepository:
+    def __init__(self, db: Session, user_id: int):
+        self.db = db
+        self.user_id = user_id
+
+    def _scoped(self):
+        return self.db.query(ReplyMessage).filter(ReplyMessage.user_id == self.user_id)
+
+    def add_if_new(self, contact_id: int, subject: str, snippet: str,
+                   received_at: datetime | None) -> ReplyMessage | None:
+        """Persist a captured reply — idempotent on (contact_id, received_at) so
+        re-syncing the same inbox never duplicates rows. Returns None on skip."""
+        existing = self._scoped().filter(
+            ReplyMessage.contact_id == contact_id,
+            ReplyMessage.received_at == received_at,
+        ).first()
+        if existing:
+            return None
+        row = ReplyMessage(
+            user_id=self.user_id, contact_id=contact_id,
+            subject=(subject or "")[:500], snippet=snippet or "",
+            received_at=received_at,
+        )
+        self.db.add(row)
+        self.db.commit()
+        self.db.refresh(row)
+        return row
+
+    def latest_with_contacts(self, limit: int = 100) -> list[tuple[ReplyMessage, Contact]]:
+        """Newest-first (ReplyMessage, Contact) pairs for this user. Inner join —
+        a reply whose contact was deleted disappears with it (no FK cascade
+        exists, so orphaned rows are simply never shown)."""
+        return (
+            self.db.query(ReplyMessage, Contact)
+            .filter(
+                ReplyMessage.user_id == self.user_id,
+                Contact.user_id == self.user_id,
+                Contact.id == ReplyMessage.contact_id,
+            )
+            .order_by(ReplyMessage.received_at.desc(), ReplyMessage.id.desc())
+            .limit(limit)
+            .all()
+        )
+
 
 # ── AppConfig Repository ──────────────────────────────────────────────────────
 # Per-user keys: sender_name, signature_links, daily_send_cap,

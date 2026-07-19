@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { LogIn, UserPlus, Send as SendIcon } from 'lucide-react'
+import { LogIn, UserPlus } from 'lucide-react'
+import Logo from '../shared/Logo'
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { useStore } from '../../store'
 import { authApi } from '../../api/auth'
@@ -9,9 +10,13 @@ import { authApi } from '../../api/auth'
 // Without it the GoogleLogin widget can't render, so we fall back to email/password.
 const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
 
-export default function Auth() {
+export default function Auth({ initialMode = 'login', onBack }: {
+  initialMode?: 'login' | 'register'
+  // Present when Auth was reached from the landing page — renders a way back.
+  onBack?: () => void
+} = {}) {
   const { setAuth } = useStore()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -65,15 +70,21 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8">
-          <div
-            className="flex items-center justify-center mb-3"
-            style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--accent)', boxShadow: 'var(--shadow-sm)' }}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="text-[13px] font-semibold mb-4 hit-target"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}
           >
-            <SendIcon size={20} color="#fff" />
+            ← Back
+          </button>
+        )}
+        <div className="flex flex-col items-center mb-8">
+          <div className="mb-3">
+            <Logo size={44} />
           </div>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--accent)', lineHeight: 1 }}>
-            Cold<span style={{ color: 'var(--text)' }}>Reach</span>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', lineHeight: 1 }}>
+            ColdReach
           </span>
           <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
             open-source cold outreach engine

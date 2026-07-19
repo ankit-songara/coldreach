@@ -57,8 +57,10 @@ def client(test_engine):
     # Wipe all rows between tests (keep schema)
     from app.db.models import (
         Contact, EmailDraft, Resume, ResumeFile, User, AppConfig, KnownCompany, EmailPattern,
+        ReplyMessage,
     )
     db = SessionTest()
+    db.query(ReplyMessage).delete()
     db.query(EmailDraft).delete()
     db.query(AppConfig).delete()
     db.query(Contact).delete()

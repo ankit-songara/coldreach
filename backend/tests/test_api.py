@@ -1473,3 +1473,222 @@ class TestSharedPageFetchCache:
             await working.aclose()
 
         asyncio.run(run())
+
+
+class TestInboxReplies:
+    """Reply-content persistence on sync + GET /api/inbox/replies (v2 inbox)."""
+
+    @staticmethod
+    def _install_fake_imap(monkeypatch, raw_messages: list[bytes]):
+        """Fake imaplib.IMAP4_SSL serving the given raw RFC822 messages. The
+        same bytes answer both the header-fields fetch and the full-body fetch —
+        the parser just sees extra headers either way."""
+        from app.api import inbox as inbox_mod
+
+        class FakeIMAP:
+            def __init__(self, host):
+                pass
+            def login(self, addr, pw):
+                return "OK", []
+            def select(self, mailbox, readonly=False):
+                return "OK", []
+            def search(self, charset, query):
+                uids = " ".join(str(i + 1) for i in range(len(raw_messages)))
+                return "OK", [uids.encode()]
+            def fetch(self, uid, what):
+                return "OK", [(b"1 (BODY[])", raw_messages[int(uid) - 1])]
+            def logout(self):
+                return "OK", []
+
+        monkeypatch.setattr(inbox_mod.imaplib, "IMAP4_SSL", FakeIMAP)
+
+    @staticmethod
+    def _raw_reply(from_addr: str, subject: str, body: str,
+                   date: str = "Sat, 18 Jul 2026 10:30:00 +0000") -> bytes:
+        return (
+            f"From: Priya Sharma <{from_addr}>\r\nDate: {date}\r\n"
+            f"Subject: {subject}\r\nContent-Type: text/plain\r\n\r\n{body}"
+        ).encode()
+
+    def _seed_awaiting_contact(self, auth_client, email="priya@startup.com"):
+        contact = auth_client.post("/api/contacts", json={
+            "name": "Priya Sharma", "email": email,
+            "designation": "Technical Recruiter", "company": "StartupCo",
+        }).json()
+        r = auth_client.patch(f"/api/contacts/{contact['id']}", json={
+            "status": "emailed", "last_emailed_at": "2026-07-10T09:00:00",
+        })
+        assert r.status_code == 200
+        return contact
+
+    _SYNC_CREDS = {"gmail_address": "me@gmail.com", "gmail_app_password": "app-pw"}
+
+    def test_sync_persists_reply_message_and_dedupes_on_resync(self, auth_client, monkeypatch):
+        contact = self._seed_awaiting_contact(auth_client)
+        body = "Thanks for reaching out!\r\n\r\nLet's talk.   " + "word " * 120
+        self._install_fake_imap(monkeypatch, [
+            self._raw_reply("priya@startup.com", "Re: Backend role", body),
+        ])
+
+        r = auth_client.post("/api/inbox/sync", json=self._SYNC_CREDS)
+        assert r.status_code == 200, r.text
+        assert r.json()["replies_found"] == 1
+
+        replies = auth_client.get("/api/inbox/replies").json()
+        assert len(replies) == 1
+        rep = replies[0]
+        assert rep["contact_id"] == contact["id"]
+        assert rep["name"] == "Priya Sharma"
+        assert rep["company"] == "StartupCo"
+        assert rep["designation"] == "Technical Recruiter"
+        assert rep["status"] == "replied"          # sync flipped the contact
+        assert rep["subject"] == "Re: Backend role"
+        # Snippet is whitespace-normalized and capped at ~400 chars.
+        assert rep["snippet"].startswith("Thanks for reaching out! Let's talk. word")
+        assert len(rep["snippet"]) <= 400
+        assert rep["received_at"].startswith("2026-07-18T10:30:00")
+
+        # Re-sync the SAME message (reset the contact so it's awaiting again):
+        # the contact re-flips, but no duplicate ReplyMessage row appears.
+        auth_client.patch(f"/api/contacts/{contact['id']}", json={
+            "status": "emailed", "replied_at": None,
+            "last_emailed_at": "2026-07-10T09:00:00",
+        })
+        r = auth_client.post("/api/inbox/sync", json=self._SYNC_CREDS)
+        assert r.json()["replies_found"] == 1
+        assert len(auth_client.get("/api/inbox/replies").json()) == 1
+
+    def test_replies_endpoint_is_user_scoped(self, auth_client, db_session):
+        from datetime import datetime
+        from app.db.models import Contact, ReplyMessage, User
+
+        me = db_session.query(User).first()
+        other = User(email="other@example.com", password_hash="x")
+        db_session.add(other)
+        db_session.commit()
+
+        mine   = Contact(user_id=me.id,    name="Mine",   email="mine@a.com",
+                         designation="Recruiter", company="A", status="replied")
+        theirs = Contact(user_id=other.id, name="Theirs", email="theirs@b.com",
+                         designation="Recruiter", company="B", status="replied")
+        db_session.add_all([mine, theirs])
+        db_session.commit()
+        db_session.add_all([
+            ReplyMessage(user_id=me.id,    contact_id=mine.id,   subject="mine",
+                         snippet="hi", received_at=datetime(2026, 7, 17, 10, 0)),
+            ReplyMessage(user_id=other.id, contact_id=theirs.id, subject="theirs",
+                         snippet="hi", received_at=datetime(2026, 7, 18, 10, 0)),
+        ])
+        db_session.commit()
+
+        replies = auth_client.get("/api/inbox/replies").json()
+        assert [r["subject"] for r in replies] == ["mine"]
+
+    def test_replies_endpoint_newest_first(self, auth_client, db_session):
+        from datetime import datetime
+        from app.db.models import Contact, ReplyMessage, User
+
+        me = db_session.query(User).first()
+        c = Contact(user_id=me.id, name="P", email="p@a.com",
+                    designation="Recruiter", company="A", status="replied")
+        db_session.add(c)
+        db_session.commit()
+        db_session.add_all([
+            ReplyMessage(user_id=me.id, contact_id=c.id, subject="older",
+                         snippet="", received_at=datetime(2026, 7, 10, 9, 0)),
+            ReplyMessage(user_id=me.id, contact_id=c.id, subject="newer",
+                         snippet="", received_at=datetime(2026, 7, 18, 9, 0)),
+        ])
+        db_session.commit()
+
+        replies = auth_client.get("/api/inbox/replies").json()
+        assert [r["subject"] for r in replies] == ["newer", "older"]
+
+
+class TestAnalyticsSummary:
+    """GET /api/analytics/summary — computed on read from contacts rows."""
+
+    def _seed(self, db_session):
+        """Deterministic contacts anchored on the current ISO week: one sent +
+        replied this week, two sent last week (one replied, one not), and one
+        never-emailed row that must count nowhere."""
+        from datetime import datetime, time, timedelta
+        from app.db.models import Contact, User
+        from app.timeutil import utcnow
+
+        monday = utcnow().date() - timedelta(days=utcnow().date().weekday())
+        def at(week_monday, day, hour):
+            return datetime.combine(week_monday + timedelta(days=day), time(hour, 0))
+        last_monday = monday - timedelta(days=7)
+
+        user = db_session.query(User).first()
+        db_session.add_all([
+            # This week, Tue 09:00 (morning) — replied same day.
+            Contact(user_id=user.id, name="R", email="r@a.com", company="A",
+                    designation="Technical Recruiter", status="replied",
+                    last_emailed_at=at(monday, 1, 9), replied_at=at(monday, 1, 15)),
+            # Last week, Wed 14:00 (afternoon) — no reply.
+            Contact(user_id=user.id, name="E", email="e@b.com", company="B",
+                    designation="Software Engineer", status="emailed",
+                    last_emailed_at=at(last_monday, 2, 14)),
+            # Last week, Wed 19:00 (evening) — replied next day, now interviewing.
+            Contact(user_id=user.id, name="F", email="f@c.com", company="C",
+                    designation="Founder", status="interview",
+                    last_emailed_at=at(last_monday, 2, 19),
+                    replied_at=at(last_monday, 3, 10)),
+            # Never emailed — excluded from every metric.
+            Contact(user_id=user.id, name="N", email="n@d.com", company="D",
+                    designation="CTO", status="new"),
+        ])
+        db_session.commit()
+        return monday
+
+    def test_summary_with_seeded_contacts(self, auth_client, db_session):
+        monday = self._seed(db_session)
+
+        r = auth_client.get("/api/analytics/summary")
+        assert r.status_code == 200
+        data = r.json()
+
+        # Weekly: 6 ISO weeks, oldest → current, Monday-keyed.
+        weekly = data["weekly"]
+        assert len(weekly) == 6
+        assert weekly[-1]["week_start"] == monday.isoformat()
+        assert (weekly[-1]["sent"], weekly[-1]["replied"], weekly[-1]["rate"]) == (1, 1, 1.0)
+        assert (weekly[-2]["sent"], weekly[-2]["replied"], weekly[-2]["rate"]) == (2, 1, 0.5)
+        assert all(w["sent"] == 0 and w["replied"] == 0 for w in weekly[:4])
+
+        # Send-time histogram: weekday (0=Mon..6=Sun) × day-part.
+        cells = {(c["weekday"], c["part"]): c for c in data["send_time"]}
+        assert len(cells) == 21
+        assert (cells[(1, "morning")]["sent"],   cells[(1, "morning")]["replied"])   == (1, 1)
+        assert (cells[(2, "afternoon")]["sent"], cells[(2, "afternoon")]["replied"]) == (1, 0)
+        assert (cells[(2, "evening")]["sent"],   cells[(2, "evening")]["replied"])   == (1, 1)
+        assert sum(c["sent"] for c in data["send_time"]) == 3   # never-emailed excluded
+
+        # By-role: hunt.py's family classifier, rate-desc, only sent > 0.
+        by_role = {r["family"]: r for r in data["by_role"]}
+        assert set(by_role) == {"recruiting", "engineering", "founder_exec"}
+        assert by_role["recruiting"]["rate"] == 1.0
+        assert by_role["founder_exec"]["rate"] == 1.0
+        assert (by_role["engineering"]["sent"], by_role["engineering"]["rate"]) == (1, 0.0)
+        assert data["by_role"][-1]["family"] == "engineering"   # lowest rate last
+
+        assert data["totals"] == {
+            "sent": 3, "replied": 2, "interviews": 1, "offers": 0,
+            "reply_rate": round(2 / 3, 3),
+        }
+
+    def test_summary_empty_state(self, auth_client):
+        """Fresh user: all zeros, no division errors, stable shapes."""
+        data = auth_client.get("/api/analytics/summary").json()
+        assert data["totals"] == {"sent": 0, "replied": 0, "interviews": 0,
+                                  "offers": 0, "reply_rate": 0.0}
+        assert len(data["weekly"]) == 6
+        assert all(w["sent"] == 0 and w["rate"] == 0.0 for w in data["weekly"])
+        assert data["by_role"] == []
+        assert len(data["send_time"]) == 21
+        assert all(c["sent"] == 0 for c in data["send_time"])
+
+    def test_requires_auth(self, client):
+        assert client.get("/api/analytics/summary").status_code in (401, 403)

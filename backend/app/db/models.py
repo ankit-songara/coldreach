@@ -76,6 +76,26 @@ class EmailDraft(Base):
     created_at: Mapped[datetime]  = mapped_column(DateTime, server_default=func.now())
 
 
+class ReplyMessage(Base):
+    """
+    Reply content captured by inbox sync — powers the v2 Replies inbox. Before
+    this table, sync detected a reply, flipped the contact's status, and threw
+    the message away. No FK constraints (matches the other tables); contact
+    fields are joined at read time. Writes dedupe on
+    (user_id, contact_id, received_at) so re-syncs never duplicate rows.
+    """
+    __tablename__ = "reply_messages"
+
+    id:          Mapped[int]           = mapped_column(primary_key=True)
+    user_id:     Mapped[int]           = mapped_column(index=True)
+    contact_id:  Mapped[int]           = mapped_column(index=True)
+    subject:     Mapped[str]           = mapped_column(String(500), default="")
+    # First ~400 chars of the reply's plain-text body, whitespace-normalized.
+    snippet:     Mapped[str]           = mapped_column(Text, default="")
+    received_at: Mapped[datetime|None] = mapped_column(DateTime, nullable=True)
+    created_at:  Mapped[datetime]      = mapped_column(DateTime, server_default=func.now())
+
+
 class Resume(Base):
     __tablename__ = "resumes"
 
