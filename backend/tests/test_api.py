@@ -2357,3 +2357,57 @@ class TestHuntReviewRegressions:
         assert t is None or "discovery" == t.company.lower()
         # exact identity still resolves
         assert s._lookup("Visa") is not None or s._lookup("visa") is not None
+
+
+class TestHuntFixAuditCorrections:
+    """Locks in the two regressions the fix-audit caught (fixes that were
+    themselves buggy): the BLOCKER anchor over-blocked sentence-final
+    addresses, and the role-inference gate broke standalone role queries."""
+
+    def test_web_regex_matches_sentence_final_address(self, monkeypatch):
+        """The anti-fabrication anchor must still MATCH a genuine published
+        address that ends a sentence (trailing prose period)."""
+        import asyncio, httpx
+        from app.scrapers import web as web_mod
+        web_mod._ground_cache.clear()
+
+        def handler(request):
+            # real published careers@acme.com ending a sentence
+            return httpx.Response(200, text="For roles email careers@acme.com. Thanks!")
+        real = httpx.AsyncClient
+        def fake(*a, **kw):
+            for k in ("timeout", "follow_redirects", "headers"): kw.pop(k, None)
+            return real(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake)
+        monkeypatch.setattr(web_mod, "resolves_public", lambda d: True)
+
+        got = asyncio.run(web_mod.search_role_email_on_web("acme.com", "Acme"))
+        assert got == "careers@acme.com"          # matched despite trailing period
+        web_mod._ground_cache.clear()
+
+    def test_web_regex_still_blocks_longer_domain(self, monkeypatch):
+        import asyncio, httpx
+        from app.scrapers import web as web_mod
+        web_mod._ground_cache.clear()
+        def handler(request):
+            return httpx.Response(200, text="Aussie careers@acme.com.au only.")
+        real = httpx.AsyncClient
+        def fake(*a, **kw):
+            for k in ("timeout", "follow_redirects", "headers"): kw.pop(k, None)
+            return real(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake)
+        monkeypatch.setattr(web_mod, "resolves_public", lambda d: True)
+        assert asyncio.run(web_mod.search_role_email_on_web("acme.com", "Acme")) is None
+        web_mod._ground_cache.clear()
+
+    def test_standalone_role_queries_still_infer(self):
+        from app.api.hunt import _resolve_target_role
+        assert _resolve_target_role("", "engineering") == "engineering"
+        assert _resolve_target_role("", "design") == "design"
+        assert _resolve_target_role("", "recruiting") == "recruiting"
+
+    def test_company_hunts_do_not_infer_but_explicit_wins(self):
+        from app.api.hunt import _resolve_target_role
+        assert _resolve_target_role("", "Stripe") == ""
+        assert _resolve_target_role("", "Discovery") == ""
+        assert _resolve_target_role("engineering", "Stripe") == "engineering"

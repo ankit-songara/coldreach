@@ -138,13 +138,19 @@ def slugify_company(name: str) -> list[str]:
 # ── Query classification ───────────────────────────────────────────────────────
 
 _ROLE_WORDS = {
-    "hiring", "engineer", "engineers", "developer", "developers", "dev",
-    "backend", "frontend", "fullstack", "full-stack", "senior", "junior",
-    "lead", "staff", "principal", "react", "golang", "go", "python", "java",
-    "rust", "node", "nodejs", "typescript", "devops", "sre", "data", "ml",
-    "ai", "manager", "designer", "intern", "internship", "remote", "sales",
-    "marketing", "product", "qa", "android", "ios", "mobile", "platform",
-    "infrastructure", "security", "growth", "founding",
+    "hiring", "engineer", "engineers", "engineering", "developer", "developers",
+    "development", "dev", "backend", "frontend", "fullstack", "full-stack",
+    "senior", "junior", "lead", "staff", "principal", "react", "golang", "go",
+    "python", "java", "rust", "node", "nodejs", "typescript", "devops", "sre",
+    "data", "ml", "ai", "manager", "management", "managing", "designer",
+    "design", "intern", "internship", "remote", "sales", "marketing", "product",
+    "qa", "android", "ios", "mobile", "platform", "infrastructure", "security",
+    "growth", "founding", "founder", "founders", "cofounder", "co-founder",
+    "recruiter", "recruiting", "recruit", "talent", "director", "architect",
+    "scientist", "analyst", "programmer",
+    # NOTE: keep in sync with hunt.py _FAMILY_PATTERNS — looks_like_company()
+    # and the role-inference must agree on what counts as a role query, or a
+    # bare family word gets misclassified as a company name.
 }
 _STOP = {"at", "for", "the", "a", "an", "in", "of", "and", "jobs", "careers", "role", "roles"}
 

@@ -302,14 +302,23 @@ async def _find_live_domain(company: str, guessed: str, cache: ResolutionCache) 
     Returns the first domain with real MX records, or '' if none found.
     """
     base = guessed.rsplit(".", 1)[0]   # strip existing TLD
-    for tld in _ALT_TLDS:
-        candidate = base + tld
-        if candidate == guessed:
-            continue
-        mx = await cache.mx(candidate)
-        if mx:
-            log.debug(f"Hunt: domain fallback {guessed} → {candidate} for '{company}'")
-            return candidate
+    # Try the hyphen-toggled base too, so we recover whichever spelling actually
+    # resolves: "x-team" → x-team.com AND xteam.com, "foobar" → foobar.com AND
+    # foo-bar isn't reconstructable so only the squashed form. Order-preserving,
+    # de-duplicated. Every candidate is still MX-gated, so nothing ungrounded
+    # is ever accepted.
+    bases: list[str] = [base]
+    if "-" in base:
+        bases.append(base.replace("-", ""))
+    for b in bases:
+        for tld in _ALT_TLDS:
+            candidate = b + tld
+            if candidate == guessed:
+                continue
+            mx = await cache.mx(candidate)
+            if mx:
+                log.debug(f"Hunt: domain fallback {guessed} → {candidate} for '{company}'")
+                return candidate
     return ""
 
 

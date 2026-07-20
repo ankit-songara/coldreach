@@ -231,12 +231,15 @@ async def search_role_email_on_web(domain: str, company: str = "",
         return value
 
     name = company.strip() or domain.rsplit(".", 1)[0].replace("-", " ").title()
-    # Trailing (?![A-Za-z0-9.\-]) anchors the domain so it can't be a PREFIX of a
-    # longer one: without it, 'acme.com' matched inside a published
-    # 'careers@acme.com.au' and we'd persist a fabricated 'careers@acme.com'
-    # that has nothing behind it — a never-invent-emails violation (bounces).
+    # Anchor the domain so it can't be a PREFIX of a longer one: without it,
+    # 'acme.com' matched inside a published 'careers@acme.com.au' and we'd
+    # persist a fabricated 'careers@acme.com' — a never-invent-emails violation.
+    # The boundary blocks a REAL domain continuation (a label char, or a dot
+    # FOLLOWED BY an alnum as in '.au'/'.community') but NOT a trailing prose
+    # period ('...at careers@acme.com.'), which would otherwise drop genuine
+    # sentence-final addresses from the DDG snippet text.
     domain_re = re.compile(
-        r"[A-Za-z0-9._%+\-]+@" + re.escape(domain) + r"(?![A-Za-z0-9.\-])",
+        r"[A-Za-z0-9._%+\-]+@" + re.escape(domain) + r"(?![A-Za-z0-9\-]|\.[A-Za-z0-9])",
         re.IGNORECASE,
     )
     async with _WEB_SEARCH_SEM:
