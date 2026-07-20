@@ -108,10 +108,13 @@ def _clear_grounding_cache():
     (per-process) — clear them so tests that reuse a domain with different
     mock responses stay isolated."""
     from app.scrapers import web
+    from app.scrapers import hackernews
     web._ground_cache.clear()
     web._page_cache.clear()
     web._page_inflight.clear()
+    hackernews._cache.update(at=0.0, posts=[])
     yield
     web._ground_cache.clear()
     web._page_cache.clear()
     web._page_inflight.clear()
+    hackernews._cache.update(at=0.0, posts=[])

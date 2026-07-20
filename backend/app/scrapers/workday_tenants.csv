@@ -1,0 +1,54 @@
+company,tenant,shard,site,domain
+NVIDIA,nvidia,wd5,NVIDIAExternalCareerSite,nvidia.com
+Salesforce,salesforce,wd12,External_Career_Site,salesforce.com
+Adobe,adobe,wd5,external_experienced,adobe.com
+Workday,workday,wd5,Workday,workday.com
+Autodesk,autodesk,wd1,Ext,autodesk.com
+HP,hp,wd5,ExternalCareerSite,hp.com
+Mastercard,mastercard,wd1,CorporateCareers,mastercard.com
+Target,target,wd5,targetcareers,target.com
+Comcast,comcast,wd5,Comcast_Careers,comcast.com
+CrowdStrike,crowdstrike,wd5,crowdstrikecareers,crowdstrike.com
+eBay,ebay,wd5,apply,ebay.com
+PayPal,paypal,wd1,jobs,paypal.com
+CVS Health,cvshealth,wd1,cvs_health_careers,cvshealth.com
+McKesson,mckesson,wd3,External_Careers,mckesson.com
+Broadcom,broadcom,wd1,External_Career,broadcom.com
+Equinix,equinix,wd1,External,equinix.com
+Warner Bros Discovery,warnerbros,wd5,Global,wbd.com
+Capital One,capitalone,wd12,Capital_One,capitalone.com
+Thomson Reuters,thomsonreuters,wd5,External_Career_Site,thomsonreuters.com
+Fidelity,fmr,wd1,FidelityCareers,fidelity.com
+Nordstrom,nordstrom,wd501,nordstrom_careers,nordstrom.com
+Visa,visa,wd5,Visa,visa.com
+BlackRock,blackrock,wd1,BlackRock_Professional,blackrock.com
+Prudential,prudential,wd3,prudential,prudential.com
+Sabre,sabre,wd1,SabreJobs,sabre.com
+Bristol Myers Squibb,bristolmyerssquibb,wd5,BMS,bms.com
+AstraZeneca,astrazeneca,wd3,Careers,astrazeneca.com
+Sanofi,sanofi,wd3,SanofiCareers,sanofi.com
+Unilever,unilever,wd3,Unilever_Experienced_Professionals,unilever.com
+TJX,tjx,wd1,TJX_EXTERNAL,tjx.com
+US Bank,usbank,wd1,US_Bank_Careers,usbank.com
+PNC,pnc,wd5,External,pnc.com
+Dow,dow,wd1,ExternalCareers,dow.com
+Fiserv,fiserv,wd5,EXT,fiserv.com
+FIS,fis,wd5,SearchJobs,fisglobal.com
+Truist,truist,wd1,Careers,truist.com
+Humana,humana,wd5,Humana_External_Career_Site,humana.com
+Cigna,cigna,wd5,cignacareers,cigna.com
+Elevance Health,elevancehealth,wd1,ANT,elevancehealth.com
+Cardinal Health,cardinalhealth,wd1,EXT,cardinalhealth.com
+Stryker,stryker,wd1,StrykerCareers,stryker.com
+Medtronic,medtronic,wd1,MedtronicCareers,medtronic.com
+Illumina,illumina,wd1,illumina-careers,illumina.com
+Agilent,agilent,wd5,Agilent_Careers,agilent.com
+Analog Devices,analogdevices,wd1,External,analog.com
+Micron,micron,wd1,External,micron.com
+KLA,kla,wd1,Search,kla.com
+Marvell,marvell,wd1,MarvellCareers,marvell.com
+Motorola Solutions,motorolasolutions,wd5,Careers,motorolasolutions.com
+DuPont,dupont,wd5,Jobs,dupont.com
+Conagra,conagrabrands,wd1,Careers_US,conagrabrands.com
+Clorox,clorox,wd1,Clorox,clorox.com
+Western Union,westernunion,wd5,WesternUnionJobs,westernunion.com

@@ -1475,6 +1475,161 @@ class TestSharedPageFetchCache:
         asyncio.run(run())
 
 
+class TestWorkdayScraper:
+    """WorkdayScraper reads the public Workday CXS JSON API and emits
+    identity-only domain leads (Workday postings never carry an email). The
+    company→domain mapping comes from the curated registry, never the API."""
+
+    @staticmethod
+    def _tenant(company, tenant, domain):
+        from app.scrapers.workday import WorkdayTenant
+        return WorkdayTenant(company, tenant, "wd1", "Site", domain)
+
+    @staticmethod
+    def _install(monkeypatch, tenants, responder, hits=None):
+        """Point WorkdayScraper at a fixed registry and a MockTransport whose
+        `responder(tenant, search_text)` returns the CXS JSON (or an
+        (status, body) tuple / raw string) for each probed tenant."""
+        import json
+        import httpx
+        from app.scrapers import workday as workday_mod
+
+        monkeypatch.setattr(workday_mod, "_TENANTS", list(tenants))
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            tenant = request.url.path.split("/")[3]   # /wday/cxs/{tenant}/{site}/jobs
+            try:
+                search_text = json.loads(request.content).get("searchText", "")
+            except Exception:
+                search_text = ""
+            if hits is not None:
+                hits.append(tenant)
+            out = responder(tenant, search_text)
+            if isinstance(out, tuple):                       # (status, json-body)
+                return httpx.Response(out[0], json=out[1])
+            if isinstance(out, str):                         # raw (possibly malformed) text
+                return httpx.Response(200, text=out)
+            return httpx.Response(200, json=out)             # dict → 200 JSON
+
+        real_client = httpx.AsyncClient
+
+        def fake_async_client(*a, **kw):
+            for k in ("timeout", "headers", "limits"):
+                kw.pop(k, None)
+            return real_client(transport=httpx.MockTransport(handler))
+
+        monkeypatch.setattr(workday_mod.httpx, "AsyncClient", fake_async_client)
+
+    @staticmethod
+    def _jobs(*titles, location="Remote"):
+        return {"total": len(titles), "jobPostings": [
+            {"title": t, "externalPath": f"/job/x/{i}", "locationsText": location,
+             "postedOn": "Posted Today", "bulletFields": [f"JR{i}"]}
+            for i, t in enumerate(titles)
+        ]}
+
+    def test_role_query_emits_leads_for_matching_titles_and_dedupes_by_domain(self, monkeypatch):
+        import asyncio
+        from app.scrapers.workday import WorkdayScraper
+
+        # Two tenants SHARE a domain (acme.com) — the lead must be deduped to one.
+        # Delta returns no React role and must be dropped by the role filter.
+        tenants = [
+            self._tenant("Acme", "acme", "acme.com"),
+            self._tenant("Acme EU", "acmeeu", "acme.com"),
+            self._tenant("Gamma", "gamma", "gamma.com"),
+            self._tenant("Delta", "delta", "delta.com"),
+        ]
+
+        def responder(tenant, search_text):
+            if tenant == "delta":
+                return self._jobs("Marketing Coordinator", "Sales Manager")
+            return self._jobs("Senior React Engineer", "Backend Engineer")
+
+        self._install(monkeypatch, tenants, responder)
+
+        leads = asyncio.run(WorkdayScraper().safe_search("react engineer"))
+        domains = sorted(l["_domain"] for l in leads)
+        assert domains == ["acme.com", "gamma.com"]          # acmeeu deduped, delta filtered
+        lead = next(l for l in leads if l["_domain"] == "acme.com")
+        assert lead["email"] == "" and lead["name"] == ""    # identity-only
+        assert lead["designation"] == "Recruiter"
+        assert lead["source"].startswith("Workday/")
+        assert "React" in lead["context"]
+
+    def test_company_query_probes_only_the_registry_tenant(self, monkeypatch):
+        import asyncio
+        from app.scrapers.workday import WorkdayScraper
+
+        tenants = [
+            self._tenant("Visa", "visa", "visa.com"),
+            self._tenant("Mastercard", "mastercard", "mastercard.com"),
+        ]
+        hits: list[str] = []
+
+        def responder(tenant, search_text):
+            return self._jobs("Staff Software Engineer", "Data Scientist")
+
+        self._install(monkeypatch, tenants, responder, hits=hits)
+
+        leads = asyncio.run(WorkdayScraper().safe_search("Visa"))
+        assert hits == ["visa"]                              # ONLY the matched tenant probed
+        assert [l["_domain"] for l in leads] == ["visa.com"]
+        assert leads[0]["company"] == "Visa"
+
+    def test_non_registry_company_returns_empty_without_probing(self, monkeypatch):
+        import asyncio
+        from app.scrapers.workday import WorkdayScraper
+
+        tenants = [self._tenant("Visa", "visa", "visa.com")]
+        hits: list[str] = []
+
+        def responder(tenant, search_text):
+            return self._jobs("Engineer")
+
+        self._install(monkeypatch, tenants, responder, hits=hits)
+
+        leads = asyncio.run(WorkdayScraper().safe_search("Definitelynotarealcompany"))
+        assert leads == []
+        assert hits == []                                    # blind discovery is skipped
+
+    def test_404_or_422_tenant_is_skipped_gracefully(self, monkeypatch):
+        import asyncio
+        from app.scrapers.workday import WorkdayScraper
+
+        tenants = [
+            self._tenant("GoodCo", "goodco", "goodco.com"),
+            self._tenant("GoneCo", "goneco", "goneco.com"),
+            self._tenant("BadCo", "badco", "badco.com"),
+        ]
+
+        def responder(tenant, search_text):
+            if tenant == "goneco":
+                return (404, {"error": "gone"})
+            if tenant == "badco":
+                return (422, {"error": "unprocessable"})
+            return self._jobs("Software Engineer")
+
+        self._install(monkeypatch, tenants, responder)
+
+        leads = asyncio.run(WorkdayScraper().safe_search("engineer"))
+        assert [l["_domain"] for l in leads] == ["goodco.com"]
+
+    def test_malformed_json_does_not_crash(self, monkeypatch):
+        import asyncio
+        from app.scrapers.workday import WorkdayScraper
+
+        tenants = [self._tenant("Acme", "acme", "acme.com")]
+
+        def responder(tenant, search_text):
+            return "this is <not> json {{{ 200 OK"          # raw text, 200 status
+
+        self._install(monkeypatch, tenants, responder)
+
+        leads = asyncio.run(WorkdayScraper().safe_search("engineer"))
+        assert leads == []                                   # swallowed, no exception
+
+
 class TestInboxReplies:
     """Reply-content persistence on sync + GET /api/inbox/replies (v2 inbox)."""
 
@@ -2014,3 +2169,83 @@ class TestGmailOAuthEndpoints:
         assert status["has_gmail"] is True
         assert status["gmail_method"] == "oauth"
         assert status["gmail_address"] == "me@gmail.com"
+
+
+class TestHackerNewsScraper:
+    """The HN 'Who is hiring' source (Algolia API) — highest-yield free source.
+    All tests mock the two Algolia calls so they're deterministic and offline."""
+
+    def _mock(self, monkeypatch, comments):
+        import httpx
+        from app.scrapers import hackernews as hn
+        hn._cache.update(at=0.0, posts=[])   # bypass the per-process thread cache
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "author_whoishiring" in str(request.url):
+                return httpx.Response(200, json={"hits": [
+                    {"objectID": "999", "title": "Ask HN: Who is hiring? (July 2026)"},
+                    {"objectID": "998", "title": "Ask HN: Who wants to be hired? (July 2026)"},
+                ]})
+            return httpx.Response(200, json={
+                "hits": [{"comment_text": c} for c in comments],
+                "nbPages": 1,
+            })
+
+        real = httpx.AsyncClient
+        def fake(*a, **kw):
+            for k in ("timeout", "headers", "follow_redirects"):
+                kw.pop(k, None)
+            return real(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(hn.httpx, "AsyncClient", fake)
+
+    def test_embedded_email_becomes_direct_lead(self, monkeypatch):
+        import asyncio
+        from app.scrapers.hackernews import HackerNewsScraper
+        self._mock(monkeypatch, [
+            "Acme Corp | Senior React Engineer | Remote | We use React and Go. Apply: jobs@acme.com",
+        ])
+        leads = asyncio.run(HackerNewsScraper().safe_search("react engineer"))
+        assert len(leads) == 1
+        assert leads[0]["email"] == "jobs@acme.com"
+        assert leads[0]["company"] == "Acme Corp"
+        assert leads[0]["source"] == "HackerNews"
+
+    def test_no_email_emits_domain_lead_from_url(self, monkeypatch):
+        import asyncio
+        from app.scrapers.hackernews import HackerNewsScraper
+        self._mock(monkeypatch, [
+            "Beta Labs | Backend Engineer (Python) | apply at https://beta-labs.io/careers",
+        ])
+        leads = asyncio.run(HackerNewsScraper().safe_search("python backend"))
+        assert len(leads) == 1
+        assert leads[0]["email"] == ""
+        assert leads[0]["_domain"] == "beta-labs.io"
+
+    def test_role_filter_drops_off_target_posts(self, monkeypatch):
+        import asyncio
+        from app.scrapers.hackernews import HackerNewsScraper
+        self._mock(monkeypatch, [
+            "Acme | Senior React Engineer | react@acme.com",
+            "Widget Co | Sales Manager | sales@widget.com",   # off-target
+        ])
+        leads = asyncio.run(HackerNewsScraper().safe_search("react engineer"))
+        assert [l["email"] for l in leads] == ["react@acme.com"]
+
+    def test_aggregator_domains_are_dropped(self, monkeypatch):
+        import asyncio
+        from app.scrapers.hackernews import HackerNewsScraper
+        self._mock(monkeypatch, [
+            # greenhouse link + no real employer domain/email → no lead
+            "Ghost Inc | React Engineer | https://boards.greenhouse.io/ghost/jobs/123",
+        ])
+        leads = asyncio.run(HackerNewsScraper().safe_search("react engineer"))
+        assert leads == []
+
+    def test_seeker_post_is_never_emitted(self, monkeypatch):
+        import asyncio
+        from app.scrapers.hackernews import HackerNewsScraper
+        self._mock(monkeypatch, [
+            "Jane Dev | Senior React Engineer seeking remote work | jane@gmail.com",
+        ])
+        leads = asyncio.run(HackerNewsScraper().safe_search("react engineer"))
+        assert leads == []   # 'seeking' guard + gmail is an aggregator anyway

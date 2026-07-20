@@ -27,10 +27,12 @@ from app.scrapers.ats import (
     SmartRecruitersScraper, RecruiteeScraper,
     WorkableScraper, BreezyScraper,
 )
+from app.scrapers.workday import WorkdayScraper
 from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
 )
+from app.scrapers.hackernews import HackerNewsScraper
 from app.scrapers.web import (
     emails_from_company_pages, find_published_role_email,
     search_role_email_on_web, HIRING_PREFIXES,
@@ -249,6 +251,7 @@ def _build_scrapers(hunter_key: str) -> list:
         RecruiteeScraper(),
         WorkableScraper(),
         BreezyScraper(),
+        WorkdayScraper(),
         RemoteOKScraper(),
         RemotiveScraper(),
         ArbeitnowScraper(),
@@ -256,6 +259,7 @@ def _build_scrapers(hunter_key: str) -> list:
         HimalayasScraper(),
         TheMuseScraper(),
         WeWorkRemotelyScraper(),
+        HackerNewsScraper(),
     ]
     key = hunter_key or settings.hunter_api_key
     if key:
