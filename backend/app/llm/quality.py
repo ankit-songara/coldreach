@@ -24,6 +24,14 @@ _CLAIM_RES = (
     re.compile(r"\byour (?:team|company|platform|product|stack|engineering team|codebase|api|app)(?:'s)?\s+(?:uses?|is|are|has|have|ships?|runs?|built|builds?|recently|focus)\b", re.I),
     re.compile(r"\bcongrat(?:s|ulations)\b", re.I),
     re.compile(r"\bimpressive|impressed\b", re.I),
+    # Second-person assertions about what the recipient is DOING — the exact
+    # shape the model copies from the prompt's example opener when it has no
+    # real context ("You're rebuilding the payments service at Fly.io").
+    # Present-continuous ("you're building X") and recent-event ("you've
+    # shipped X"). Grounding then decides: kept when the payload word is in the
+    # verified context, stripped (and regenerated) when the context is empty.
+    re.compile(r"\byou(?:'re| are)\s+(?:currently\s+|now\s+|just\s+|recently\s+)?\w+ing\b", re.I),
+    re.compile(r"\byou(?:'ve| have)\s+(?:just\s+|recently\s+)?(?:launched|shipped|raised|built|announced|hired|rebuilt|migrated|scaled|expanded|rewrote|adopted|moved|switched)\b", re.I),
 )
 
 # Words that carry no verifiable content — excluded from grounding checks.
@@ -46,7 +54,7 @@ def _company_claim_re(company: str) -> re.Pattern | None:
     if not c or c.lower() == "unknown":
         return None
     return re.compile(
-        rf"\b{re.escape(c)}\b.{{0,50}}\b(uses?|is|are|has|have|recently|just|announced|raised|launched|shipped|ships|builds?)\b",
+        rf"\b{re.escape(c)}\b.{{0,50}}\b(uses?|is|are|has|have|recently|just|announced|raised|launched|shipped|ships|builds?|building|shipping|scaling|launching|hiring|announcing|raising|migrating|rewriting)\b",
         re.I,
     )
 
@@ -131,6 +139,25 @@ _STRONG_NUM_RE = re.compile(
 )
 _DIGITS_RE = re.compile(r"\d+")
 
+# Spelled-out counts slip past _STRONG_NUM_RE entirely ("took three rewrites"
+# has no digit character). Small models invent these freely — same failure
+# class as invented digits, just undetectable by the digit check above. Cover
+# 1-12 against common achievement nouns; converted to its digit form below so
+# the SAME grounding set (résumé/context digit tokens) decides if it's real.
+_WORD_TO_DIGIT = {
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+    "eleven": "11", "twelve": "12",
+}
+_STRONG_WORDNUM_RE = re.compile(
+    r"\b(" + "|".join(_WORD_TO_DIGIT) + r")\s+"
+    r"(rewrites?|iterations?|attempts?|outages?|incidents?|migrations?|"
+    r"launches?|deploys?|deployments?|releases?|sprints?|prototypes?|"
+    r"engineers?|hires?|customers?|clients?|projects?|teams?|rounds?|"
+    r"tries|years?|months?|weeks?|days?|hours?|times)\b",
+    re.I,
+)
+
 
 def _digit_tokens(text: str) -> set[str]:
     return set(_DIGITS_RE.findall(text or ""))
@@ -153,6 +180,11 @@ def scrub_ungrounded_numbers(body: str, ground_text: str) -> tuple[str, list[str
                     if any(d not in ground for d in _DIGITS_RE.findall(m.group())):
                         bad = True
                         break
+                if not bad:
+                    for m in _STRONG_WORDNUM_RE.finditer(sentence):
+                        if _WORD_TO_DIGIT[m.group(1).lower()] not in ground:
+                            bad = True
+                            break
                 if bad:
                     flagged.append(sentence.strip())
                     continue
@@ -184,6 +216,16 @@ _FILLER_RES = (
     re.compile(r"^i look forward to\b", re.I),
     re.compile(r"\bwas impressed by your\b", re.I),
     re.compile(r"\byour (?:team's|company's) (?:commitment|dedication) to\b", re.I),
+    # "I'd be happy to discuss how my experience could apply / tackle similar
+    # challenges together" — the content-free hedge the model closes on instead
+    # of a real ask (seen in the engineering_leader sample).
+    re.compile(r"^i(?:'d| would) be (?:happy|glad|delighted) to (?:discuss|chat|talk|connect|share)\b", re.I),
+    re.compile(r"\bhow my (?:experience|background|skills|work) (?:could|might|would|may|can) (?:apply|help|be relevant|contribute)\b", re.I),
+    # "let me know about any opportunities that align with my skills and
+    # experience" — the generic mass-mail ask the recruiter template was
+    # rewritten to avoid; stripping it forces has_ask=False so a real,
+    # specific CTA gets regenerated instead of shipping this one.
+    re.compile(r"\bopportunit(?:y|ies)\b[^.]{0,60}\balign(?:s|ing)?\s+with\s+my\b", re.I),
 )
 
 
@@ -224,6 +266,22 @@ _COVER_LETTER_PHRASES = (
 _SELF_OPENER_RE = re.compile(r"^(?:i|i'm|i've|i'd|my|as an?)\b", re.I)
 _PROPER_NOUN_RE = re.compile(r"(?<!^)(?<![.!?]\s)\b[A-Z][a-zA-Z]{2,}")
 
+# Unambiguous machine-writing single-word tells (the prompt bans these but the
+# model still reaches for them). Word-boundary matched so 'event-driven' and
+# 'delving' don't false-trip; ambiguous tech words (driven/skilled/robust as in
+# 'robustness') are deliberately excluded. Each hit docks the reply score so a
+# tell-heavy draft drops below the bar and regenerates.
+_BANNED_TELLS = (
+    "excited", "passionate", "thrilled", "leverage", "seamless", "synergy",
+    "delve", "showcase", "testament", "resonate", "cutting-edge", "seasoned",
+    "well-positioned", "utilize", "spearheaded", "elevate",
+)
+_BANNED_RE = re.compile(r"\b(" + "|".join(re.escape(w) for w in _BANNED_TELLS) + r")\b", re.I)
+
+
+def count_banned(text: str) -> int:
+    return len(_BANNED_RE.findall(text or ""))
+
 
 def score_draft(body: str, subject: str = "", *,
                 word_range: tuple[int, int] = (60, 120),
@@ -249,6 +307,7 @@ def score_draft(body: str, subject: str = "", *,
         score -= min(30, 2 * (lo - n_words))
 
     score -= 12 * sum(low.count(p) for p in _COVER_LETTER_PHRASES)
+    score -= 10 * count_banned(b)   # unambiguous AI-tell vocabulary
 
     # Opener: about THEM (company name / their tech) good, about "I/my" bad.
     first_line = next((ln for ln in b.splitlines() if ln.strip()), "")

@@ -14,6 +14,9 @@ from app.llm.generator import (
 )
 from app.llm.parsing import parse_subject_body
 from app.llm.prompts import TEMPLATES, get_designation_key
+from app.llm.quality import (
+    count_banned, scrub_fabrications, scrub_ungrounded_numbers, strip_filler,
+)
 from app.scrapers.base import person_name_from_email
 from app.scrapers.directory import role_match
 
@@ -226,3 +229,107 @@ class TestDesignationRouting:
         for key in ("recruiter", "engineering_leader", "peer_engineer", "founder",
                     "product", "business_leader", "followup"):
             assert key in TEMPLATES
+
+    @pytest.mark.parametrize("designation,expected", [
+        # "Director" contains the substring "cto" — a plain `in` check routed
+        # any director-level title straight to engineering_leader.
+        ("Director of Sales",       "business_leader"),
+        ("Director of Marketing",   "business_leader"),
+        # "Product Owner" contains "owner" — was swallowed by the founder
+        # branch before "founder"/"ceo"/etc.
+        ("Product Owner",           "product"),
+        # "engineer" is a substring of "Engineering Recruiter" / "Sales
+        # Engineer"-style recruiter titles — recruiter must win.
+        ("Engineering Recruiter",   "recruiter"),
+        ("Technical Recruiter",     "recruiter"),
+        ("Talent Partner, Eng",     "recruiter"),
+    ])
+    def test_substring_collisions_no_longer_misroute(self, designation, expected):
+        assert get_designation_key(designation) == expected
+
+
+class TestScrubFabrications:
+    """The BLOCKER: a no-context draft that copies the prompt's example opener
+    verbatim ("You're rebuilding X at {company}") must never ship — it's an
+    invented claim about a real person's job, not the candidate's."""
+
+    def test_second_person_present_continuous_stripped_without_context(self):
+        body = ("You're rebuilding the payments service at Fly.io. "
+                 "I rebuilt the reconciliation pipeline that processes 4M transactions/day.")
+        clean, fabricated = scrub_fabrications(body, company="Fly.io", context="")
+        assert fabricated, "second-person activity claim must be flagged with no context"
+        assert "You're rebuilding" not in clean
+        assert "4M transactions/day" in clean   # candidate-side fact survives
+
+    def test_second_person_recent_event_stripped_without_context(self):
+        body = "You've just shipped the new checkout flow. Worth a chat?"
+        clean, fabricated = scrub_fabrications(body, company="Acme", context="")
+        assert fabricated
+        assert "shipped the new checkout flow" not in clean
+
+    def test_second_person_claim_kept_when_grounded(self):
+        body = "You're rebuilding the banking infrastructure at Mercury. I cut p95 640ms to 190ms."
+        clean, fabricated = scrub_fabrications(
+            body, company="Mercury",
+            context="Mercury is building banking infra; recent blog about their ledger rewrite.",
+        )
+        assert not fabricated
+        assert "rebuilding the banking infrastructure" in clean
+
+
+class TestStripFillerGenericAsk:
+    def test_align_with_my_skills_close_is_stripped(self):
+        body = ("I would appreciate it if you could review my profile and let me "
+                 "know about any suitable opportunities at Ramp that align with "
+                 "my skills and experience.")
+        clean, removed = strip_filler(body)
+        assert removed == 1
+        assert clean == ""
+
+    def test_specific_ask_untouched(self):
+        body = "Would you be open to a 15-min chat about the Backend Engineer (Payments) role?"
+        clean, removed = strip_filler(body)
+        assert removed == 0
+        assert clean == body
+
+    def test_unrelated_align_usage_untouched(self):
+        body = "The service needs to align event timestamps with the ledger clock."
+        clean, removed = strip_filler(body)
+        assert removed == 0
+
+
+class TestCountBanned:
+    def test_ai_tell_words_counted(self):
+        assert count_banned("I'm excited to leverage seamless synergy") == 4
+
+    def test_ambiguous_tech_words_not_false_tripped(self):
+        assert count_banned("event-driven robustness and a skilled team") == 0
+
+
+class TestScrubUngroundedNumbers:
+    RESUME = (
+        "Currently: Backend Engineer at PayGlide (fintech, ~2 yrs). "
+        "Cut p95 checkout latency from 640ms to 190ms. Rebuilt the reconciliation "
+        "pipeline that processes 4M transactions/day. Before: SDE at Cloudbyte "
+        "(2 yrs), built a rate limiter serving 12k req/s."
+    )
+
+    def test_spelled_out_invented_count_is_stripped(self):
+        # "three rewrites" has no digit character, so it's invisible to a
+        # pure digit-grounding check — the exact fabrication seen in a real
+        # generated sample for a candidate whose résumé never mentions rewrites.
+        body = "At PayGlide, I owned the payments ledger service and took three rewrites to get it there."
+        clean, flagged = scrub_ungrounded_numbers(body, self.RESUME)
+        assert flagged
+        assert "three rewrites" not in clean
+
+    def test_spelled_number_kept_when_its_digit_is_grounded(self):
+        body = "I spent two years at Cloudbyte building the rate limiter."
+        clean, flagged = scrub_ungrounded_numbers(body, self.RESUME)
+        assert not flagged
+        assert clean == body
+
+    def test_benign_bare_integer_not_flagged(self):
+        body = "Would you be open to a 15-min chat, one of the highlights of my week?"
+        clean, flagged = scrub_ungrounded_numbers(body, self.RESUME)
+        assert not flagged

@@ -40,8 +40,18 @@ from app.llm.quality import (
 
     scrub_fabrications, scrub_ungrounded_numbers, ends_with_question,
 
-    strip_filler, score_draft,
+    strip_filler, score_draft, count_banned, _COVER_LETTER_PHRASES,
 
+)
+
+import re as _re
+
+# A formal application must still make ONE clear ask — otherwise it's a
+# résumé dump. Any of these closing intents counts.
+_FORMAL_ASK_RE = _re.compile(
+    r"(?i)\b(open(?:ing)?s?|role|position|suitable|consider|review|happy to|"
+    r"worth a|let me know|point me|current or upcoming|be in touch|reach out|"
+    r"good fit for)\b"
 )
 
 from app.llm.relevance import rank_relevant_facts
@@ -74,9 +84,14 @@ _SIGNOFF_RE = re.compile(
 
     # punctuation/whitespace) to avoid matching "Best practices..." or "Regards your...".
 
+    # Every courtesy word is end-anchored to its own line so a body sentence
+    # that merely BEGINS with "Thanks"/"Cheers" ("Thanks to that rewrite we cut
+    # latency 38%.") is never mistaken for the sign-off and truncated.
     r"\n+\s*(best regards|warm regards|kind regards|all the best|yours truly|"
 
-    r"thanks|thank you|cheers|sincerely|warmly"
+    r"thanks(?=\s*[,.!]?\s*$)|thank you(?=\s*[,.!]?\s*$)|cheers(?=\s*[,.!]?\s*$)|"
+
+    r"sincerely(?=\s*[,.]?\s*$)|warmly(?=\s*[,.]?\s*$)"
 
     r"|best(?=\s*[,.]?\s*$)|regards(?=\s*[,.]?\s*$))\s*,?\s*[\s\S]*$",
 
@@ -191,6 +206,13 @@ def _humanize(text: str, formal: bool = False) -> str:
     else:
 
         t = _DASH_RE.sub(", ", t)
+
+        # llama frequently uses a spaced ASCII hyphen " - " as a dash connector,
+        # which the em/en-dash rule above misses. Convert it to ", " like the
+        # real dashes, but require spaces on BOTH sides + a letter after, so
+        # "15-min", "p95", and "300 - 10" numeric ranges are left intact.
+
+        t = re.sub(r"(?<=[\w.,%)\"'])\s+-\s+(?=[A-Za-z])", ", ", t)
 
     t = t.replace("!", ".")            # exclamation marks read as fake enthusiasm
 
@@ -612,7 +634,14 @@ class EmailGenerator:
 
         for attempt in (1, 2):
 
-            raw = await chain.ainvoke(variables)
+            try:
+                raw = await chain.ainvoke(variables)
+            except Exception:
+                # Provider hiccup / rate limit on the retry: ship the best draft
+                # we already have rather than 500 a compose that half-succeeded.
+                if candidates:
+                    break
+                raise
 
             subject, body = parse_subject_body(raw)
 
@@ -638,9 +667,24 @@ class EmailGenerator:
 
             if formal:
 
-                n_filler, quality = 0, 100
+                # Formal keeps its application STRUCTURE (no casual-opener or
+                # closing-question requirement), but it must not read as a mass
+                # cover letter: strip filler, and regenerate when it's stuffed
+                # with clichés/AI tells or makes no closing ask.
 
-                below_bar = bool(fabricated or bad_numbers)
+                clean, n_filler = strip_filler(clean)
+
+                has_ask = bool(_FORMAL_ASK_RE.search(clean))
+
+                n_cliche = count_banned(clean) + sum(
+                    clean.lower().count(p) for p in _COVER_LETTER_PHRASES
+                )
+
+                quality = max(0, 100 - 12 * n_cliche - (0 if has_ask else 40))
+
+                below_bar = bool(
+                    fabricated or bad_numbers or n_filler or not has_ask or n_cliche >= 2
+                )
 
             else:
 
@@ -756,9 +800,13 @@ class EmailGenerator:
 
                 "\n(No verified context available. Do NOT invent product names, funding rounds, "
 
-                "metrics, or tech stack. Anchor purely on the candidate's own background and an "
+                "metrics, tech stack, OR what they are doing, building, shipping, hiring for, or "
 
-                "honest, direct reason for reaching out to this company.)\n\n"
+                "working on — you have no way to know any of that. Never open with a "
+
+                "'You're <doing X>' claim, in the body OR the subject. Anchor purely on the "
+
+                "candidate's own result and an honest, direct reason for reaching out.)\n\n"
 
             )
 
@@ -778,17 +826,20 @@ class EmailGenerator:
 
         # openers. No signal → no shortlist → résumé passed through as before.
 
-        resume_for_prompt = self._trim_resume(resume)
-
+        # Rank on the FULL résumé, not the trimmed copy: the most relevant
+        # experience for this recipient may sit past the 3000-char cut, and
+        # ranking-then-trimming would silently drop it before it's ever seen.
         relevant, shared = rank_relevant_facts(
 
-            resume_for_prompt, context=company_context,
+            resume, context=company_context,
 
             designation=designation, company=company,
 
             variety_seed=f"{name}|{company}",
 
         )
+
+        resume_for_prompt = self._trim_resume(resume)
 
         if relevant:
 
@@ -879,6 +930,13 @@ class EmailGenerator:
             formal=formal,
 
         )
+
+        if not subject.strip():
+            # Model omitted/emptied the SUBJECT marker — synthesize from inputs
+            # we already have (fabricates nothing) rather than ship "SUBJECT: ".
+            comp = _usable_company(company)
+            subject = (f"{designation.split('(')[0].strip() or 'Role'} Application"
+                       if formal else f"quick note for {comp or 'your team'}")
 
         return f"SUBJECT: {subject}\n\nBODY:\n{body}"
 

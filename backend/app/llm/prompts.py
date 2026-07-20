@@ -11,6 +11,8 @@ Two registers:
 Fabrication rules apply to both.
 """
 
+import re
+
 # Shared no-fabrication block — both registers.
 _NO_FABRICATION = """\
 DO NOT FABRICATE - this is the most important rule:
@@ -30,6 +32,13 @@ REGISTER - a professional job application, not a marketing email:
 - Real numbers and real system names from the candidate's background only.
 
 {_NO_FABRICATION}
+
+Even in a formal application, NEVER use these (they read as mass-mailed AI):
+"excited", "passionate", "thrilled", "seasoned", "leverage", "utilize",
+"align with my", "resonate", "proven track record", "great fit", "perfect fit",
+"my skills", "I am writing to", "I hope this finds you well", "the opportunity
+to", "reach out to inquire", "potential opportunities that align". Name the
+role and the facts directly instead.
 
 FORMAT - write the BODY only:
 - Do NOT write any greeting ("Hi", "Dear ...") - added automatically.
@@ -71,9 +80,15 @@ THE OPENER - the first sentence decides whether they read the second:
 - Never open with who you are or what you'd like. Open with THEM: their hiring need,
   their product, their technical problem (from the verified context) - or the collision
   between their problem and your result.
-- Shapes that work (adapt with the REAL facts, never copy the wording):
-    "You're hiring backend engineers for the payments rebuild. I shipped exactly that: <result with number>."
-    "<Their hard problem from the context> is what I spent the last year on: <result with number>."
+- Shapes that work (adapt with the REAL facts, never copy this wording — the
+  <...> parts are placeholders you MUST fill from the verified context or your
+  own résumé, never with an invented fact):
+    "<their stated hiring need or hard problem, from the CONTEXT>. I shipped exactly that: <your result with a number>."
+    "<their hard problem, from the CONTEXT> is what I spent the last year on: <your result with a number>."
+- ONLY use a "You're <doing X>" / "<their problem>" opener when X or the problem
+  is actually stated in the VERIFIED CONTEXT above. With NO context, you do not
+  know what they're doing — do NOT guess it. Open instead on your own strongest
+  result and one honest, direct reason for reaching out.
 - Instant delete: "I'd like to...", "I'm a backend engineer with...", "My experience in...",
   "I recently came across your company...".
 
@@ -182,8 +197,11 @@ Candidate background:
 
 Length: 80-110 words. Recruiters scan; front-load the essentials.
 Structure:
-1. One line: asking about open roles that fit the candidate - name the exact
-   role from the context if one is present.
+1. One line: if the context names an exact open role, OPEN by naming it (e.g.
+   "I saw the Backend Engineer (Payments) role and wanted to put my name in.").
+   Do NOT open with a generic "reaching out about potential opportunities that
+   align with my background" line. If the context names no role, open with the
+   sensible role family from the candidate's background.
 2. Two lines: current role plus the most relevant skills/systems with real
    numbers, drawn from the MOST RELEVANT list when present.
 3. Close: ask them to review the profile and share any suitable opening.{{attachment_note}}
@@ -383,6 +401,21 @@ WORD_RANGES: dict[str, tuple[int, int]] = {
 }
 
 
+_DESIG_WORD_CACHE: dict[str, "re.Pattern"] = {}
+
+
+def _has(d: str, *terms: str) -> bool:
+    """Whole-word / whole-phrase match — NOT a raw substring. Raw `in` mis-routed
+    'Director' (contains 'cto'), 'Product Owner' (contains 'owner'), etc."""
+    for t in terms:
+        rx = _DESIG_WORD_CACHE.get(t)
+        if rx is None:
+            rx = _DESIG_WORD_CACHE[t] = re.compile(rf"\b{re.escape(t)}\b")
+        if rx.search(d):
+            return True
+    return False
+
+
 def get_designation_key(designation: str) -> str:
     """Map a designation string to the best email template."""
     d = designation.lower()
@@ -393,42 +426,46 @@ def get_designation_key(designation: str) -> str:
     if "role inbox" in d or "unverified guess" in d:
         return "hiring_inbox"
 
-    # C-suite founders always get the founder template
-    if any(x in d for x in ("founder", "ceo", "coo", "co-founder", "owner",
-                             "managing director", "md", "chief executive")):
+    # Recruiting / HR — checked BEFORE the engineer branch so an "Engineering
+    # Recruiter" / "Talent Partner, Eng" routes to the recruiter template, not
+    # peer_engineer. (The default for ATS-sourced contacts.)
+    if _has(d, "recruiter", "recruiting", "talent acquisition", "ta", "hr",
+            "human resource", "people ops", "people partner", "hiring manager",
+            "talent partner", "talent"):
+        return "recruiter"
+
+    # C-suite founders. "owner" dropped — it matched "Product Owner"; real
+    # founders say founder/ceo/co-founder.
+    if _has(d, "founder", "ceo", "coo", "co-founder", "cofounder",
+            "managing director", "md", "chief executive"):
         return "founder"
 
     # Senior engineering leaders with hiring authority
-    if any(x in d for x in ("cto", "vp eng", "vp of eng", "head of eng", "head of engineering",
-                             "engineering manager", "em,", " em ", "tech lead", "technical lead",
-                             "principal engineer", "staff engineer", "distinguished engineer",
-                             "director of eng", "engineering director", "software director",
-                             "vp engineering", "chief technology", "chief architect")):
+    if _has(d, "cto", "vp eng", "vp of eng", "head of eng", "head of engineering",
+            "engineering manager", "em", "tech lead", "technical lead",
+            "principal engineer", "staff engineer", "distinguished engineer",
+            "director of eng", "engineering director", "software director",
+            "vp engineering", "chief technology", "chief architect"):
         return "engineering_leader"
 
-    # Peer engineers — no hiring authority; write a referral-ask, not a pitch
-    if any(x in d for x in ("engineer", "developer", "swe", "software engineer",
-                             "backend", "frontend", "fullstack", "full stack",
-                             "devops", "sre", "platform engineer", "infrastructure",
-                             "data scientist", "ml engineer", "data engineer",
-                             "mobile engineer", "android", "ios engineer")):
-        return "peer_engineer"
-
-    # Product roles
-    if any(x in d for x in ("product manager", "pm,", " pm ", "head of product", "vp product",
-                             "director of product", "chief product", "cpo", "product lead")):
+    # Product roles (before peer_engineer: a "Product Engineer" is product-led)
+    if _has(d, "product manager", "pm", "head of product", "vp product",
+            "director of product", "chief product", "cpo", "product lead",
+            "product owner"):
         return "product"
 
-    # Recruiting / HR — the default for ATS-sourced contacts
-    if any(x in d for x in ("recruiter", "recruiting", "talent acquisition", "ta,", " ta ",
-                             "hr ", "human resource", "people ops", "people partner",
-                             "hiring manager", "talent partner")):
-        return "recruiter"
+    # Peer engineers — no hiring authority; write a referral-ask, not a pitch
+    if _has(d, "engineer", "engineering", "developer", "swe", "software",
+            "backend", "frontend", "fullstack", "full stack",
+            "devops", "sre", "platform", "infrastructure",
+            "data scientist", "ml engineer", "data engineer",
+            "mobile engineer", "android", "ios"):
+        return "peer_engineer"
 
     # Business leaders
-    if any(x in d for x in ("vp", "director", "head of", "chief", "cmo", "cfo",
-                             "sales", "marketing", "growth", "operations",
-                             "general manager", " gm", "business development")):
+    if _has(d, "vp", "director", "head of", "chief", "cmo", "cfo",
+            "sales", "marketing", "growth", "operations",
+            "general manager", "gm", "business development"):
         return "business_leader"
 
     # Default: recruiter template is the safest for unknown roles
