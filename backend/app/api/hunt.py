@@ -31,6 +31,7 @@ from app.scrapers.workday import WorkdayScraper
 from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
+    WorkingNomadsScraper,
 )
 from app.scrapers.hackernews import HackerNewsScraper
 from app.scrapers.web import (
@@ -259,6 +260,7 @@ def _build_scrapers(hunter_key: str) -> list:
         HimalayasScraper(),
         TheMuseScraper(),
         WeWorkRemotelyScraper(),
+        WorkingNomadsScraper(),
         HackerNewsScraper(),
     ]
     key = hunter_key or settings.hunter_api_key

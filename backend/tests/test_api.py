@@ -2249,3 +2249,44 @@ class TestHackerNewsScraper:
         ])
         leads = asyncio.run(HackerNewsScraper().safe_search("react engineer"))
         assert leads == []   # 'seeking' guard + gmail is an aggregator anyway
+
+
+class TestWorkingNomadsScraper:
+    """WorkingNomads JSON board — its `tags` field is a comma-joined STRING,
+    unlike the list-typed boards, so the parsing needs its own coverage."""
+
+    def _mock(self, monkeypatch, jobs):
+        import httpx
+        from app.scrapers import jobboards as jb
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=jobs)
+
+        real = httpx.AsyncClient
+        def fake(*a, **kw):
+            for k in ("timeout", "headers", "follow_redirects"):
+                kw.pop(k, None)
+            return real(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(jb.httpx, "AsyncClient", fake)
+
+    def test_role_query_matches_via_comma_string_tags(self, monkeypatch):
+        import asyncio
+        from app.scrapers.jobboards import WorkingNomadsScraper
+        self._mock(monkeypatch, [
+            {"title": "Senior AI Engineer", "company_name": "Lemon.io",
+             "tags": "python,machine learning,react", "category_name": "Development",
+             "description": "Build things."},
+            {"title": "Account Executive", "company_name": "SalesCo",
+             "tags": "sales,crm", "category_name": "Sales", "description": "Sell things."},
+        ])
+        leads = asyncio.run(WorkingNomadsScraper().safe_search("react"))
+        assert len(leads) == 1
+        assert leads[0]["_domain"] == "lemon.io"
+        assert leads[0]["company"] == "Lemon.io"
+
+    def test_missing_fields_do_not_crash(self, monkeypatch):
+        import asyncio
+        from app.scrapers.jobboards import WorkingNomadsScraper
+        self._mock(monkeypatch, [{"title": "Engineer"}, "junk", {}])
+        leads = asyncio.run(WorkingNomadsScraper().safe_search("engineer"))
+        assert isinstance(leads, list)   # no company/domain → dropped, but no crash

@@ -231,6 +231,23 @@ class HimalayasScraper(_JsonBoard):
         } for j in jobs]
 
 
+class WorkingNomadsScraper(_JsonBoard):
+    name = "WorkingNomads"
+
+    async def _listings(self, client: httpx.AsyncClient) -> list[dict]:
+        r = await client.get("https://www.workingnomads.com/api/exposed_jobs/")
+        jobs = (r.json() if r.is_success else []) or []
+        return [{
+            "title":   j.get("title", ""),
+            "company": j.get("company_name", "") or "Unknown",
+            # tags is a comma-joined string on this board, not a list.
+            "tags":    [t.strip() for t in (j.get("tags") or "").split(",") if t.strip()]
+                       + ([j["category_name"]] if j.get("category_name") else []),
+            "text":    _strip(j.get("description", "")),
+            "domain":  "",
+        } for j in jobs if isinstance(j, dict)]
+
+
 class TheMuseScraper(_JsonBoard):
     name = "TheMuse"
 
