@@ -376,11 +376,19 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
             # Not on the company's own pages (JS-rendered site, bot wall) —
             # try the wider web: job posts, directories, press pages.
             published = await search_role_email_on_web(domain, raw.get("company") or "")
+        # Hunter's generic lookup is a secondary grounding signal when the
+        # company's own pages / the web search find nothing published.
+        if not published and settings.hunter_api_key:
+            published = await HunterEnricher(settings.hunter_api_key).search_generic(domain)
+
         if published:
             prefix = published.split("@", 1)[0]
-            # A dedicated hiring inbox beats a general company inbox, but both
-            # are REAL published addresses — either way this lead can't be the
-            # kind of blind guess that bounces.
+            # A dedicated hiring inbox (careers@/jobs@/hr@…) beats a general
+            # company inbox (contact@/hello@/info@) — the designation picks the
+            # email TEMPLATE, so a general inbox must be labelled a Company Inbox
+            # (gets the company-inbox message), not Talent/Recruiting (which
+            # writes a formal job application). Both are REAL published
+            # addresses, so neither is the kind of blind guess that bounces.
             if prefix in HIRING_PREFIXES:
                 desig, conf = "Talent/Recruiting (role inbox)", 70
             else:
@@ -388,14 +396,6 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
             return {**raw, "email": published, "name": prefix.title(),
                     "designation": desig,
                     "confidence": conf, "email_status": "valid", "_domain": None}
-
-        if settings.hunter_api_key:
-            generic = await HunterEnricher(settings.hunter_api_key).search_generic(domain)
-            if generic:
-                prefix = generic.split("@", 1)[0]
-                return {**raw, "email": generic, "name": prefix.title(),
-                        "designation": "Talent/Recruiting (role inbox)",
-                        "confidence": 65, "email_status": "valid", "_domain": None}
     else:
         # No name → try the company's own pages for a real, named person.
         page_emails = await emails_from_company_pages(domain)

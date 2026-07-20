@@ -2411,3 +2411,38 @@ class TestHuntFixAuditCorrections:
         assert _resolve_target_role("", "Stripe") == ""
         assert _resolve_target_role("", "Discovery") == ""
         assert _resolve_target_role("engineering", "Stripe") == "engineering"
+
+
+class TestHunterInboxLabeling:
+    """A Hunter generic-inbox result must be labelled by its prefix — a general
+    inbox (contact@/hello@) gets the Company-Inbox template, a hiring inbox
+    (careers@) the formal Talent/Recruiting one — matching the published path."""
+
+    def _run(self, monkeypatch, generic_addr):
+        import asyncio
+        from app.api import hunt as h
+        from app.scrapers.resolver import ResolutionCache
+        from app.scrapers.enricher import HunterEnricher
+
+        async def fake_mx(self, d): return ["mx.example.com"]
+        async def fake_pub(d): return None
+        async def fake_web(d, company=""): return None
+        async def fake_generic(self, d): return generic_addr
+
+        monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
+        monkeypatch.setattr(h, "find_published_role_email", fake_pub)
+        monkeypatch.setattr(h, "search_role_email_on_web", fake_web)
+        monkeypatch.setattr(HunterEnricher, "search_generic", fake_generic)
+        monkeypatch.setattr(h.settings, "hunter_api_key", "fake")
+        return asyncio.run(h._resolve_domain_contact(
+            {"name": "", "company": "Acme", "_domain": "acme.com", "source": "careers-inbox"},
+            ResolutionCache(),
+        ))
+
+    def test_hunter_general_inbox_is_company_inbox(self, monkeypatch):
+        r = self._run(monkeypatch, "contact@acme.com")
+        assert r["designation"] == "Company Inbox (role inbox)"
+
+    def test_hunter_hiring_inbox_is_talent_recruiting(self, monkeypatch):
+        r = self._run(monkeypatch, "careers@acme.com")
+        assert r["designation"] == "Talent/Recruiting (role inbox)"
