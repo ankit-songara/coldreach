@@ -59,6 +59,11 @@ _SCRAPE_BUDGET_SECONDS  = 18 if os.environ.get("VERCEL") else 40
 _RESOLVE_BUDGET_SECONDS = 35 if os.environ.get("VERCEL") else 45
 _TOTAL_HUNT_BUDGET_SECONDS = 52 if os.environ.get("VERCEL") else 120
 _MIN_RESOLVE_SECONDS = 8    # floor: always give resolution a real chance
+# Held back from the resolve budget for the (third) verify phase, and used as a
+# hard deadline on it, so a flood of direct-email leads with slow/flaky MX
+# lookups can't push scrape+resolve+verify past the 60s serverless wall (which
+# would 504 and persist NOTHING despite a fully-successful scrape+resolve).
+_VERIFY_RESERVE_SECONDS = 6
 # "careers@" and "jobs@" are the most universally standard convention across
 # company sizes and countries — tried first. "talent@"/"hr@" skew larger/tech-
 # forward; "people@"/"team@" skew startup-specific and are the least reliable.
@@ -216,6 +221,12 @@ def _resolve_target_role(role_filter: str, query: str) -> str:
     explicit = (role_filter or "").strip().lower()
     if explicit in ROLE_FILTERS:
         return explicit
+    # Inference is for free-text ROLE queries only. On a company-name hunt
+    # ("Discovery", "Palo Alto Networks") a family word in the name would infer
+    # a spurious filter and drop that company's own contacts — so never infer
+    # when the query is a company name.
+    if looks_like_company(query):
+        return ""
     return _infer_role_from_query(query)
 
 
@@ -712,10 +723,14 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     if tasks:
         # Adaptive: whatever wall-clock the scrape phase consumed comes out of
         # the resolve budget so the total stays inside the serverless limit.
+        # _VERIFY_RESERVE_SECONDS is held back so the (third) verify phase can't
+        # be starved into breaching the 60s wall — the resolve budget must NOT
+        # be allowed to consume the whole total.
         resolve_budget = max(
             _MIN_RESOLVE_SECONDS,
             min(_RESOLVE_BUDGET_SECONDS,
-                _TOTAL_HUNT_BUDGET_SECONDS - (time.monotonic() - hunt_t0)),
+                _TOTAL_HUNT_BUDGET_SECONDS - _VERIFY_RESERVE_SECONDS
+                - (time.monotonic() - hunt_t0)),
         )
         done, pending = await asyncio.wait(tasks, timeout=resolve_budget)
         if pending:
@@ -767,23 +782,40 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     #    Run in the default executor so slow MX lookups never block the event loop
     #    (a synchronous pool.map here froze the whole server for other users). ────
     loop = asyncio.get_running_loop()
-    verdicts = await asyncio.gather(
-        *(loop.run_in_executor(None, verify_email, e) for e in (r["email"] for r in with_email))
-    )
+    # Leads with a trusted preset ("valid"/"risky", set by the resolver from real
+    # grounding) keep it regardless of the cheap verifier — so skip their MX
+    # lookup entirely. Only leads without a trusted preset are verified, which
+    # cuts the executor fan-out on the common direct-email flood.
+    pairs = [(r, loop.run_in_executor(None, verify_email, r["email"]))
+             for r in with_email if r.get("email_status") not in ("risky", "valid")]
+    if pairs:
+        # Hard deadline from remaining wall time: a flood of direct-email leads
+        # with slow/flaky MX lookups must NOT push scrape+resolve+verify past the
+        # 60s serverless wall — that would 504 and persist nothing.
+        verify_deadline = max(3.0, _TOTAL_HUNT_BUDGET_SECONDS - (time.monotonic() - hunt_t0))
+        await asyncio.wait([f for _, f in pairs], timeout=verify_deadline)
+
+    done_verdict = {
+        id(r): f.result()
+        for r, f in pairs
+        if f.done() and not f.cancelled() and f.exception() is None
+    }
 
     verified: list[dict] = []
     dropped_invalid = 0
-    for r, verdict in zip(with_email, verdicts):
-        if verdict == "invalid":
-            dropped_invalid += 1
-            continue
+    for r in with_email:
         preset = r.get("email_status")
-        # Honour an upstream "risky" or "valid" set by the resolver (catch-all
-        # domain / unverified guess = risky; a grounded, actually-published
-        # address = valid) regardless of what the cheap verifier returns —
-        # "unknown" is the common result when there's no Hunter key, and must
-        # not silently overwrite either.
-        r["email_status"] = preset if preset in ("risky", "valid") else verdict
+        if preset in ("risky", "valid"):
+            verified.append(r)            # trusted grounding — no verify needed
+            continue
+        verdict = done_verdict.get(id(r))  # None if verify didn't finish in time
+        if verdict == "invalid":
+            dropped_invalid += 1           # only DROP on a definite invalid verdict
+            continue
+        # A lead that couldn't be verified in time keeps "unknown" — never
+        # dropped (we don't lose a grounded lead to a slow DNS server) and
+        # never invented (an unverifiable address is not upgraded to valid).
+        r["email_status"] = verdict or preset or "unknown"
         verified.append(r)
     with_email = verified
     if dropped_invalid:
@@ -867,7 +899,10 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # Signal for a useful empty state: how many leads we *found* (before resolution)
     # vs. how many resolved-but-were-already-saved. Lets the UI distinguish
     # "found hiring but no reachable email" from "all duplicates" from "nothing".
-    found = sum(source_counts.values())
+    # Exclude the synthetic "careers-inbox" entry: those are the app's OWN
+    # per-domain careers@ probes derived from the scraped leads, not additional
+    # hiring signals — counting them double-counts every company that produced one.
+    found = sum(v for k, v in source_counts.items() if k != "careers-inbox")
     duplicates = max(0, len(contacts_to_save) - len(saved))
 
     return HuntResult(

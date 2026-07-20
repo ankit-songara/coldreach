@@ -64,7 +64,12 @@ def _guess_domain(company: str) -> str:
     compact = c.replace(" ", "").lower()
     if _IS_DOMAIN.match(compact):
         return compact
-    s = _norm(c)
+    # Preserve INTERNAL hyphens ("X-Team" → x-team.com) — _norm strips them,
+    # making hyphenated-domain companies permanently unreachable. Spaces still
+    # collapse ("Acme Corp" → acmecorp.com). The guess is only ever accepted
+    # downstream if its domain has real MX, so no ungrounded email is persisted.
+    s = re.sub(r"[^a-z0-9-]", "", c.lower())
+    s = re.sub(r"-{2,}", "-", s).strip("-")
     return f"{s}.com" if s else ""
 
 

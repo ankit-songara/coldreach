@@ -231,8 +231,13 @@ async def search_role_email_on_web(domain: str, company: str = "",
         return value
 
     name = company.strip() or domain.rsplit(".", 1)[0].replace("-", " ").title()
+    # Trailing (?![A-Za-z0-9.\-]) anchors the domain so it can't be a PREFIX of a
+    # longer one: without it, 'acme.com' matched inside a published
+    # 'careers@acme.com.au' and we'd persist a fabricated 'careers@acme.com'
+    # that has nothing behind it — a never-invent-emails violation (bounces).
     domain_re = re.compile(
-        r"[A-Za-z0-9._%+\-]+@" + re.escape(domain), re.IGNORECASE,
+        r"[A-Za-z0-9._%+\-]+@" + re.escape(domain) + r"(?![A-Za-z0-9.\-])",
+        re.IGNORECASE,
     )
     async with _WEB_SEARCH_SEM:
         try:

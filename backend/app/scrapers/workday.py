@@ -40,7 +40,7 @@ import httpx
 
 from app.scrapers.base import BaseScraper
 from app.scrapers.ats import _job_context
-from app.scrapers.directory import looks_like_company, role_match, company_matches, _norm
+from app.scrapers.directory import looks_like_company, role_match, _norm
 
 log = logging.getLogger(__name__)
 
@@ -144,12 +144,19 @@ class WorkdayScraper(BaseScraper):
         return [match] if match else []
 
     def _lookup(self, query: str) -> WorkdayTenant | None:
-        """Fuzzy company-name/slug match against the registry."""
+        """Exact company-name/slug match against the registry.
+
+        Exact-only (no loose single-token fallback): a common query word that
+        is merely one token of a multi-word tenant would cross-match the WRONG
+        company — "Discovery"→Warner Bros Discovery, "One"→Capital One,
+        "Union"→Western Union. Losing recall on abbreviations is acceptable;
+        emitting a wrong-company lead is not.
+        """
         norm = _norm(query)
         if not norm:
             return None
         for t in _TENANTS:
-            if norm == t.tenant.lower() or norm == _norm(t.company) or company_matches(query, t.company):
+            if norm == t.tenant.lower() or norm == _norm(t.company):
                 return t
         return None
 

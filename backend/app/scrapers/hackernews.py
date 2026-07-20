@@ -34,20 +34,36 @@ EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
 _URL_RE  = re.compile(r'https?://([A-Za-z0-9.\-]+)')
 
 # Aggregator / webmail / ATS hosts — an address or URL here is not the employer.
-_AGG = (
-    "news.ycombinator", "ycombinator.com", "greenhouse.io", "lever.co", "ashbyhq",
-    "workable", "myworkdayjobs", "linkedin", "indeed", "glassdoor", "gmail.",
-    "googlemail", "outlook.", "yahoo.", "hotmail.", "protonmail", "example.com",
-    "github.com", "twitter.com", "x.com", "notion.so", "docs.google", "forms.gle",
-    # Recruiting/ATS aggregators seen leaking through — not the employer.
-    "join.com", "uctalent", "wellfound", "angel.co", "ashby", "rippling",
-    "bamboohr", "teamtailor", "smartrecruiters", "recruitee", "breezy.hr",
-    "airtable.com", "typeform.com", "tally.so", "youtube.com",
-)
+# Matched by registrable-domain boundary (host == a or endswith "."+a), NOT raw
+# substring: bare substring meant "x.com" nuked netflix.com, and "ashby" nuked
+# any company with "ashby" in the name.
+_AGG = frozenset({
+    "ycombinator.com", "news.ycombinator.com", "greenhouse.io", "lever.co",
+    "ashbyhq.com", "workable.com", "myworkdayjobs.com", "linkedin.com",
+    "indeed.com", "glassdoor.com", "gmail.com", "googlemail.com", "outlook.com",
+    "yahoo.com", "hotmail.com", "protonmail.com", "proton.me", "example.com",
+    "github.com", "twitter.com", "x.com", "notion.so", "docs.google.com",
+    "forms.gle", "join.com", "uctalent.io", "wellfound.com", "angel.co",
+    "rippling.com", "bamboohr.com", "teamtailor.com", "smartrecruiters.com",
+    "recruitee.com", "breezy.hr", "airtable.com", "typeform.com", "tally.so",
+    "youtube.com",
+})
 
-# A post that is really a job-seeker (rare in the hiring thread, but guard anyway).
+
+def _is_agg(host: str) -> bool:
+    """True if host IS or is a subdomain of an aggregator domain (boundary match)."""
+    host = host.lower().removeprefix("www.")
+    return any(host == a or host.endswith("." + a) for a in _AGG)
+
+
+# A post that is really a job-SEEKER (rare in the hiring thread). Only
+# unambiguous first-person seeking phrases — NOT bare "seeking"/"looking for",
+# which are standard EMPLOYER phrasing ("we're seeking a Senior Go Engineer")
+# and were silently deleting real hiring posts.
 _SEEKER_RE = re.compile(
-    r"\b(seeking|looking for|available for|want(?:ing)? to be hired|open to work)\b",
+    r"\b(open to work|available for hire|seeking (?:a )?(?:new )?(?:role|position|job|opportunit)|"
+    r"looking for (?:a )?(?:new )?(?:role|position|job|work|opportunit)|"
+    r"want(?:ing)? to be hired)\b",
     re.IGNORECASE,
 )
 
@@ -83,7 +99,7 @@ def _company_from_post(text: str) -> str:
 def _domain_from_text(text: str) -> str:
     for host in _URL_RE.findall(text):
         host = host.lower().removeprefix("www.")
-        if "." in host and not any(a in host for a in _AGG):
+        if "." in host and not _is_agg(host):
             return host
     return ""
 
@@ -121,7 +137,7 @@ async def _load_thread() -> list[dict]:
                 if not text or _SEEKER_RE.search(text):
                     continue
                 emails = [e.lower() for e in EMAIL_RE.findall(text)
-                          if not any(a in e.split("@")[1].lower() for a in _AGG)]
+                          if not _is_agg(e.split("@")[1])]
                 posts.append({
                     "company": _company_from_post(text),
                     "text":    text,

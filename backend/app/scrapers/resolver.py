@@ -257,12 +257,19 @@ class ResolutionCache:
         # detection or learn_pattern for the same domain, which would waste API
         # calls and, for catch_all, produce non-deterministic results (two probes
         # with different random addresses can get opposite SMTP responses).
-        self._locks:    dict[str, asyncio.Lock] = {}
+        # Keyed by (kind, domain) so mx/catch_all/pattern for one domain each
+        # get their OWN lock: a single shared per-domain lock made the
+        # gather(pattern, catch_all) in resolve() serialize (one holds the lock
+        # across its whole body — GitHub or SMTP round-trip — while the other
+        # blocks), defeating the intended parallelism. Distinct locks still
+        # de-dup each fact kind (no double GitHub/SMTP work).
+        self._locks:    dict[tuple[str, str], asyncio.Lock] = {}
 
-    def _lock(self, domain: str) -> asyncio.Lock:
-        if domain not in self._locks:
-            self._locks[domain] = asyncio.Lock()
-        return self._locks[domain]
+    def _lock(self, domain: str, kind: str = "") -> asyncio.Lock:
+        key = (kind, domain)
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+        return self._locks[key]
 
     def observe(self, email: str, name: str = "") -> None:
         """Record a real (email, name) seen this hunt, for pattern learning."""
@@ -282,14 +289,14 @@ class ResolutionCache:
 
     async def mx(self, domain: str) -> list[str]:
         if domain not in self._mx:
-            async with self._lock(domain):
+            async with self._lock(domain, "mx"):
                 if domain not in self._mx:
                     self._mx[domain] = await mx_hosts(domain)
         return self._mx[domain]
 
     async def catch_all(self, domain: str, mx: list[str]) -> bool:
         if domain not in self._catchall:
-            async with self._lock(domain):
+            async with self._lock(domain, "catchall"):
                 if domain not in self._catchall:
                     self._catchall[domain] = await detect_catch_all(domain, mx)
         return self._catchall[domain]
@@ -297,7 +304,7 @@ class ResolutionCache:
     async def pattern(self, domain: str) -> Optional[str]:
         if domain in self._pattern:
             return self._pattern[domain]
-        async with self._lock(domain):
+        async with self._lock(domain, "pattern"):
             if domain in self._pattern:
                 return self._pattern[domain]
             # 1. Free: infer from emails already discovered at this domain this hunt.

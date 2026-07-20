@@ -45,8 +45,12 @@ def _extract_emails(text: str) -> list[str]:
 
 
 # Suffixes that appear in ATS board slugs but not in company domains.
+# Require an explicit -/_ separator before the suffix: with [-_]? the alternation
+# ate bare word endings too (twilio→twil, openai→open, cisco→cis, studio→stud),
+# deriving the wrong company domain. [-_] strips only detachable ATS-slug
+# suffixes ("twilio-inc"→"twilio", "acme-labs"→"acme").
 _SLUG_SUFFIX_RE = re.compile(
-    r'[-_]?(inc|hq|labs|tech|technologies|corp|llc|ltd|co|ai|io|app|us|global|group)$',
+    r'[-_](inc|hq|labs|tech|technologies|corp|llc|ltd|co|ai|io|app|us|global|group)$',
     re.IGNORECASE,
 )
 

@@ -171,7 +171,13 @@ def company_matches(query: str, company: str) -> bool:
         return False
     if q == _norm(company):
         return True
-    return q in re.findall(r"[a-z0-9]+", (company or "").lower())
+    # Every query WORD must appear as a whole token in the company name, so a
+    # multi-word hunt matches a longer legal name: "Goldman Sachs" → "Goldman
+    # Sachs Group", "New York Times" → "The New York Times". Still word-aware
+    # (whole tokens, not substrings), so "visa"≠"Provisa" and "stripe"≠"Striped".
+    qtokens = re.findall(r"[a-z0-9]+", query.lower())
+    ctokens = set(re.findall(r"[a-z0-9]+", (company or "").lower()))
+    return bool(qtokens) and set(qtokens) <= ctokens
 
 
 def role_keywords(query: str) -> list[str]:

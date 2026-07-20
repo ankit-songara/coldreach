@@ -65,10 +65,22 @@ class HunterEnricher(BaseScraper):
                 return None
             data = resp.json().get("data", {})
 
+        # Mirror the published-address paths' two-tier prefix allowlist so we
+        # never return support@/sales@/noreply@ and label it a hiring inbox:
+        # a dedicated hiring prefix wins; else an acceptable general inbox;
+        # else None (Hunter had only non-outreach generics).
+        from app.scrapers.web import HIRING_PREFIXES, GENERAL_PREFIXES
+        general: str | None = None
         for e in data.get("emails", []):
             value = e.get("value")
-            if value and value.lower().endswith(f"@{domain.lower()}"):
-                return value.lower()
-        return None
+            if not (value and value.lower().endswith(f"@{domain.lower()}")):
+                continue
+            value = value.lower()
+            local = value.split("@", 1)[0]
+            if local in HIRING_PREFIXES:
+                return value
+            if general is None and local in GENERAL_PREFIXES:
+                general = value
+        return general
 
 

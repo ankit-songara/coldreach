@@ -2290,3 +2290,70 @@ class TestWorkingNomadsScraper:
         self._mock(monkeypatch, [{"title": "Engineer"}, "junk", {}])
         leads = asyncio.run(WorkingNomadsScraper().safe_search("engineer"))
         assert isinstance(leads, list)   # no company/domain → dropped, but no crash
+
+
+class TestHuntReviewRegressions:
+    """Locks in the fixes from the comprehensive hunt-pipeline review so they
+    can't silently regress."""
+
+    def test_web_search_grounding_never_fabricates_prefix_domain(self, monkeypatch):
+        """BLOCKER fix: a published address at a LONGER domain (acme.com.au)
+        must not be truncated into a fabricated address at the target (acme.com)."""
+        import asyncio, httpx
+        from app.scrapers import web as web_mod
+        web_mod._ground_cache.clear()
+
+        # DDG returns a page mentioning careers@acme.com.au — but nothing at acme.com
+        def handler(request):
+            return httpx.Response(200, text="Reach the team at careers@acme.com.au for roles.")
+        real = httpx.AsyncClient
+        def fake(*a, **kw):
+            for k in ("timeout", "follow_redirects", "headers"): kw.pop(k, None)
+            return real(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(web_mod.httpx, "AsyncClient", fake)
+        monkeypatch.setattr(web_mod, "resolves_public", lambda d: True)
+
+        got = asyncio.run(web_mod.search_role_email_on_web("acme.com", "Acme"))
+        assert got is None, f"fabricated {got!r} at acme.com from an acme.com.au address"
+
+    def test_company_matches_multiword_superset(self):
+        from app.scrapers.directory import company_matches
+        assert company_matches("Goldman Sachs", "Goldman Sachs Group") is True
+        assert company_matches("New York Times", "The New York Times Company") is True
+        # word-aware guard still holds
+        assert company_matches("visa", "Provisa") is False
+        assert company_matches("stripe", "Striped") is False
+
+    def test_slug_to_domain_keeps_bare_word_endings(self):
+        from app.scrapers.ats import _slug_to_domain
+        assert _slug_to_domain("twilio") == "twilio.com"      # not twil.com
+        assert _slug_to_domain("openai") == "openai.com"      # not open.com
+        assert _slug_to_domain("cisco") == "cisco.com"        # not cis.com
+        # detachable ATS suffixes still stripped
+        assert _slug_to_domain("twilio-inc") == "twilio.com"
+        assert _slug_to_domain("acme-labs") == "acme.com"
+
+    def test_hn_seeker_guard_keeps_employer_posts(self):
+        from app.scrapers.hackernews import _SEEKER_RE
+        # employer phrasing must NOT be flagged as a seeker
+        assert not _SEEKER_RE.search("Acme | We are seeking a Senior Go Engineer | Remote")
+        assert not _SEEKER_RE.search("Beta | Looking for a backend engineer to join us")
+        # genuine seeker phrasing still caught
+        assert _SEEKER_RE.search("I'm open to work, senior dev")
+        assert _SEEKER_RE.search("Looking for a new role, remote preferred")
+
+    def test_hn_aggregator_boundary_not_substring(self):
+        from app.scrapers.hackernews import _is_agg
+        assert _is_agg("x.com") is True
+        assert _is_agg("netflix.com") is False     # was nuked by 'x.com' substring
+        assert _is_agg("ashby-corp.com") is False   # was nuked by 'ashby' substring
+        assert _is_agg("jobs.lever.co") is True      # subdomain boundary match
+
+    def test_workday_lookup_no_wrong_company_crossmatch(self):
+        from app.scrapers.workday import WorkdayScraper
+        s = WorkdayScraper()
+        # "Discovery" must NOT resolve to "Warner Bros Discovery"
+        t = s._lookup("Discovery")
+        assert t is None or "discovery" == t.company.lower()
+        # exact identity still resolves
+        assert s._lookup("Visa") is not None or s._lookup("visa") is not None
