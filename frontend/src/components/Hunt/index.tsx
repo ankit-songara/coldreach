@@ -54,21 +54,29 @@ const ROLE_OPTIONS: Array<[value: string, label: string]> = [
   ['data',         'Data / ML'],
 ]
 
-function buildChips(resume: string, hiringCompanies: string[]): string[] {
+export interface QueryChip {
+  label: string   // what the chip shows ("Dosed — Backend Engineer")
+  query: string   // what clicking it hunts ("Dosed")
+}
+
+function buildChips(resume: string, hiringNow: Array<{ name: string; role: string }>): QueryChip[] {
   // Shuffle EVERY pool — the matched skill queries were previously kept in
   // fixed priority order, so the row looked identical on every visit.
   const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5)
   const matched = shuffle(SKILL_QUERIES.filter(([re]) => re.test(resume)).map(([, q]) => q))
   const extras = shuffle(GENERAL_QUERIES)
-  const chips: string[] = []
-  // Live currently-hiring companies first (clicking hunts that company
-  // directly — the highest-yield query type), then resume-personalised roles.
-  // The backend already serves a fresh random sample per request.
-  const companies = shuffle(hiringCompanies).slice(0, 3)
-  for (const q of [...companies, ...matched, ...extras]) {
-    if (!chips.includes(q)) chips.push(q)
-    if (chips.length >= 7) break
+  const chips: QueryChip[] = []
+  const push = (label: string, query: string) => {
+    if (!chips.some(c => c.query === query) && chips.length < 7) chips.push({ label, query })
   }
+  // Resume-personalised role queries LEAD — they're the suggestions users
+  // recognise as theirs. Live hiring companies follow, and only with the
+  // role they're hiring for: a bare unknown startup name reads as junk.
+  for (const q of matched.slice(0, 4)) push(q, q)
+  for (const c of shuffle(hiringNow).slice(0, 2)) {
+    if (c.name) push(c.role ? `${c.name} — ${c.role}` : c.name, c.name)
+  }
+  for (const q of extras) push(q, q)
   return chips
 }
 
@@ -168,12 +176,17 @@ export default function Hunt() {
     retry: false,
   })
 
-  // Suggestions: live hiring companies + résumé-personalised role queries.
-  const hiringCompanies = suggestions?.hiring_companies ?? []
+  // Suggestions: résumé-personalised role queries + live hiring companies.
+  // hiring_now carries role hints; fall back to bare names for old caches.
+  const hiringNow = useMemo(
+    () => suggestions?.hiring_now
+      ?? (suggestions?.hiring_companies ?? []).map(name => ({ name, role: '' })),
+    [suggestions],
+  )
   const chips = useMemo(
-    () => buildChips(resume, hiringCompanies),
+    () => buildChips(resume, hiringNow),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resume, hiringCompanies.join('|')],
+    [resume, hiringNow.map(c => c.name).join('|')],
   )
 
   // Delete everything server-side FIRST, then clear the local store. (Clearing
@@ -341,13 +354,13 @@ export default function Hunt() {
       <div className="flex flex-wrap gap-2">
         {chips.map(chip => (
           <button
-            key={chip}
-            onClick={() => { setQuery(chip); doHunt(chip) }}
+            key={chip.query}
+            onClick={() => { setQuery(chip.query); doHunt(chip.query) }}
             disabled={hunting}
             className="relative text-xs px-3 py-1.5 rounded-full border font-mono transition-colors hover:border-accent before:absolute before:-inset-y-1.5 before:inset-x-0 before:content-['']"
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', opacity: hunting ? 0.5 : 1 }}
           >
-            {chip}
+            {chip.label}
           </button>
         ))}
       </div>
@@ -588,15 +601,15 @@ export default function Hunt() {
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {huntInfo.deepened ? 'Try instead:' : 'or try:'}
             </span>
-            {chips.filter(c => c.toLowerCase() !== huntInfo.query.toLowerCase()).slice(0, 3).map(chip => (
+            {chips.filter(c => c.query.toLowerCase() !== huntInfo.query.toLowerCase()).slice(0, 3).map(chip => (
               <button
-                key={chip}
-                onClick={() => { setQuery(chip); doHunt(chip) }}
+                key={chip.query}
+                onClick={() => { setQuery(chip.query); doHunt(chip.query) }}
                 className="text-xs px-2 py-1 rounded-full"
                 style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)',
                          color: 'var(--accent-text)', cursor: 'pointer' }}
               >
-                {chip}
+                {chip.label}
               </button>
             ))}
           </div>

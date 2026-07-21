@@ -500,6 +500,35 @@ _LEGAL_SUFFIX_RE = re.compile(
 )
 
 
+# A suggestion chip's company must be hiring for an ENGINEERING role — the
+# chip carries the role as its reason to click, so a non-eng role is noise.
+_ENG_ROLE_RE = re.compile(
+    r"\b(engineer|engineering|developer|devops|sre|sde|swe|architect|"
+    r"programmer|scientist|golang|python|react|typescript|node|java|rust|"
+    r"kubernetes|frontend|backend|fullstack|ios|android)\b"
+)
+
+_SENIORITY_RE = re.compile(
+    r"^(?:senior|staff|lead|principal|junior|jr\.?|sr\.?|mid[- ]level|head of)\s+",
+    re.IGNORECASE,
+)
+
+
+def _short_role(position: str) -> str:
+    """Compress a listing title into a chip-sized hint: strip seniority
+    prefixes and parenthetical/comma tails. "Senior Backend Engineer (Go),
+    Platform" → "Backend Engineer (Go)" → capped."""
+    import html as _html
+    pos = " ".join(_html.unescape(position or "").split())
+    pos = re.split(r",|\||—|–| - ", pos)[0].strip()
+    pos = _SENIORITY_RE.sub("", pos).strip()
+    if len(pos) > 28:
+        # Cut at a word boundary — "Tech Lead Full-Stack Rails E" reads worse
+        # than "Tech Lead Full-Stack".
+        pos = pos[:28].rsplit(" ", 1)[0]
+    return pos.rstrip(" (,-") if pos else ""
+
+
 def _display_company(raw: str) -> str:
     import html as _html
     # Feed names arrive HTML-escaped ("Rose, Klein &amp; Marias") and sometimes
@@ -522,37 +551,50 @@ def _display_company(raw: str) -> str:
 async def hunt_suggestions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = time.monotonic()
     if now - _suggest_cache["at"] > _SUGGEST_TTL_SECONDS:
-        pool: list[str] = []
+        pool: list[dict] = []
+        seen: set[str] = set()
+
+        def _admit(company_raw: str, position: str) -> None:
+            comp = _display_company(company_raw or "")
+            pos = (position or "").lower()
+            # Engineering postings only — the POSITION must name an eng role
+            # noun or an unambiguous tech token (word-bounded). Bare substrings
+            # admitted "Data Entry Assistant" (data); tag matches admitted
+            # "Social Media Content Creator".
+            if (comp and comp.lower() not in seen and 2 < len(comp) <= 30
+                    and len(pool) < _SUGGEST_POOL_MAX
+                    and _ENG_ROLE_RE.search(pos)):
+                seen.add(comp.lower())
+                pool.append({"name": comp, "role": _short_role(position or "")})
+
         try:
             import httpx as _httpx
             async with _httpx.AsyncClient(
                 timeout=8, follow_redirects=True,
                 headers={"User-Agent": "Mozilla/5.0"},
             ) as client:
-                r = await client.get("https://remoteok.com/api")
-                if r.is_success:
-                    seen: set[str] = set()
-                    for j in r.json():
-                        if not isinstance(j, dict):
-                            continue
-                        comp = _display_company(j.get("company") or "")
-                        pos  = (j.get("position") or "").lower()
-                        tags = " ".join(t.lower() for t in (j.get("tags") or []) if isinstance(t, str))
-                        hay  = f"{pos} {tags}"
-                        # Tech postings only (position OR tags), plausible company names.
-                        if (comp and comp.lower() not in seen and 2 < len(comp) <= 30
-                                and any(k in hay for k in (
-                                    "engineer", "developer", "sde", "devops", "backend",
-                                    "frontend", "full", "software", "sre", "platform",
-                                    "data", "mobile", "ios", "android", "golang", "python",
-                                    "react", "node", "java", "rust",
-                                ))):
-                            seen.add(comp.lower())
-                            pool.append(comp)
-                        if len(pool) >= _SUGGEST_POOL_MAX:
-                            break
+                # Remotive first: its software-dev category returns ONLY dev
+                # listings, so the pool is all engineering. RemoteOK's default
+                # feed is every category (measured: 99 listings, 1 eng title)
+                # — kept as a top-up, same eng-title gate.
+                try:
+                    r = await client.get(
+                        "https://remotive.com/api/remote-jobs",
+                        params={"category": "software-dev", "limit": 150},
+                    )
+                    for j in ((r.json().get("jobs") if r.is_success else []) or []):
+                        if isinstance(j, dict):
+                            _admit(j.get("company_name"), j.get("title"))
+                except Exception as e:
+                    log.debug(f"Suggestions: Remotive fetch failed: {e}")
+                if len(pool) < _SUGGEST_SERVE * 2:
+                    r = await client.get("https://remoteok.com/api")
+                    if r.is_success:
+                        for j in r.json():
+                            if isinstance(j, dict):
+                                _admit(j.get("company"), j.get("position"))
         except Exception as e:
-            log.debug(f"Suggestions: RemoteOK fetch failed: {e}")
+            log.debug(f"Suggestions: pool refresh failed: {e}")
         # Serve stale data over nothing if the refresh failed.
         if pool:
             _suggest_cache.update(at=now, pool=pool)
@@ -571,12 +613,19 @@ async def hunt_suggestions(db: Session = Depends(get_db), user: User = Depends(g
         } - {"", "unknown"}
     except Exception:
         owned = set()
-    fresh = [c for c in pool if c.lower() not in owned]
+    fresh = [c for c in pool if c["name"].lower() not in owned]
     # A power user may own contacts at every pooled company — live chips still
     # beat an empty row, so fall back to the unfiltered pool.
     base = fresh or pool
     k = min(_SUGGEST_SERVE, len(base))
-    return {"hiring_companies": random.sample(base, k) if k else []}
+    sample = random.sample(base, k) if k else []
+    return {
+        # Names alone kept for older cached bundles; hiring_now carries the
+        # role hint so a chip can say WHY the company appears ("Dosed" alone
+        # reads as junk — "Dosed — Backend Engineer" is a reason to click).
+        "hiring_companies": [c["name"] for c in sample],
+        "hiring_now": sample,
+    }
 
 
 @router.post("", response_model=HuntResult)
