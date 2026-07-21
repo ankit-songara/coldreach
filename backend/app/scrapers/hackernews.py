@@ -47,6 +47,14 @@ _AGG = frozenset({
     "rippling.com", "bamboohr.com", "teamtailor.com", "smartrecruiters.com",
     "recruitee.com", "breezy.hr", "airtable.com", "typeform.com", "tally.so",
     "youtube.com",
+    # Press/media/content sites — hiring posts link their funding coverage
+    # ("we just raised, see the TechCrunch article"), and taking that URL as
+    # the COMPANY domain grounded a real journalist's published email as a
+    # "recruiter" (observed live: connie@techcrunch.com for a golang hunt).
+    "techcrunch.com", "forbes.com", "businessinsider.com", "bloomberg.com",
+    "reuters.com", "nytimes.com", "wsj.com", "theverge.com", "wired.com",
+    "venturebeat.com", "theinformation.com", "crunchbase.com", "medium.com",
+    "substack.com", "dev.to", "hackernoon.com", "producthunt.com",
 })
 
 

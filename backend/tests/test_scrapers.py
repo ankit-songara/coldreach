@@ -163,3 +163,21 @@ class TestAtsCursorTargeting:
         targets = s._targets("backend hiring", company_mode=False,
                              explored_slugs=frozenset({"lever:alpha"}))
         assert {t[0] for t in targets} == {"alpha", "beta"}
+
+
+class TestHNPressDomainsRejected:
+    """A hiring post linking its funding coverage must not make the PRESS
+    site the company domain — that grounded a journalist's published email
+    as a 'recruiter' (observed live: connie@techcrunch.com)."""
+
+    def test_press_url_skipped_company_url_kept(self):
+        from app.scrapers.hackernews import _domain_from_text
+        text = ("Acme | Senior Go Engineer | Remote. We just raised our Series A "
+                "(https://techcrunch.com/2026/07/acme-raises) — join us! "
+                "More at https://acme.dev/careers")
+        assert _domain_from_text(text) == "acme.dev"
+
+    def test_press_only_post_yields_no_domain(self):
+        from app.scrapers.hackernews import _domain_from_text
+        text = "Beta | Rust Engineer | see https://www.forbes.com/beta-profile"
+        assert _domain_from_text(text) == ""
