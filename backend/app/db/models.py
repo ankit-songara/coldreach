@@ -201,3 +201,20 @@ class HuntCursor(Base):
     query_norm: Mapped[str]      = mapped_column(String(255), primary_key=True)
     explored:   Mapped[dict]     = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class CompanyTag(Base):
+    """
+    Tech tokens observed on a company's job board ("stripe hires golang,
+    python, react"), learned free from probes the hunt already makes. At a
+    multi-thousand-company directory, probing 28 random companies per hunt is
+    <1% coverage — tags let the ATS scan probe QUERY-RELEVANT companies first.
+    Keyed (ats, slug) to match the directory; created by create_all like every
+    other table (no manual DDL).
+    """
+    __tablename__ = "company_tags"
+
+    ats:        Mapped[str]      = mapped_column(String(32), primary_key=True)
+    slug:       Mapped[str]      = mapped_column(String(255), primary_key=True)
+    tags:       Mapped[dict]     = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

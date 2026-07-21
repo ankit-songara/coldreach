@@ -276,6 +276,75 @@ class WorkingNomadsScraper(_JsonBoard):
         } for j in jobs if isinstance(j, dict)]
 
 
+class WorkableSearchScraper(BaseScraper):
+    """Workable's global public search API (jobs.workable.com/api/v1/jobs):
+    15k+ live jobs across every Workable customer, each carrying the COMPANY
+    WEBSITE — leads get real domains, no guessing. Server-side search, so this
+    can't reuse _JsonBoard's fetch-everything model.
+
+    Pagination: the request param is `pageToken` (NOT nextPageToken — the
+    wrong name silently returns page 1 again, verified live); tokens embed a
+    timestamp and are never persisted. v1 deliberately does NO slug learning:
+    blind slugify probes were measured hitting unrelated accounts ("Oxford
+    Ionics" → the 'Oxford' account)."""
+
+    name = "WorkableSearch"
+    PAGES = 2   # 20 jobs/page; 2 requests keeps the source polite + in budget
+
+    async def search(self, query: str, *, query_variants: tuple = (), **_) -> list[dict]:
+        company_mode = looks_like_company(query)
+        leads: list[dict] = []
+        seen_domains: set[str] = set()
+        token = ""
+        try:
+            async with httpx.AsyncClient(
+                timeout=15, headers={"User-Agent": UA}, follow_redirects=True,
+            ) as client:
+                for _page in range(self.PAGES):
+                    params: dict = {"query": query}
+                    if token:
+                        params["pageToken"] = token
+                    r = await client.get("https://jobs.workable.com/api/v1/jobs", params=params)
+                    if not r.is_success:
+                        break
+                    data = r.json()
+                    for j in data.get("jobs") or []:
+                        if not isinstance(j, dict):
+                            continue
+                        comp = ((j.get("company") or {}).get("title") or "").strip()
+                        website = ((j.get("company") or {}).get("website") or "").strip()
+                        title = (j.get("title") or "").strip()
+                        if not title or not comp:
+                            continue
+                        match = _matches(query, company_mode, title, [], comp, query_variants)
+                        if not match:
+                            continue
+                        domain = _domain_from_url(
+                            website if website.startswith("http") else f"https://{website}"
+                        ) if website else ""
+                        if not domain or domain in seen_domains:
+                            continue
+                        seen_domains.add(domain)
+                        lead = {
+                            "name":        "",
+                            "email":       "",
+                            "company":     comp,
+                            "designation": "Recruiter",
+                            "source":      self.name,
+                            "context":     f"Actively hiring for '{title}' at {comp} (via Workable)",
+                            "_domain":     domain,
+                        }
+                        if match == "sibling":
+                            lead["_sibling"] = True
+                        leads.append(lead)
+                    token = data.get("nextPageToken") or ""
+                    if not token:
+                        break
+        except Exception:
+            return leads
+        return leads
+
+
 class TheMuseScraper(_JsonBoard):
     name = "TheMuse"
 

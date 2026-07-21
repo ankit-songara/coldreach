@@ -237,6 +237,23 @@ def _tech_in(token: str, hay: str) -> bool:
     return re.search(pattern, hay) is not None
 
 
+# ── Per-company tech tags (learned from board probes) ────────────────────────
+# Which tech tokens a company's board has been seen hiring for. Kept as an
+# in-memory overlay keyed (ats, slug) — Company rows come from a CSV seed and
+# DB rows, so an overlay serves both without touching either. Loaded from the
+# company_tags table each hunt; written back after probes.
+_TAGS_OVERLAY: dict[tuple[str, str], set[str]] = {}
+
+
+def set_company_tags(ats: str, slug: str, tags) -> None:
+    if tags:
+        _TAGS_OVERLAY[(ats, (slug or "").lower())] = set(tags)
+
+
+def company_tags(ats: str, slug: str) -> set[str]:
+    return _TAGS_OVERLAY.get((ats, (slug or "").lower()), set())
+
+
 # ── Sibling-query expansion ──────────────────────────────────────────────────
 # Related tech tokens per role family. A "backend engineer" hunt discards
 # already-downloaded golang/python/node listings because they don't literally

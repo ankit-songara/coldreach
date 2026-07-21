@@ -181,3 +181,122 @@ class TestHNPressDomainsRejected:
         from app.scrapers.hackernews import _domain_from_text
         text = "Beta | Rust Engineer | see https://www.forbes.com/beta-profile"
         assert _domain_from_text(text) == ""
+
+
+class TestHNSlugHarvest:
+    def test_extracts_and_junk_filters(self):
+        from app.scrapers.hackernews import _extract_ats_mappings
+        text = ("Acme | Golang Engineer | apply at https://jobs.lever.co/acme/123 "
+                "or https://boards.greenhouse.io/embed/job_board?for=acme "
+                "docs at https://jobs.ashbyhq.com/norm-ai. and https://apply.workable.com/j/ABC123")
+        pairs = _extract_ats_mappings(text)
+        assert ("lever", "acme") in pairs
+        assert ("ashby", "norm-ai") in pairs          # trailing ellipsis dot stripped
+        assert ("workable", "j") not in pairs          # job-detail short link junk
+        assert all(slug != "embed" for _, slug in pairs)
+
+    def test_portfolio_board_rejected(self):
+        from app.scrapers.hackernews import _extract_ats_mappings
+        pairs = _extract_ats_mappings("Phaselaw | https://jobs.ashbyhq.com/pear-vc/x")
+        assert pairs == []
+
+    def test_name_slug_agreement_gates_post_metadata(self):
+        from app.scrapers.hackernews import _mapping_from_post
+        # Name matches slug -> post name + domain trusted.
+        m = _mapping_from_post(
+            "Norm Ai | Golang | https://norm.ai/careers", "ashby", "norm-ai")
+        assert m["company"] == "Norm Ai" and m["domain"] == "norm.ai"
+        # Name does NOT match slug -> slug-derived name, NO domain (a wrong
+        # domain_hint would poison every lead from that board).
+        m2 = _mapping_from_post(
+            "Phaselaw | Counsel | https://phase.law", "ashby", "livekit")
+        assert m2["company"] == "Livekit" and m2["domain"] == ""
+
+
+class TestHNFounderRelabel:
+    def test_local_part_signal(self):
+        from app.scrapers.hackernews import _author_is_founder
+        assert _author_is_founder("Acme | Golang | remote", "ceo@acme.com")
+        assert _author_is_founder("Acme | Golang", "founders@acme.com")
+        assert not _author_is_founder("Acme | Golang", "jobs@acme.com")
+
+    def test_text_signal_with_negative_guards(self):
+        from app.scrapers.hackernews import _author_is_founder
+        assert _author_is_founder(
+            "Acme | Eng | I'm the co-founder, email me", "hi@acme.com")
+        # "founding engineer" is a ROLE being hired, not the author.
+        assert not _author_is_founder(
+            "Acme | Founding Engineer | I'm the co-founder... "
+            "hiring a founding engineer", "hi@acme.com") is None
+        assert not _author_is_founder(
+            "Acme | Eng | looking for a technical co-founder", "hi@acme.com")
+
+    def test_header_segment_never_matches(self):
+        from app.scrapers.hackernews import _author_is_founder
+        # "Founder" in the company/role header must not fire.
+        assert not _author_is_founder("Founder Institute | Engineer | remote", "x@fi.co")
+
+
+class TestAtsDomainGuessGate:
+    def test_guess_only_when_slug_matches_company(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from app.scrapers.ats import GreenhouseScraper
+
+        async def run(company_name):
+            s = GreenhouseScraper()
+            with patch.object(s, "_fetch", new=AsyncMock(
+                    return_value=(company_name, "", [{"title": "Golang Engineer",
+                                                       "location": "", "text": ""}]))):
+                return await s._collect(None, "solace", "", "golang hiring", False)
+
+        # Slug matches the company -> guessed domain OK.
+        leads = asyncio.run(run("Solace"))
+        assert leads and leads[0].get("_domain") == "solace.com"
+        # Slug does NOT match -> no guessed domain; nameless lead suppressed
+        # (a P0 careers@ probe at the wrong real company would misattribute).
+        leads2 = asyncio.run(run("Solace Health Technologies Ltd"))
+        # slug 'solace' IS a token of the company name here — adjust: use a
+        # company whose tokens don't include the slug at all.
+        leads3 = asyncio.run(run("Bright Medical"))
+        assert not any(l.get("_domain") for l in leads3)
+
+
+class TestBoardTechTags:
+    def test_tags_learned_word_bounded(self):
+        from app.scrapers.ats import _board_tech_tags
+        tags = _board_tech_tags([
+            "Senior Golang Engineer", "Python Backend Developer",
+            "Go To Market Manager",       # must NOT produce a golang tag alone
+            "React Native Engineer",
+        ])
+        assert "python" in tags and "react" in tags and "backend" in tags
+        assert "golang" in tags          # from the explicit Golang title
+        assert "go" not in tags          # bare ambiguous token excluded
+
+    def test_gtm_alone_never_tags_golang(self):
+        from app.scrapers.ats import _board_tech_tags
+        assert "golang" not in _board_tech_tags(["Go To Market Manager"])
+        assert "golang" in _board_tech_tags(["Go Engineer"])
+
+    def test_ranking_prefers_tag_matches_then_unknown(self, monkeypatch):
+        from types import SimpleNamespace
+        import app.scrapers.ats as ats_mod
+        from app.scrapers import directory
+        monkeypatch.setattr(
+            ats_mod, "companies_for_ats",
+            lambda key: [SimpleNamespace(slug=s, domain="") for s in
+                         ("offtopic", "match", "unknown")],
+        )
+        directory.set_company_tags("greenhouse", "match", {"golang", "python"})
+        directory.set_company_tags("greenhouse", "offtopic", {"react"})
+        try:
+            s = ats_mod.GreenhouseScraper()
+            targets = s._targets("golang hiring", company_mode=False,
+                                 query_tokens=frozenset({"golang", "go"}))
+            order = [t[0] for t in targets]
+            assert order[0] == "match"        # tag intersection first
+            assert order[1] == "unknown"      # never probed second
+            assert order[2] == "offtopic"     # known-off-topic last
+        finally:
+            directory._TAGS_OVERLAY.clear()

@@ -21,6 +21,7 @@ drops any stray "seeking / looking for work" post regardless.
 import html
 import re
 import time
+from urllib.parse import unquote
 
 import httpx
 
@@ -75,12 +76,102 @@ _SEEKER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── ATS slug harvesting ────────────────────────────────────────────────────────
+# Hiring posts routinely link their own board ("apply: jobs.lever.co/acme/...").
+# Each such URL is a VERIFIED company→ATS mapping — free directory growth on
+# every hunt (a live probe of one month's harvest showed 47/47 boards alive
+# with jobs). The slugs were previously thrown away by the _AGG filter.
+_ATS_URL_RES: tuple[tuple[str, re.Pattern], ...] = (
+    ("greenhouse",      re.compile(r"(?:boards|job-boards)\.(?:eu\.)?greenhouse\.io/([A-Za-z0-9_-]+)")),
+    ("lever",           re.compile(r"jobs\.(?:eu\.)?lever\.co/([A-Za-z0-9_-]+)")),
+    ("ashby",           re.compile(r"jobs\.ashbyhq\.com/([A-Za-z0-9._%-]+)")),
+    ("workable",        re.compile(r"apply\.workable\.com/([A-Za-z0-9_-]+)")),
+    ("smartrecruiters", re.compile(r"jobs\.smartrecruiters\.com/([A-Za-z0-9_-]+)")),
+    ("recruitee",       re.compile(r"([A-Za-z0-9-]+)\.recruitee\.com")),
+    ("breezy",          re.compile(r"([A-Za-z0-9-]+)\.breezy\.hr")),
+)
+# Path fragments that aren't board slugs, plus known shared talent-network /
+# VC-portfolio boards (pear-vc: 86 jobs from MANY companies — attributing them
+# to one poster's company poisons every lead from that board).
+_JUNK_SLUGS = frozenset({
+    "embed", "jobs", "boards", "www", "apply", "careers", "postings",
+    "j", "job", "en", "share", "login", "pear-vc",
+})
+
+
+def _tokens(s: str) -> set[str]:
+    return {t for t in re.split(r"[^a-z0-9]+", (s or "").lower()) if t}
+
+
+def _extract_ats_mappings(text: str) -> list[tuple[str, str]]:
+    """Unique (ats, slug) pairs found in a post's cleaned text."""
+    out: list[tuple[str, str]] = []
+    for ats, rx in _ATS_URL_RES:
+        for m in rx.finditer(text):
+            # HN truncates long anchors with an ellipsis — strip the artifacts
+            # the dots-allowed ashby charset would otherwise capture.
+            slug = unquote(m.group(1)).lower().strip("./")
+            if slug and slug not in _JUNK_SLUGS and (ats, slug) not in out:
+                out.append((ats, slug))
+    return out
+
+
+def _mapping_from_post(text: str, ats: str, slug: str) -> dict:
+    """Company name + domain for a harvested slug. The post's name/domain are
+    trusted ONLY when the name agrees with the slug (token overlap) — a post
+    about Phaselaw linking a shared pear-vc board must not stamp Phaselaw's
+    name/domain onto that board (ats.py's domain_hint would then override the
+    API's own domain and poison every lead from it)."""
+    company = _company_from_post(text)
+    domain = _domain_from_text(text)
+    if not (company and _tokens(slug) & _tokens(company)):
+        company = re.sub(r"[-._]+", " ", slug).title()
+        domain = ""
+    return {"ats": ats, "slug": slug, "company": company, "domain": domain}
+
+
+def harvested_mappings() -> list[dict]:
+    """ATS mappings from the cached thread scan (current + previous month)."""
+    return list(_cache["mappings"])
+
+
+# ── Founder self-identification ───────────────────────────────────────────────
+# Many HN posts are written BY the founder ("I'm the co-founder, email me at
+# ..."). Labelling that lead "Recruiter" routes it to the wrong email template
+# and buries it in ranking. Applied ONLY to the embedded-email branch — the
+# address the self-identifying author personally left. Two signals, highest
+# precision first: the email's local part, then an explicit "I'm the founder"
+# claim outside the "Company | Role | ..." header.
+_FOUNDER_LOCAL_RE = re.compile(r"^(?:ceo|cto|coo|founder|founders|cofounder)@")
+_FOUNDER_TEXT_RE = re.compile(
+    r"i(?:'m| am) (?:the |a |one of the )?"
+    r"(?:(?:md|ceo|cto|coo) and )?co-?founder"
+    r"|i(?:'m| am) the (?:founder|ceo|cto|coo)"
+    r"|i(?:'m| am) [a-z]+,? (?:co-?founder|founder|ceo|cto|coo) (?:of|at|and)",
+    re.IGNORECASE,
+)
+# Never fire on these collocations (all observed live in the thread).
+_FOUNDER_NEG_RE = re.compile(
+    r"founding (?:engineer|designer|gtm|team|member|hire)"
+    r"|looking for (?:a )?(?:technical )?co-?founder",
+    re.IGNORECASE,
+)
+
+
+def _author_is_founder(text: str, email: str) -> bool:
+    if _FOUNDER_LOCAL_RE.match(email or ""):
+        return True
+    # Search only past the "Company | Role | ..." header segment.
+    body = text.split("|", 1)[-1]
+    return bool(_FOUNDER_TEXT_RE.search(body)) and not _FOUNDER_NEG_RE.search(body)
+
+
 # ── Per-process thread cache ───────────────────────────────────────────────────
 # The thread is identical for every query in a month and changes slowly, so one
 # fetch serves every hunt. Keyed nothing (global) with a 1h TTL; the monthly
 # thread flip is picked up on the next refresh.
 _TTL = 3600
-_cache: dict = {"at": 0.0, "posts": []}
+_cache: dict = {"at": 0.0, "posts": [], "mappings": []}
 
 
 def _clean(text: str) -> str:
@@ -119,6 +210,15 @@ async def _load_thread() -> list[dict]:
         return _cache["posts"]
 
     posts: list[dict] = []
+    mappings: list[dict] = []
+    seen_maps: set[tuple[str, str]] = set()
+
+    def _harvest(text: str) -> None:
+        for ats, slug in _extract_ats_mappings(text):
+            if (ats, slug) not in seen_maps:
+                seen_maps.add((ats, slug))
+                mappings.append(_mapping_from_post(text, ats, slug))
+
     try:
         async with httpx.AsyncClient(timeout=15, headers={"User-Agent": UA}) as client:
             r = await client.get(_ALGOLIA, params={
@@ -147,6 +247,7 @@ async def _load_thread() -> list[dict]:
                 text = _clean(hit.get("comment_text"))
                 if not text or _SEEKER_RE.search(text):
                     continue
+                _harvest(text)
                 emails = [e.lower() for e in EMAIL_RE.findall(text)
                           if not _is_agg(e.split("@")[1])]
                 posts.append({
@@ -155,11 +256,29 @@ async def _load_thread() -> list[dict]:
                     "email":   emails[0] if emails else "",
                     "domain":  _domain_from_text(text),
                 })
+
+            # Previous month's thread: harvested for SLUGS ONLY (never posts —
+            # month-old postings must not resurface as leads). Own try/except:
+            # a failure here must not discard the fresh current thread.
+            try:
+                if len(stories) >= 2:
+                    sid2 = stories[1]["objectID"]
+                    c2 = await client.get(_ALGOLIA, params={
+                        "tags": f"comment,story_{sid2}",
+                        "numericFilters": f"parent_id={sid2}",
+                        "hitsPerPage": 1000, "page": 0,
+                    })
+                    for hit in (c2.json().get("hits", []) if c2.is_success else []):
+                        text = _clean(hit.get("comment_text"))
+                        if text and not _SEEKER_RE.search(text):
+                            _harvest(text)
+            except Exception:
+                pass
     except Exception:
         return _cache["posts"]
 
     if posts:
-        _cache.update(at=now, posts=posts)
+        _cache.update(at=now, posts=posts, mappings=mappings)
     return posts
 
 
@@ -206,7 +325,8 @@ class HackerNewsScraper(BaseScraper):
                     "name":        person_name_from_email(p["email"], company),
                     "email":       p["email"],
                     "company":     company,
-                    "designation": "Recruiter",
+                    "designation": ("Founder" if _author_is_founder(p["text"], p["email"])
+                                    else "Recruiter"),
                     "source":      self.name,
                     "context":     ctx,
                 }

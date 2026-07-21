@@ -14,6 +14,7 @@ from app.db.crud import (
     ContactRepository, add_known_company,
     get_domain_patterns, record_domain_pattern,
     get_explored_slugs, record_explored_slugs,
+    get_all_company_tags, upsert_company_tags,
 )
 from app.db.models import Contact, User
 from app.deps import get_current_user
@@ -33,9 +34,10 @@ from app.scrapers.workday import WorkdayScraper
 from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
-    WorkingNomadsScraper,
+    WorkingNomadsScraper, WorkableSearchScraper,
 )
 from app.scrapers.hackernews import HackerNewsScraper
+from app.scrapers.yc import YCStartupsScraper
 from app.scrapers.web import (
     emails_from_company_pages, find_published_role_email,
     search_role_email_on_web, HIRING_PREFIXES, GENERAL_PREFIXES,
@@ -279,7 +281,11 @@ def _build_scrapers(hunter_key: str) -> list:
         TheMuseScraper(),
         WeWorkRemotelyScraper(),
         WorkingNomadsScraper(),
+        WorkableSearchScraper(),
         HackerNewsScraper(),
+        # Registered last: YC pool leads are tagged _pool and only fill the
+        # funnel slots left over after organically-discovered leads.
+        YCStartupsScraper(),
     ]
     key = hunter_key or settings.hunter_api_key
     if key:
@@ -475,6 +481,36 @@ def _learn_companies(db: Session, results_per_scraper: list) -> None:
                 log.info(f"Hunt: learned new company {r.get('company') or slug} ({ats}/{slug})")
             except Exception:
                 db.rollback()
+
+
+# Cap on directory rows learned per hunt: each add is a SELECT+INSERT round
+# trip to Supabase inside the 52s budget. The first post-deploy hunt sees the
+# whole backlog (~50 mappings); the monthly trickle after that is ~40-70.
+_MAX_LEARNED_PER_HUNT = 25
+
+
+def _learn_from_hn(db: Session) -> None:
+    """Persist company→ATS mappings harvested from the HN thread's apply links
+    (the thread is already fetched — zero extra HTTP). Runs on EVERY hunt,
+    unlike _learn_companies which only fires on company-name queries.
+    Best-effort: never breaks a hunt."""
+    from app.scrapers.hackernews import harvested_mappings
+    learned = 0
+    for m in harvested_mappings():
+        if learned >= _MAX_LEARNED_PER_HUNT:
+            break
+        ats, slug = m.get("ats") or "", m.get("slug") or ""
+        if ats not in _DISCOVERABLE_ATS or not slug or directory.is_known(ats, slug):
+            continue
+        try:
+            add_known_company(db, name=m.get("company") or slug, slug=slug,
+                               ats=ats, domain=m.get("domain") or "",
+                               source="discovered")
+            learned += 1
+        except Exception:
+            db.rollback()
+    if learned:
+        log.info(f"Hunt: learned {learned} companies from HN board links")
 
 
 # ── Live "who's hiring" suggestions ──────────────────────────────────────────
@@ -692,20 +728,36 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     query_norm = " ".join(req.query.lower().split())[:255]
     explored: frozenset = frozenset()
     variants: tuple = ()
+    query_tokens: frozenset = frozenset()
     if not company_query:
         try:
             explored = frozenset(get_explored_slugs(db, user.id, query_norm))
         except Exception as e:
             log.debug(f"Hunt: cursor read skipped: {e}")
         variants = tuple(sibling_variants(req.query))
-    probed: list[tuple[str, str, int]] = []   # (ats_key, slug, n_leads) per completed fetch
+        # Refresh the tag overlay (one SELECT) and derive the query's tech
+        # tokens (with aliases + siblings) so ATS probing ranks tag-matching
+        # companies first instead of drawing blind from a growing directory.
+        try:
+            for (a, s), tags in get_all_company_tags(db).items():
+                directory.set_company_tags(a, s, tags)
+        except Exception as e:
+            log.debug(f"Hunt: tag overlay load skipped: {e}")
+        toks = {k for k in directory.role_keywords(req.query)
+                if k in directory._TECH_TOKENS}
+        for t in list(toks):
+            toks |= directory._TECH_ALIASES.get(t, set())
+        toks |= set(variants)
+        query_tokens = frozenset(toks)
+    probed: list[tuple] = []   # (ats_key, slug, n_leads, board_tags) per completed fetch
 
     # Sources hit distinct hosts, so run them fully concurrently (no
     # staggering) — but bounded: one slow board must not eat the wall-clock
     # budget the resolve phase needs. Completed scrapers are harvested; the
     # stragglers are cancelled and count as empty.
     scrape_tasks = [asyncio.create_task(s.safe_search(
-        req.query, explored_slugs=explored, probed_out=probed, query_variants=variants,
+        req.query, explored_slugs=explored, probed_out=probed,
+        query_variants=variants, query_tokens=query_tokens,
     )) for s in scrapers]
     done_scrape, pending_scrape = await asyncio.wait(scrape_tasks, timeout=_SCRAPE_BUDGET_SECONDS)
     if pending_scrape:
@@ -727,6 +779,11 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             _learn_companies(db, results_per_scraper)
         except Exception as e:
             log.debug(f"Hunt: company-learning skipped: {e}")
+    # HN apply-link harvest runs on EVERY hunt — the thread was just fetched.
+    try:
+        _learn_from_hn(db)
+    except Exception as e:
+        log.debug(f"Hunt: HN slug learning skipped: {e}")
 
     # ── Split: known-email contacts vs identity-only (need resolution) ─────────
     seen_emails: set[str] = set()
@@ -790,8 +847,9 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # TLD alternation when the guess has no MX. Kept in a SEPARATE list so a
     # domain can yield BOTH its careers@ inbox (P0) and a named person (P1).
     # Primary-match leads first so sibling-only domains can't consume the
-    # careers-lead cap ahead of them (stable sort keeps feed order otherwise).
-    needs_resolve.sort(key=lambda r: 1 if r.get("_sibling") else 0)
+    # careers-lead cap ahead of them; directory-pool leads (YC) fill only
+    # LEFTOVER slots (stable sort keeps feed order otherwise).
+    needs_resolve.sort(key=lambda r: 2 if r.get("_pool") else (1 if r.get("_sibling") else 0))
 
     # Domains where the user already OWNS the role inbox are skipped — the
     # careers@ probe would only prove a duplicate. Owning a mere person at a
@@ -882,12 +940,13 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 if extra_ctx and extra_ctx not in existing_ctx:
                     merged_ctx = (existing_ctx + "\n" + extra_ctx).strip()[:2000]
                     by_domain[d] = {**cur, "context": merged_ctx}
-    # Primaries before siblings, then named before nameless: sibling matches
-    # must never displace a primary from the resolve slice or the careers cap.
+    # Primaries before siblings before pool leads, then named before nameless:
+    # lower-relevance bands must never displace a primary from the resolve
+    # slice or the careers cap.
     needs_resolve = sorted(
         by_domain.values(),
         key=lambda r: (
-            1 if r.get("_sibling") else 0,
+            2 if r.get("_pool") else (1 if r.get("_sibling") else 0),
             0 if " " in (r.get("name") or "").strip() else 1,
         ),
     )
@@ -1153,12 +1212,23 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 ats_name, sep, slug = (r.source or "").partition("/")
                 if sep and slug:
                     persisted_keys.add(f"{ats_name.strip().lower()}:{slug.strip().lower()}")
-            explored_add = {f"{a}:{s}" for a, s, n in probed if n == 0}
-            explored_add |= {f"{a}:{s}" for a, s, n in probed if n > 0} & persisted_keys
+            explored_add = {f"{a}:{s}" for a, s, n, _t in probed if n == 0}
+            explored_add |= {f"{a}:{s}" for a, s, n, _t in probed if n > 0} & persisted_keys
             record_explored_slugs(db, user.id, query_norm, explored_add)
         except Exception as e:
             db.rollback()
             log.debug(f"Hunt: cursor write skipped: {e}")
+        # Persist board tags learned from this hunt's probes (bounded, so the
+        # write burst can't eat the 52s budget on a first post-deploy hunt).
+        try:
+            written = 0
+            for a, s, n, tags in probed:
+                if tags and written < 20:
+                    upsert_company_tags(db, a, s, tags)
+                    written += 1
+        except Exception as e:
+            db.rollback()
+            log.debug(f"Hunt: tag write skipped: {e}")
 
     # Signal for a useful empty state: how many leads we *found* (before resolution)
     # vs. how many resolved-but-were-already-saved. Lets the UI distinguish

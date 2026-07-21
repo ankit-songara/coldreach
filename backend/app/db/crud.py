@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.db.models import (
     Contact, EmailDraft, Resume, ResumeFile, AppConfig, User, KnownCompany, EmailPattern,
-    ReplyMessage, HuntCursor,
+    ReplyMessage, HuntCursor, CompanyTag,
 )
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
@@ -571,7 +571,9 @@ def load_known_companies_into_directory(db: Session) -> int:
 # EmailPattern/KnownCompany, but user-scoped: exploration is per person.
 
 _CURSOR_TTL = timedelta(days=7)     # postings churn — stale coverage must retry
-_CURSOR_MAX_SLUGS = 400             # belt-and-braces bound on the JSON payload
+# Bound on the JSON payload. Must comfortably exceed the directory size or the
+# cursor saturates and stops recording coverage (~100KB of JSON at 3000 — fine).
+_CURSOR_MAX_SLUGS = 3000
 
 
 def get_explored_slugs(db: Session, user_id: int, query_norm: str) -> set[str]:
@@ -592,13 +594,44 @@ def record_explored_slugs(db: Session, user_id: int, query_norm: str, new_keys: 
         return
     row = db.get(HuntCursor, (user_id, query_norm))
     stale = row is not None and row.updated_at is not None         and row.updated_at < datetime.utcnow() - _CURSOR_TTL
-    prior: set[str] = set() if (row is None or stale) else         set((row.explored or {}).get("ats_slugs", []))
-    merged = sorted(prior | new_keys)[:_CURSOR_MAX_SLUGS]
+    prior: list[str] = [] if (row is None or stale) else         list((row.explored or {}).get("ats_slugs", []))
+    # LRU order, evicting the OLDEST coverage first: keep prior order, move
+    # re-probed keys to the recent end, append new keys, trim from the front.
+    # (The old `sorted(...)[:cap]` evicted ALPHABETICALLY — once saturated,
+    # alphabetically-late slugs could never be recorded and were re-probed
+    # forever.)
+    kept = [k for k in prior if k not in new_keys]
+    merged = (kept + sorted(new_keys))[-_CURSOR_MAX_SLUGS:]
     if row is None:
         row = HuntCursor(user_id=user_id, query_norm=query_norm)
         db.add(row)
     row.explored = {"ats_slugs": merged}
     row.updated_at = datetime.utcnow()
+    db.commit()
+
+
+def get_all_company_tags(db: Session) -> dict[tuple[str, str], list[str]]:
+    """Every (ats, slug) -> tech tags, one SELECT. Loaded per hunt to refresh
+    the in-memory overlay that ranks ATS probe targets by query relevance."""
+    return {
+        (r.ats, r.slug): list(r.tags or [])
+        for r in db.query(CompanyTag).all()
+    }
+
+
+def upsert_company_tags(db: Session, ats: str, slug: str, tags: list[str]) -> None:
+    """Merge newly observed tags for a board (upsert, best-effort)."""
+    if not tags:
+        return
+    row = db.get(CompanyTag, (ats, slug))
+    if row is None:
+        row = CompanyTag(ats=ats, slug=slug, tags=sorted(set(tags)))
+        db.add(row)
+    else:
+        merged = sorted(set(row.tags or []) | set(tags))
+        if merged == list(row.tags or []):
+            return
+        row.tags = merged
     db.commit()
 
 

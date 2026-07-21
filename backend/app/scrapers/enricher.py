@@ -12,19 +12,35 @@ class HunterEnricher(BaseScraper):
 
     async def search(self, query: str, **_) -> list[dict]:
         """For Hunter, 'query' is treated as a company/domain."""
-        return await self.search_domain(query)
+        from app.scrapers.directory import looks_like_company
+        leads = await self.search_domain(query)
+        # Company-name hunts get one EXTRA quota credit spent on the people a
+        # job seeker most wants: founders/execs + HR/TA. department=executive,hr
+        # in a single call (documented enum values only; no seniority filter —
+        # combining seniority=executive with hr would AND together and exclude
+        # non-executive recruiters). Role-query hunts skip it: Hunter treats
+        # the query as a company name, so the credit would be wasted.
+        if looks_like_company(query):
+            seen = {l["email"] for l in leads}
+            extra = await self.search_domain(query, department="executive,hr")
+            leads += [l for l in extra if l["email"] not in seen]
+        return leads
 
-    async def search_domain(self, domain_or_company: str) -> list[dict]:
-        """Fetch all known emails at a domain from Hunter.io."""
+    async def search_domain(self, domain_or_company: str, department: str = "") -> list[dict]:
+        """Fetch known emails at a domain from Hunter.io. `department` narrows
+        to Hunter's documented department enums (e.g. "executive,hr")."""
+        params = {
+            "company": domain_or_company,
+            "api_key": self.api_key,
+            "limit": 10,
+            "type": "personal",
+        }
+        if department:
+            params["department"] = department
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
                 "https://api.hunter.io/v2/domain-search",
-                params={
-                    "company": domain_or_company,
-                    "api_key": self.api_key,
-                    "limit": 10,
-                    "type": "personal",
-                },
+                params=params,
             )
             if not resp.is_success:
                 return []

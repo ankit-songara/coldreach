@@ -26,6 +26,7 @@ import httpx
 
 from app.scrapers.base import BaseScraper, person_name_from_email
 from app.scrapers.directory import (
+    company_tags, _TECH_TOKENS,
     companies_for_ats, lookup, slugify_company, looks_like_company, role_match,
 )
 
@@ -53,6 +54,24 @@ _SLUG_SUFFIX_RE = re.compile(
     r'[-_](inc|hq|labs|tech|technologies|corp|llc|ltd|co|ai|io|app|us|global|group)$',
     re.IGNORECASE,
 )
+
+
+def _board_tech_tags(titles) -> list[str]:
+    """Tech tokens visible in a board's job titles — learned free from probes
+    the hunt already makes, then used to rank future probe targets by query
+    relevance. Bare "go" is excluded (it matches "Go To Market"); a golang tag
+    is added only on an explicit Go-engineering title or the word "golang"."""
+    toks: set[str] = set()
+    golang_hint = False
+    for t in titles:
+        low = (t or "").lower()
+        toks |= {w for w in re.split(r"[^a-z0-9+#]+", low) if w}
+        if re.search(r"\bgo\b[^,|/]{0,20}\b(?:engineer|developer)\b", low):
+            golang_hint = True
+    tags = toks & (_TECH_TOKENS - {"go"})
+    if golang_hint or "golang" in toks:
+        tags.add("golang")
+    return sorted(tags)[:20]
 
 
 def _slug_to_domain(slug: str) -> str:
@@ -118,20 +137,24 @@ class BaseATSScraper(BaseScraper):
         ...
 
     async def search(self, query: str, *, explored_slugs: frozenset = frozenset(),
-                     probed_out: list | None = None, query_variants: tuple = (), **_) -> list[dict]:
+                     probed_out: list | None = None, query_variants: tuple = (),
+                     query_tokens: frozenset = frozenset(), **_) -> list[dict]:
         """kwargs contract (threaded from hunt.py via safe_search, ignored by
         scrapers that don't declare them):
           explored_slugs — "ats:slug" keys this user's repeat hunts already
             probed for this query; excluded from the shuffle so each re-run
             covers a fresh directory slice (per-ATS wraparound when exhausted).
-          probed_out — mutable list; (ats_key, slug, n_leads) appended for every
-            board whose fetch COMPLETED (cancelled/errored fetches are not
-            definitive and must be retried by future hunts).
+          probed_out — mutable list; (ats_key, slug, n_leads, board_tags)
+            appended for every board whose fetch COMPLETED (cancelled/errored
+            fetches are not definitive and must be retried by future hunts).
           query_variants — sibling tech tokens; jobs matching only a variant
             still emit leads, tagged _sibling for downstream deprioritisation.
+          query_tokens — the query's tech tokens (incl. aliases + siblings);
+            probe targets whose learned tags match rank first.
         """
         company_mode = looks_like_company(query)
-        targets = self._targets(query, company_mode, explored_slugs)[: self.MAX_TARGETS]
+        targets = self._targets(query, company_mode, explored_slugs,
+                                 query_tokens)[: self.MAX_TARGETS]
         if not targets:
             return []
         # ONE client per source: all this ATS's boards live on one API host, so
@@ -164,7 +187,8 @@ class BaseATSScraper(BaseScraper):
         return leads
 
     def _targets(self, query: str, company_mode: bool,
-                 explored_slugs: frozenset = frozenset()) -> list[tuple[str, str]]:
+                 explored_slugs: frozenset = frozenset(),
+                 query_tokens: frozenset = frozenset()) -> list[tuple[str, str]]:
         """Return (slug, domain_hint) pairs to probe on this ATS."""
         if not company_mode:
             # Role query → scan directory companies the cursor hasn't covered
@@ -177,6 +201,16 @@ class BaseATSScraper(BaseScraper):
                      if f"{self.ats_key}:{t[0].lower()}" not in explored_slugs]
             pool = fresh or all_cos
             random.shuffle(pool)
+            if query_tokens:
+                # Rank by learned board tags: query-matching companies first,
+                # unknown (never probed) next, known-but-off-topic last. The
+                # shuffle above keeps rotation fair WITHIN each tier.
+                def tier(t: tuple[str, str]) -> int:
+                    tags = company_tags(self.ats_key, t[0])
+                    if not tags:
+                        return 1
+                    return 0 if tags & query_tokens else 2
+                pool.sort(key=tier)   # stable sort preserves the shuffle per tier
             return pool
 
         known = lookup(query)
@@ -195,17 +229,33 @@ class BaseATSScraper(BaseScraper):
         except Exception:
             return []   # not definitive — do NOT mark probed
 
+        # Learned from EVERY completed probe (match or not): what this board
+        # hires for, used to rank future probe targets by query relevance.
+        board_tags = _board_tech_tags(j.get("title", "") for j in jobs) if jobs else []
+
         def _done(leads: list[dict]) -> list[dict]:
             # Fetch completed → definitive outcome (even "no jobs"/"no match"),
             # safe for the exploration cursor to record.
             if probed_out is not None:
-                probed_out.append((self.ats_key, slug.lower(), len(leads)))
+                probed_out.append((self.ats_key, slug.lower(), len(leads), board_tags))
             return leads
 
         if not jobs:
             return _done([])
 
-        domain = domain_hint or api_domain or _slug_to_domain(slug)
+        domain = domain_hint or api_domain
+        if not domain:
+            # The '<slug>.com' guess is only safe when the slug IS the company
+            # name — a mismatched slug can land on an unrelated real company
+            # ("solace" → solace.com ≠ Solace Health) and the grounding scan
+            # would then persist a real published email attributed to the
+            # WRONG company. Discovered rows arrive with empty domains, so
+            # this gate is what keeps directory growth quality-neutral.
+            guess = _slug_to_domain(slug)
+            slug_tokens = {t for t in re.split(r"[^a-z0-9]+", slug.lower()) if t}
+            name_tokens = {t for t in re.split(r"[^a-z0-9]+", (company or "").lower()) if t}
+            if guess and slug_tokens and slug_tokens <= (name_tokens | {"inc", "hq", "io", "labs", "jobs"}):
+                domain = guess
 
         if not company_mode:
             # Tech-aware filter: "react engineer" must match React roles, not every
