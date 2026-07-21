@@ -83,9 +83,15 @@ def _matches(query: str, company_mode: bool, title: str, tags: list[str], compan
 
 
 class _JsonBoard(BaseScraper):
-    """Shared logic: fetch listings, filter, extract emails or emit domain leads."""
+    """Shared logic: fetch listings, filter, extract emails or emit domain leads.
 
-    MAX = 10   # leads kept per board per hunt (latency + quality budget)
+    No per-board lead cap: the feed arrives in ONE fetch, so scanning every
+    listing is free, and stopping at the first N matches in feed order made
+    repeat hunts return the same leads forever (boards barely reorder day to
+    day). The funnel is bounded downstream instead — per-domain dedup, the
+    resolve-slot cap, and _MAX_CAREERS_LEADS keep the resolve phase inside
+    budget while exclusion-aware filtering (hunt.py) spends those slots on
+    leads the user doesn't already have."""
 
     async def _listings(self, client: httpx.AsyncClient) -> list[dict]:
         """Return normalized dicts: {title, company, tags[], text, domain}."""
@@ -150,9 +156,6 @@ class _JsonBoard(BaseScraper):
                     "context":     ctx,
                     "_domain":     domain,
                 })
-
-            if len(leads) >= self.MAX:
-                break
         return leads
 
 

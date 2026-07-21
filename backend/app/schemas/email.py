@@ -59,5 +59,5 @@ class HuntResult(BaseModel):
     contacts:      list[dict]
     total:         int             # new contacts saved this hunt
     found:         int = 0         # leads discovered (pre-resolution)
-    duplicates:    int = 0         # resolved contacts already in the user's list
+    duplicates:    int = 0         # matches already in the user's list (skipped early or at save)
     role_filtered: int = 0         # reachable leads dropped by the role filter

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import random
 import re
 import time
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,7 +14,7 @@ from app.db.crud import (
     ContactRepository, add_known_company,
     get_domain_patterns, record_domain_pattern,
 )
-from app.db.models import User
+from app.db.models import Contact, User
 from app.deps import get_current_user
 from app.schemas.contact import ContactCreate
 from app.schemas.email import HuntRequest, HuntResult
@@ -36,7 +37,7 @@ from app.scrapers.jobboards import (
 from app.scrapers.hackernews import HackerNewsScraper
 from app.scrapers.web import (
     emails_from_company_pages, find_published_role_email,
-    search_role_email_on_web, HIRING_PREFIXES,
+    search_role_email_on_web, HIRING_PREFIXES, GENERAL_PREFIXES,
 )
 from app.scrapers import directory
 from app.scrapers.directory import looks_like_company
@@ -75,6 +76,11 @@ _MIN_RESOLVER_CONFIDENCE = 40
 
 # Cap on P0 careers-inbox leads per hunt (one per unique company domain).
 _MAX_CAREERS_LEADS = 30
+
+# Every local part the pipeline can persist as a role-inbox contact — the P0
+# probe list plus the grounding scan's hiring/general prefixes. Used to decide
+# whether the user already OWNS a domain's role inbox (exclusion set).
+_ROLEBOX_LOCALS = HIRING_PREFIXES | GENERAL_PREFIXES | frozenset(_ROLE_ADDRESSES)
 
 # Per-user hunt rate limit: prevent rapid repeated scraping that could get the
 # server IP blocked by ATS APIs.
@@ -472,14 +478,18 @@ def _learn_companies(db: Session, results_per_scraper: list) -> None:
 
 # ── Live "who's hiring" suggestions ──────────────────────────────────────────
 # Company names with active engineering postings right now, for the Hunt page's
-# suggestion chips — clicking one runs a company hunt directly. Cached
-# module-level so the chips cost one RemoteOK fetch per process per TTL, not
-# one per page load.
+# suggestion chips — clicking one runs a company hunt directly. The FULL feed's
+# matching companies are cached as a pool; each request serves a random sample
+# from it, so chips change on every page load at zero extra fetch cost (the
+# old first-12-in-feed-order approach showed the same chips all day). Cached
+# module-level so the pool costs one RemoteOK fetch per process per TTL.
 _SUGGEST_TTL_SECONDS = 900
+_SUGGEST_POOL_MAX    = 80   # companies kept in the pool
+_SUGGEST_SERVE       = 12   # companies returned per request
 # "at" starts at -inf, NOT 0.0: time.monotonic() is time-since-boot, so on a
 # freshly booted host (or a cold-started serverless microVM) 0.0 would read as
 # "fetched < TTL ago" and the first request would serve [] without fetching.
-_suggest_cache: dict = {"at": float("-inf"), "companies": []}
+_suggest_cache: dict = {"at": float("-inf"), "pool": []}
 
 # RemoteOK company names arrive as filed: "LOTHIAN BUSES LIMITED", "Acme Pvt.
 # Ltd." — legalese and shouting make the suggestion chips look like junk data.
@@ -490,7 +500,17 @@ _LEGAL_SUFFIX_RE = re.compile(
 
 
 def _display_company(raw: str) -> str:
-    name = " ".join(raw.split())
+    import html as _html
+    # Feed names arrive HTML-escaped ("Rose, Klein &amp; Marias") and sometimes
+    # double-encoded ("CasinÃ² Lugano" for "Casinò Lugano") — repair both so
+    # chips never show entities or mojibake.
+    name = _html.unescape(raw)
+    if "Ã" in name or "â€" in name:
+        try:
+            name = name.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    name = " ".join(name.split())
     name = _LEGAL_SUFFIX_RE.sub("", name).strip(" .,|-")
     if name.isupper() and len(name) > 4:   # keep real acronyms (IBM, SAP) intact
         name = name.title()
@@ -498,10 +518,10 @@ def _display_company(raw: str) -> str:
 
 
 @router.get("/suggestions")
-async def hunt_suggestions(user: User = Depends(get_current_user)):
+async def hunt_suggestions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = time.monotonic()
     if now - _suggest_cache["at"] > _SUGGEST_TTL_SECONDS:
-        companies: list[str] = []
+        pool: list[str] = []
         try:
             import httpx as _httpx
             async with _httpx.AsyncClient(
@@ -527,17 +547,35 @@ async def hunt_suggestions(user: User = Depends(get_current_user)):
                                     "react", "node", "java", "rust",
                                 ))):
                             seen.add(comp.lower())
-                            companies.append(comp)
-                        if len(companies) >= 12:
+                            pool.append(comp)
+                        if len(pool) >= _SUGGEST_POOL_MAX:
                             break
         except Exception as e:
             log.debug(f"Suggestions: RemoteOK fetch failed: {e}")
         # Serve stale data over nothing if the refresh failed.
-        if companies:
-            _suggest_cache.update(at=now, companies=companies)
+        if pool:
+            _suggest_cache.update(at=now, pool=pool)
         else:
             _suggest_cache["at"] = now - _SUGGEST_TTL_SECONDS + 60  # retry in 1 min
-    return {"hiring_companies": _suggest_cache["companies"]}
+
+    pool = _suggest_cache["pool"]
+    # Personalise: a chip for a company the user already has contacts at is a
+    # near-dead click — prefer companies not yet in their list. Applied
+    # per-request AFTER the cache read: the pool is shared across users.
+    try:
+        owned = {
+            (c or "").lower()
+            for (c,) in db.query(Contact.company)
+                          .filter(Contact.user_id == user.id).distinct()
+        } - {"", "unknown"}
+    except Exception:
+        owned = set()
+    fresh = [c for c in pool if c.lower() not in owned]
+    # A power user may own contacts at every pooled company — live chips still
+    # beat an empty row, so fall back to the unfiltered pool.
+    base = fresh or pool
+    k = min(_SUGGEST_SERVE, len(base))
+    return {"hiring_companies": random.sample(base, k) if k else []}
 
 
 @router.post("", response_model=HuntResult)
@@ -569,6 +607,28 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
 
     log.info(f"Hunt: {req.query!r}")
     hunt_t0 = time.monotonic()
+
+    # ── Exclusion set: everything the user already owns ────────────────────────
+    # Loaded up front (one two-column SELECT) so the pipeline can skip
+    # already-owned leads BEFORE spending resolve/SMTP budget on them. Without
+    # this, a repeat hunt spent its whole budget re-discovering the user's
+    # existing list (dedup only happened at persist time) and saved nothing —
+    # while excluded leads also no longer consume resolve slots, so each
+    # re-hunt digs deeper into the same sources instead.
+    repo = ContactRepository(db, user.id)
+    owned_pairs = repo.all_email_names()
+    owned_emails: set[str] = {e for e, _ in owned_pairs}
+    # Domains where the user already owns the ROLE-INBOX contact itself
+    # (careers@/jobs@/contact@ …). Only these suppress the P0 careers@ probe
+    # and nameless identity leads — owning a PERSON at a domain must not
+    # suppress a genuinely-new careers@ lead there, and vice versa.
+    owned_roleinbox_domains: set[str] = set()
+    for e in owned_emails:
+        local, _, dom = e.partition("@")
+        if dom and dom not in _FREEMAIL and local in _ROLEBOX_LOCALS:
+            owned_roleinbox_domains.add(dom)
+    skipped_known = 0
+
     scrapers = _build_scrapers(req.hunter_api_key)
 
     # Sources hit distinct hosts, so run them fully concurrently (no
@@ -602,6 +662,10 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     with_email:  list[dict] = []
     needs_resolve: list[dict] = []
     source_counts: dict[str, int] = {}
+    # Domains of skipped owned DIRECT emails still seed the careers@ derivation
+    # below — owning priya@acme.com must not cost acme.com its careers@ probe.
+    skipped_domain_company: dict[str, str] = {}
+    skipped_nameless_domains: set[str] = set()
 
     dropped_junk = 0
     for scraper, results in zip(scrapers, results_per_scraper):
@@ -616,9 +680,29 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             if email:
                 if email not in seen_emails and is_valid_email(email):
                     seen_emails.add(email)
+                    count += 1   # a real hiring signal either way → counts as "found"
+                    if email in owned_emails:
+                        # Already in the user's list — skipped once per unique
+                        # address (seen_emails guards multi-board repeats).
+                        skipped_known += 1
+                        d = email.rsplit("@", 1)[-1]
+                        if d not in _FREEMAIL and d not in skipped_domain_company:
+                            skipped_domain_company[d] = (r.get("company") or "").strip()
+                        continue
                     with_email.append({**r, "email": email, "confidence": r.get("confidence", 0)})
-                    count += 1
             elif r.get("_domain"):
+                # A NAMELESS identity lead resolves to the domain's role inbox —
+                # if the user already OWNS that role inbox it's a guaranteed
+                # duplicate; skip before it costs a resolve slot. NAMED people
+                # always stay: the resolver can find a new person anywhere
+                # (save-time dedup catches exact repeats).
+                d = (r.get("_domain") or "").lower().strip()
+                if d in owned_roleinbox_domains and not (r.get("name") or "").strip():
+                    if d not in skipped_nameless_domains:
+                        skipped_nameless_domains.add(d)
+                        skipped_known += 1
+                    count += 1
+                    continue
                 needs_resolve.append(r)
                 count += 1
         source_counts[scraper.name] = count
@@ -632,19 +716,35 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # Resolved via the fast path in _resolve_domain_contact — no page-scrape,
     # TLD alternation when the guess has no MX. Kept in a SEPARATE list so a
     # domain can yield BOTH its careers@ inbox (P0) and a named person (P1).
+    # Domains where the user already OWNS the role inbox are skipped — the
+    # careers@ probe would only prove a duplicate. Owning a mere person at a
+    # domain does NOT suppress its careers@ probe (that lead is new).
+    skipped_careers_domains: set[str] = set()
     domain_company: dict[str, str] = {}
     for r in needs_resolve:
         d = (r.get("_domain") or "").lower().strip()
+        if d in owned_roleinbox_domains:
+            skipped_careers_domains.add(d)
+            continue
         if d and d not in _FREEMAIL and d not in domain_company:
             domain_company[d] = (r.get("company") or "").strip()
     for r in with_email:
         d = r["email"].rsplit("@", 1)[-1]
+        if d in owned_roleinbox_domains:
+            skipped_careers_domains.add(d)
+            continue
         if d and d not in _FREEMAIL and d not in domain_company:
             domain_company[d] = (r.get("company") or "").strip()
+    # Domains seen only via skipped OWNED direct emails still get their probe
+    # (unless their role inbox is what's owned).
+    for d, comp in skipped_domain_company.items():
+        if d not in owned_roleinbox_domains and d not in domain_company:
+            domain_company[d] = comp
     if looks_like_company(req.query):
         guess = _guess_company_domain(req.query)
-        if guess and guess not in domain_company:
+        if guess and guess not in domain_company and guess not in owned_roleinbox_domains:
             domain_company[guess] = req.query.strip()
+    skipped_known += len(skipped_careers_domains - skipped_nameless_domains)
 
     careers_leads = [
         {"name": "", "company": comp or _company_from_email(f"x@{dom}"),
@@ -655,7 +755,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         source_counts["careers-inbox"] = len(careers_leads)
 
     log.info(f"Hunt: {len(with_email)} direct emails, {len(careers_leads)} P0 careers leads, "
-             f"{len(needs_resolve)} identity-only leads")
+             f"{len(needs_resolve)} identity-only leads, {skipped_known} skipped as already-owned")
 
     # ── Seed a shared cache with every real email found, so cross-source pattern
     #    learning works for free (e.g. GitHub emails at acme.com teach acme.com's
@@ -663,6 +763,10 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     cache = ResolutionCache()
     for r in with_email:
         cache.observe(r["email"], r.get("name") or "")
+    # Owned contacts are grounded pattern evidence too (observe() ignores
+    # role inboxes itself — it requires a real "First Last" name).
+    for e, n in owned_pairs:
+        cache.observe(e, n)
 
     # ── Dedupe identity-only leads by domain across sources (several boards list
     #    the same company) so the resolve budget isn't spent twice on one domain.
@@ -765,6 +869,12 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 continue
             if email and email not in seen_emails and is_valid_email(email):
                 seen_emails.add(email)
+                # The resolver can re-derive an address the user already owns
+                # (same pattern, same person) — skip it here so it never costs
+                # a verify slot or shows up as a save-time duplicate.
+                if email in owned_emails:
+                    skipped_known += 1
+                    continue
                 with_email.append(r)
 
     # ── Persist pattern memory for future hunts: SMTP-verified resolutions are
@@ -888,7 +998,6 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 name = "Contact"
         return name, company
 
-    repo = ContactRepository(db, user.id)
     contacts_to_save = []
     for r in with_email:
         name, company = _clean_identity(r)
@@ -927,6 +1036,6 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         } for c in saved],
         total=len(saved),
         found=found,
-        duplicates=duplicates,
+        duplicates=duplicates + skipped_known,
         role_filtered=role_filtered,
     )

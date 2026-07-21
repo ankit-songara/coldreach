@@ -101,7 +101,10 @@ class BaseATSScraper(BaseScraper):
     """Shared discovery logic; subclasses only implement the per-ATS fetch."""
 
     ats_key: str = ""        # greenhouse | lever | ashby
-    MAX_TARGETS = 12         # cap companies probed per hunt (latency budget)
+    # Companies probed per hunt. Profiled: at 4-wide concurrency and ~0.7s per
+    # board fetch, 28 targets clear in ~5s — well inside the board budget the
+    # old cap of 12 was leaving unused (the budget wall binds, not the count).
+    MAX_TARGETS = 28
     # Per-scraper wall: boards that responded by then are kept, stragglers are
     # cancelled — one slow board must not sink the whole source's results.
     BOARD_BUDGET_SECONDS = 12

@@ -126,11 +126,14 @@ async def _load_thread() -> list[dict]:
                 return _cache["posts"]  # serve stale over nothing
             sid = stories[0]["objectID"]
 
-            # One page (100 newest posts) is ample and keeps the hunt fast.
+            # The WHOLE thread in one call: monthly threads run ~300-600
+            # top-level posts, comfortably under Algolia's 1000-hit ceiling.
+            # Scanning only the newest 100 hid most of the thread from every
+            # hunt (same response size class, same single request).
             c = await client.get(_ALGOLIA, params={
                 "tags": f"comment,story_{sid}",
                 "numericFilters": f"parent_id={sid}",
-                "hitsPerPage": 100, "page": 0,
+                "hitsPerPage": 1000, "page": 0,
             })
             for hit in (c.json().get("hits", []) if c.is_success else []):
                 text = _clean(hit.get("comment_text"))
@@ -155,7 +158,9 @@ async def _load_thread() -> list[dict]:
 class HackerNewsScraper(BaseScraper):
     name = "HackerNews"
 
-    MAX = 12   # leads kept per hunt (latency + quality budget)
+    # No lead cap: the whole thread is already fetched (and cached), so scanning
+    # every post is free. A first-N cap in thread order made repeat hunts return
+    # the same leads; downstream funnel caps bound the resolve work instead.
 
     async def search(self, query: str, **_) -> list[dict]:
         posts = await _load_thread()
@@ -203,6 +208,4 @@ class HackerNewsScraper(BaseScraper):
                     "context":     ctx,
                     "_domain":     p["domain"],
                 })
-            if len(leads) >= self.MAX:
-                break
         return leads

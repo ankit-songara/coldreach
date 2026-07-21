@@ -101,6 +101,17 @@ class ContactRepository:
     def get_by_email(self, email: str) -> Contact | None:
         return self._scoped().filter(Contact.email == email).first()
 
+    def all_email_names(self) -> list[tuple[str, str]]:
+        """Every (email, name) this user owns, emails lowercased — one
+        two-column SELECT. Feeds the hunt's exclusion set (skip already-owned
+        leads before spending resolve budget) and seeds the resolution cache
+        (an owned real person is grounded pattern evidence for their domain)."""
+        return [
+            ((e or "").lower(), n or "")
+            for (e, n) in self._scoped().with_entities(Contact.email, Contact.name).all()
+            if e
+        ]
+
     def create(self, data: ContactCreate) -> Contact:
         existing = self.get_by_email(data.email)
         if existing:

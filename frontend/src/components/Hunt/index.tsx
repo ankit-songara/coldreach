@@ -55,13 +55,16 @@ const ROLE_OPTIONS: Array<[value: string, label: string]> = [
 ]
 
 function buildChips(resume: string, hiringCompanies: string[]): string[] {
-  const matched = SKILL_QUERIES.filter(([re]) => re.test(resume)).map(([, q]) => q)
-  // Shuffle the general pool so returning users see variety
-  const extras = [...GENERAL_QUERIES].sort(() => Math.random() - 0.5)
+  // Shuffle EVERY pool — the matched skill queries were previously kept in
+  // fixed priority order, so the row looked identical on every visit.
+  const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5)
+  const matched = shuffle(SKILL_QUERIES.filter(([re]) => re.test(resume)).map(([, q]) => q))
+  const extras = shuffle(GENERAL_QUERIES)
   const chips: string[] = []
   // Live currently-hiring companies first (clicking hunts that company
   // directly — the highest-yield query type), then resume-personalised roles.
-  const companies = [...hiringCompanies].sort(() => Math.random() - 0.5).slice(0, 3)
+  // The backend already serves a fresh random sample per request.
+  const companies = shuffle(hiringCompanies).slice(0, 3)
   for (const q of [...companies, ...matched, ...extras]) {
     if (!chips.includes(q)) chips.push(q)
     if (chips.length >= 7) break
@@ -72,7 +75,7 @@ function buildChips(resume: string, hiringCompanies: string[]): string[] {
 // Honest, specific empty-state copy based on what the hunt actually found.
 function emptyHuntMessage(query: string, found: number, duplicates: number, roleFiltered: number): string {
   if (duplicates > 0)
-    return `Every match for "${query}" is already in your list (${duplicates} contact${duplicates > 1 ? 's' : ''}). Try a different query.`
+    return `You already have every new match for "${query}" (${duplicates} contact${duplicates > 1 ? 's' : ''} skipped as yours). Hunt again to dig deeper — known contacts no longer use up the budget — or click a suggested company above (hiring now, not in your list), or narrow the stack (e.g. "rust backend", "fintech golang").`
   // Role filter accounted for the misses — don't blame "no reachable email".
   if (roleFiltered > 0)
     return `Found ${roleFiltered} reachable lead${roleFiltered > 1 ? 's' : ''} for "${query}", but none matched your role filter (founders & recruiters are always kept). Switch to "Any role" or pick a different role to see them.`
@@ -152,12 +155,14 @@ export default function Hunt() {
   } = useStore()
   const qc = useQueryClient()
 
-  // Live "who's hiring right now" companies for the suggestion chips —
-  // cached server-side, refreshed at most every 15 min.
+  // Live "who's hiring right now" companies for the suggestion chips. The
+  // backend samples a fresh set from its cached pool on every request, so a
+  // short staleTime keeps chips rotating per visit without hammering the API
+  // (the server pays one feed fetch per 15-min TTL regardless).
   const { data: suggestions } = useQuery({
     queryKey: ['hunt-suggestions'],
     queryFn: huntApi.suggestions,
-    staleTime: 15 * 60_000,
+    staleTime: 60_000,
     retry: false,
   })
 

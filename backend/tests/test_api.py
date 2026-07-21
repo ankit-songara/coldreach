@@ -1253,7 +1253,7 @@ class TestHuntSuggestions:
 
         # -inf = "definitely expired". 0.0 only reads as expired when the
         # machine has been up longer than the TTL (monotonic() is since-boot).
-        hunt_mod._suggest_cache.update(at=float("-inf"), companies=[])
+        hunt_mod._suggest_cache.update(at=float("-inf"), pool=[])
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json=[
@@ -1283,6 +1283,131 @@ class TestHuntSuggestions:
         # Filed legal names are cleaned for display: suffix stripped, de-shouted.
         assert "Lothian Buses" in companies
         assert "LOTHIAN BUSES LIMITED" not in companies
+
+
+class TestUncappedFeedScan:
+    """Boards must scan the ENTIRE already-downloaded feed. The old first-10-
+    matches-in-feed-order cap made repeat hunts return the same leads forever
+    (feeds barely reorder day to day)."""
+
+    def test_board_emits_every_matching_listing(self, monkeypatch):
+        import asyncio
+        import httpx
+        from app.scrapers.jobboards import RemoteOKScraper
+
+        listings = [
+            {"company": f"Newco {i}", "position": "Backend Engineer",
+             "tags": [], "description": "",
+             "apply_url": f"https://newco{i}.io/jobs"}
+            for i in range(25)
+        ]
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[{"legal": "notice"}] + listings)
+
+        real_client = httpx.AsyncClient
+        def fake_async_client(*a, **kw):
+            return real_client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(httpx, "AsyncClient", fake_async_client)
+
+        leads = asyncio.run(RemoteOKScraper().search("backend engineer hiring"))
+        assert len(leads) == 25   # the old cap stopped at 10
+
+
+class TestHuntExclusionAwarePipeline:
+    """Repeat hunts must not spend budget re-finding contacts the user owns:
+    owned emails are skipped (once per unique address), nameless identity
+    leads at role-inbox-owned domains are skipped, and the P0 careers@
+    derivation skips only domains whose ROLE INBOX is owned — a mere person
+    at a domain never suppresses its careers@ probe."""
+
+    def _hunt_with_fake_scraper(self, auth_client, monkeypatch, fake_results):
+        import asyncio
+        from app.api import hunt as hunt_mod
+
+        class FakeScraper:
+            name = "Fake"
+            async def safe_search(self, query, **kw):
+                return fake_results
+
+        monkeypatch.setattr(hunt_mod, "_build_scrapers", lambda key: [FakeScraper()])
+
+        async def no_resolve(raw, cache):
+            return None
+        monkeypatch.setattr(hunt_mod, "_resolve_domain_contact", no_resolve)
+        monkeypatch.setattr(hunt_mod, "verify_email", lambda e: "valid")
+        # The cooldown map is module state but the test DB reuses user id=1 —
+        # clear it before AND after so no other hunt test inherits a 429.
+        hunt_mod._last_hunt.clear()
+        try:
+            r = auth_client.post("/api/hunt", json={"query": "backend hiring"})
+            assert r.status_code == 200, r.text
+            return r.json()
+        finally:
+            hunt_mod._last_hunt.clear()
+
+    def test_owned_leads_skipped_new_leads_kept(self, auth_client, monkeypatch):
+        # The user already owns this exact address.
+        r = auth_client.post("/api/contacts", json={
+            "name": "Careers", "email": "careers@ownedco-hx.com",
+            "designation": "Talent/Recruiting (role inbox)", "company": "Ownedco",
+        })
+        assert r.status_code == 201, r.text
+
+        owned_lead = {"name": "", "email": "careers@ownedco-hx.com", "company": "Ownedco",
+                      "designation": "Recruiter", "source": "Fake", "context": ""}
+        data = self._hunt_with_fake_scraper(auth_client, monkeypatch, [
+            owned_lead,
+            dict(owned_lead),   # same owned address from a "second board" — counts ONCE
+            {"name": "Priya Nair", "email": "priya@freshstartup.io", "company": "Fresh",
+             "designation": "Recruiter", "source": "Fake", "context": ""},
+            # nameless identity lead at the role-inbox-owned domain → skipped
+            {"name": "", "email": "", "company": "Ownedco", "designation": "Recruiter",
+             "source": "Fake", "context": "", "_domain": "ownedco-hx.com"},
+        ])
+
+        emails = {c["email"] for c in data["contacts"]}
+        assert "priya@freshstartup.io" in emails
+        assert "careers@ownedco-hx.com" not in emails
+        # 1 owned email (deduped across boards) + 1 nameless lead at the
+        # owned role-inbox domain = 2, not 3.
+        assert data["duplicates"] == 2
+        assert data["total"] == 1
+
+    def test_owned_person_does_not_suppress_careers_probe(self, auth_client, monkeypatch):
+        from app.api import hunt as hunt_mod
+
+        # The user owns a PERSON at ownedco-hx.com — NOT its role inbox.
+        r = auth_client.post("/api/contacts", json={
+            "name": "Sarah Chen", "email": "sarah.chen@ownedco-hx.com",
+            "designation": "Recruiter", "company": "Ownedco",
+        })
+        assert r.status_code == 201, r.text
+
+        probed_domains: list[str] = []
+        async def spy_resolve(raw, cache):
+            probed_domains.append(raw.get("_domain") or "")
+            return None
+        monkeypatch.setattr(hunt_mod, "_resolve_domain_contact", spy_resolve)
+
+        class FakeScraper:
+            name = "Fake"
+            async def safe_search(self, query, **kw):
+                # Nameless identity lead at ownedco-hx.com: NOT skipped (no owned
+                # role inbox there) and its careers@ P0 probe must still run.
+                return [{"name": "", "email": "", "company": "Ownedco",
+                         "designation": "Recruiter", "source": "Fake",
+                         "context": "", "_domain": "ownedco-hx.com"}]
+
+        monkeypatch.setattr(hunt_mod, "_build_scrapers", lambda key: [FakeScraper()])
+        monkeypatch.setattr(hunt_mod, "verify_email", lambda e: "valid")
+        hunt_mod._last_hunt.clear()
+        try:
+            r = auth_client.post("/api/hunt", json={"query": "backend hiring"})
+            assert r.status_code == 200, r.text
+        finally:
+            hunt_mod._last_hunt.clear()
+        assert "ownedco-hx.com" in probed_domains
 
 
 class TestGroundedStatusSurvivesVerification:
