@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for ColdReach."""
 
 from datetime import datetime
-from sqlalchemy import String, Text, DateTime, Boolean, LargeBinary, UniqueConstraint, func
+from sqlalchemy import JSON, String, Text, DateTime, Boolean, LargeBinary, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.database import Base
 
@@ -180,3 +180,24 @@ class KnownCompany(Base):
     domain:     Mapped[str]      = mapped_column(String(255), default="")
     source:     Mapped[str]      = mapped_column(String(20), default="user")  # user | discovered
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class HuntCursor(Base):
+    """
+    Per-(user, query) exploration memory: which ATS company boards this user's
+    repeat hunts have already probed for this query, so each re-run covers a
+    FRESH slice of the directory instead of a random redraw (~37% overlap at
+    28-of-75). Board/feed leads need no cursor — saved contacts become the
+    exclusion set on the next hunt.
+
+    `explored` is {"ats_slugs": ["greenhouse:stripe", ...]}. Plain JSON (not
+    Postgres JSONB) so SQLite dev/tests and Supabase share one model. Entries
+    older than the TTL are ignored at read time (lazy expiry — no cron on
+    serverless) and overwritten on the next upsert.
+    """
+    __tablename__ = "hunt_cursors"
+
+    user_id:    Mapped[int]      = mapped_column(primary_key=True)
+    query_norm: Mapped[str]      = mapped_column(String(255), primary_key=True)
+    explored:   Mapped[dict]     = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

@@ -1410,6 +1410,83 @@ class TestHuntExclusionAwarePipeline:
         assert "ownedco-hx.com" in probed_domains
 
 
+class TestHuntCursor:
+    """DB-backed exploration memory: repeat hunts of the same query probe a
+    fresh ATS slice; stale cursors (7-day TTL) are ignored lazily."""
+
+    def test_roundtrip_and_merge(self, auth_client, db_session):
+        from app.db.crud import get_explored_slugs, record_explored_slugs
+        from app.db.models import User
+        user = db_session.query(User).first()
+
+        assert get_explored_slugs(db_session, user.id, "backend hiring") == set()
+        record_explored_slugs(db_session, user.id, "backend hiring",
+                              {"greenhouse:alpha", "lever:beta"})
+        record_explored_slugs(db_session, user.id, "backend hiring",
+                              {"greenhouse:gamma"})
+        assert get_explored_slugs(db_session, user.id, "backend hiring") ==             {"greenhouse:alpha", "lever:beta", "greenhouse:gamma"}
+        # Scoped per query: a different query has its own cursor.
+        assert get_explored_slugs(db_session, user.id, "react hiring") == set()
+
+    def test_stale_cursor_ignored_and_overwritten(self, auth_client, db_session):
+        from datetime import datetime, timedelta
+        from app.db.crud import get_explored_slugs, record_explored_slugs
+        from app.db.models import HuntCursor, User
+        user = db_session.query(User).first()
+
+        record_explored_slugs(db_session, user.id, "golang hiring", {"greenhouse:old"})
+        row = db_session.get(HuntCursor, (user.id, "golang hiring"))
+        row.updated_at = datetime.utcnow() - timedelta(days=8)
+        db_session.commit()
+
+        assert get_explored_slugs(db_session, user.id, "golang hiring") == set()
+        # A write over a stale cursor replaces it (old coverage expired).
+        record_explored_slugs(db_session, user.id, "golang hiring", {"greenhouse:new"})
+        assert get_explored_slugs(db_session, user.id, "golang hiring") == {"greenhouse:new"}
+
+
+class TestHuntDuplicateContacts:
+    """The all-duplicates dead end must SHOW which existing contacts matched."""
+
+    def test_duplicate_contacts_hydrated_from_early_skips(self, auth_client, monkeypatch):
+        from app.api import hunt as hunt_mod
+
+        r = auth_client.post("/api/contacts", json={
+            "name": "Careers", "email": "careers@dupco-hx.com",
+            "designation": "Talent/Recruiting (role inbox)", "company": "Dupco",
+        })
+        assert r.status_code == 201, r.text
+        owned_id = r.json()["id"]
+
+        class FakeScraper:
+            name = "Fake"
+            async def safe_search(self, query, **kw):
+                # Only an already-owned direct-email lead → all-duplicates hunt.
+                return [{"name": "", "email": "careers@dupco-hx.com", "company": "Dupco",
+                         "designation": "Recruiter", "source": "Fake", "context": ""}]
+
+        monkeypatch.setattr(hunt_mod, "_build_scrapers", lambda key: [FakeScraper()])
+        async def no_resolve(raw, cache):
+            return None
+        monkeypatch.setattr(hunt_mod, "_resolve_domain_contact", no_resolve)
+        monkeypatch.setattr(hunt_mod, "verify_email", lambda e: "valid")
+        hunt_mod._last_hunt.clear()
+        try:
+            resp = auth_client.post("/api/hunt", json={"query": "backend hiring"})
+            assert resp.status_code == 200, resp.text
+        finally:
+            hunt_mod._last_hunt.clear()
+
+        data = resp.json()
+        assert data["total"] == 0 and data["duplicates"] >= 1
+        dup = data["duplicate_contacts"]
+        assert len(dup) == 1
+        assert dup[0]["id"] == owned_id
+        assert dup[0]["email"] == "careers@dupco-hx.com"
+        assert dup[0]["company"] == "Dupco"
+        assert "status" in dup[0]
+
+
 class TestGroundedStatusSurvivesVerification:
     """
     Live-hunt bug found by manual verification: the resolver marks a

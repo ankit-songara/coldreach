@@ -237,6 +237,44 @@ def _tech_in(token: str, hay: str) -> bool:
     return re.search(pattern, hay) is not None
 
 
+# ── Sibling-query expansion ──────────────────────────────────────────────────
+# Related tech tokens per role family. A "backend engineer" hunt discards
+# already-downloaded golang/python/node listings because they don't literally
+# match — expanding to siblings re-filters the SAME fetched feeds (zero extra
+# HTTP). Every member is a single _TECH_TOKENS entry: a variant without a tech
+# token would drop role_match into its generic branch and match every
+# "engineer" listing, and multi-tech variants degrade to ANY-of.
+_SIBLING_FAMILIES: tuple[frozenset[str], ...] = (
+    frozenset({"backend", "golang", "go", "python", "java", "rust", "node"}),
+    frozenset({"frontend", "react", "typescript", "vue", "angular", "svelte"}),
+    frozenset({"fullstack", "react", "node", "typescript"}),
+    frozenset({"devops", "kubernetes", "terraform", "docker", "sre"}),
+    frozenset({"data", "ml", "spark", "kafka"}),
+    frozenset({"mobile", "android", "ios", "flutter", "kotlin", "swift"}),
+)
+
+
+def sibling_variants(query: str) -> list[str]:
+    """Single-tech-token sibling queries for a role query — e.g. "backend
+    engineer hiring" → ["golang", "java", ...]. Empty when the query names no
+    technology (nothing to expand from) so purely-generic queries stay exact.
+    Callers must match per-variant (any(role_match(v, hay) for v in ...)),
+    never by concatenating variants into one query."""
+    tech = {k for k in role_keywords(query) if k in _TECH_TOKENS}
+    if not tech:
+        return []
+    out: set[str] = set()
+    for fam in _SIBLING_FAMILIES:
+        if tech & fam:
+            out |= fam - tech
+    # A sibling equal to an alias of the primary (query "golang" → sibling
+    # "go") adds nothing — drop through the alias table.
+    aliases: set[str] = set()
+    for t in tech:
+        aliases |= _TECH_ALIASES.get(t, {t})
+    return sorted(out - aliases)
+
+
 def role_match(query: str, haystack: str) -> bool:
     """
     True if a job title/tags/text matches the role query.

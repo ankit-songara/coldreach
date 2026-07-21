@@ -7,12 +7,12 @@ so callers physically cannot read or write another user's rows.
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.db.models import (
     Contact, EmailDraft, Resume, ResumeFile, AppConfig, User, KnownCompany, EmailPattern,
-    ReplyMessage,
+    ReplyMessage, HuntCursor,
 )
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
@@ -122,15 +122,21 @@ class ContactRepository:
         self.db.refresh(contact)
         return contact
 
-    def bulk_create(self, contacts: list[ContactCreate]) -> list[Contact]:
-        """Insert new contacts, skip duplicates (per-user).
+    def bulk_create(self, contacts: list[ContactCreate]) -> tuple[list[Contact], list[Contact]]:
+        """Insert new contacts, skip duplicates (per-user). Returns
+        (created, existing) — the pre-existing rows that made a lead a
+        duplicate, so the hunt can SHOW the user which contacts those were
+        instead of a bare count.
 
         Commits one row at a time so a unique-constraint violation from a
         concurrent hunt only skips that row instead of failing the whole batch.
         """
-        created: list[Contact] = []
+        created:  list[Contact] = []
+        existing: list[Contact] = []
         for c in contacts:
-            if self.get_by_email(c.email):
+            prior = self.get_by_email(c.email)
+            if prior:
+                existing.append(prior)
                 continue
             obj = Contact(user_id=self.user_id, **c.model_dump())
             self.db.add(obj)
@@ -138,10 +144,13 @@ class ContactRepository:
                 self.db.commit()
             except IntegrityError:
                 self.db.rollback()   # another request inserted it first
+                prior = self.get_by_email(c.email)
+                if prior:
+                    existing.append(prior)
                 continue
             self.db.refresh(obj)
             created.append(obj)
-        return created
+        return created, existing
 
     def update(self, contact_id: int, data: ContactUpdate) -> Contact | None:
         contact = self.get_by_id(contact_id)
@@ -555,6 +564,43 @@ def load_known_companies_into_directory(db: Session) -> int:
 
 
 # ── Email pattern memory (global, like KnownCompany) ──────────────────────────
+
+# ── Hunt exploration cursor ───────────────────────────────────────────────────
+# Which ATS boards a user's repeat hunts already probed for a query, so each
+# re-run covers a fresh directory slice. Same cross-request-memory precedent as
+# EmailPattern/KnownCompany, but user-scoped: exploration is per person.
+
+_CURSOR_TTL = timedelta(days=7)     # postings churn — stale coverage must retry
+_CURSOR_MAX_SLUGS = 400             # belt-and-braces bound on the JSON payload
+
+
+def get_explored_slugs(db: Session, user_id: int, query_norm: str) -> set[str]:
+    """'ats:slug' keys already probed for this (user, query). Empty when the
+    cursor is absent or older than the TTL (lazy expiry — no cron)."""
+    row = db.get(HuntCursor, (user_id, query_norm))
+    if row is None or row.updated_at is None:
+        return set()
+    if row.updated_at < datetime.utcnow() - _CURSOR_TTL:
+        return set()
+    return set((row.explored or {}).get("ats_slugs", []))
+
+
+def record_explored_slugs(db: Session, user_id: int, query_norm: str, new_keys: set[str]) -> None:
+    """Merge this hunt's completed probes into the cursor (upsert). A stale
+    cursor is overwritten, not merged — its coverage already expired."""
+    if not new_keys:
+        return
+    row = db.get(HuntCursor, (user_id, query_norm))
+    stale = row is not None and row.updated_at is not None         and row.updated_at < datetime.utcnow() - _CURSOR_TTL
+    prior: set[str] = set() if (row is None or stale) else         set((row.explored or {}).get("ats_slugs", []))
+    merged = sorted(prior | new_keys)[:_CURSOR_MAX_SLUGS]
+    if row is None:
+        row = HuntCursor(user_id=user_id, query_norm=query_norm)
+        db.add(row)
+    row.explored = {"ats_slugs": merged}
+    row.updated_at = datetime.utcnow()
+    db.commit()
+
 
 def get_domain_patterns(db: Session, domains: list[str]) -> dict[str, str]:
     """Trusted pattern per domain — only rows whose confirmations outweigh

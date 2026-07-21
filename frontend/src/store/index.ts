@@ -63,8 +63,8 @@ interface AppState {
   hunting:     boolean
   huntStage:   string
   huntResults: Contact[] | null   // results of the LAST hunt (null = none yet)
-  huntInfo:    { found: number; duplicates: number; query: string; roleFiltered: number } | null
-  runHunt:          (query: string, roleFilter?: string) => Promise<void>
+  huntInfo:    { found: number; duplicates: number; query: string; roleFiltered: number; deepened: boolean; duplicateContacts: import('../types').DuplicateContact[] } | null
+  runHunt:          (query: string, roleFilter?: string, deepen?: boolean) => Promise<void>
   cancelHunt:       () => void
   clearHunt:        () => void
   removeHuntResult: (id: number) => void
@@ -137,7 +137,7 @@ export const useStore = create<AppState>()(
       huntStage:   '',
       huntResults: null,
       huntInfo:    null,
-      runHunt: async (query, roleFilter = '') => {
+      runHunt: async (query, roleFilter = '', deepen = false) => {
         if (get().hunting) return
         huntAbort = new AbortController()
         const signal = huntAbort.signal
@@ -146,10 +146,14 @@ export const useStore = create<AppState>()(
           setTimeout(() => { if (get().hunting) set({ huntStage: s.label }) }, s.after)
         )
         try {
-          const data = await huntApi.hunt({ query, role_filter: roleFilter || undefined }, signal)
+          const data = await huntApi.hunt({ query, role_filter: roleFilter || undefined, deepen: deepen || undefined }, signal)
           set({
             huntResults: (data.contacts ?? []) as Contact[],
-            huntInfo: { found: data.found ?? 0, duplicates: data.duplicates ?? 0, query, roleFiltered: data.role_filtered ?? 0 },
+            huntInfo: {
+              found: data.found ?? 0, duplicates: data.duplicates ?? 0, query,
+              roleFiltered: data.role_filtered ?? 0, deepened: deepen,
+              duplicateContacts: data.duplicate_contacts ?? [],
+            },
           })
           try { set({ contacts: await contactsApi.list() }) } catch { /* refetch later */ }
           queryClient.invalidateQueries({ queryKey: ['contacts'] })

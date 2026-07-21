@@ -13,6 +13,7 @@ from app.db.database import get_db
 from app.db.crud import (
     ContactRepository, add_known_company,
     get_domain_patterns, record_domain_pattern,
+    get_explored_slugs, record_explored_slugs,
 )
 from app.db.models import Contact, User
 from app.deps import get_current_user
@@ -40,7 +41,7 @@ from app.scrapers.web import (
     search_role_email_on_web, HIRING_PREFIXES, GENERAL_PREFIXES,
 )
 from app.scrapers import directory
-from app.scrapers.directory import looks_like_company
+from app.scrapers.directory import looks_like_company, sibling_variants
 from app.scrapers.resolver import (
     resolve as resolver_resolve, ResolutionCache, _smtp_probe,
 )
@@ -631,11 +632,32 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
 
     scrapers = _build_scrapers(req.hunter_api_key)
 
+    # ── Exploration cursor + sibling expansion (role queries only) ─────────────
+    # The cursor remembers which ATS boards this user's repeat hunts already
+    # probed for this query, so each re-run covers a FRESH directory slice.
+    # Company hunts bypass it — a targeted hunt must always probe that company.
+    # Sibling variants re-filter the same fetched feeds for related tech
+    # (backend → golang/python/…) at zero extra HTTP; matches are tagged
+    # _sibling and never displace primary matches downstream.
+    company_query = looks_like_company(req.query)
+    query_norm = " ".join(req.query.lower().split())[:255]
+    explored: frozenset = frozenset()
+    variants: tuple = ()
+    if not company_query:
+        try:
+            explored = frozenset(get_explored_slugs(db, user.id, query_norm))
+        except Exception as e:
+            log.debug(f"Hunt: cursor read skipped: {e}")
+        variants = tuple(sibling_variants(req.query))
+    probed: list[tuple[str, str, int]] = []   # (ats_key, slug, n_leads) per completed fetch
+
     # Sources hit distinct hosts, so run them fully concurrently (no
     # staggering) — but bounded: one slow board must not eat the wall-clock
     # budget the resolve phase needs. Completed scrapers are harvested; the
     # stragglers are cancelled and count as empty.
-    scrape_tasks = [asyncio.create_task(s.safe_search(req.query)) for s in scrapers]
+    scrape_tasks = [asyncio.create_task(s.safe_search(
+        req.query, explored_slugs=explored, probed_out=probed, query_variants=variants,
+    )) for s in scrapers]
     done_scrape, pending_scrape = await asyncio.wait(scrape_tasks, timeout=_SCRAPE_BUDGET_SECONDS)
     if pending_scrape:
         for t in pending_scrape:
@@ -666,6 +688,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # below — owning priya@acme.com must not cost acme.com its careers@ probe.
     skipped_domain_company: dict[str, str] = {}
     skipped_nameless_domains: set[str] = set()
+    skipped_owned_emails: set[str] = set()
 
     dropped_junk = 0
     for scraper, results in zip(scrapers, results_per_scraper):
@@ -685,6 +708,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                         # Already in the user's list — skipped once per unique
                         # address (seen_emails guards multi-board repeats).
                         skipped_known += 1
+                        skipped_owned_emails.add(email)
                         d = email.rsplit("@", 1)[-1]
                         if d not in _FREEMAIL and d not in skipped_domain_company:
                             skipped_domain_company[d] = (r.get("company") or "").strip()
@@ -716,6 +740,10 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # Resolved via the fast path in _resolve_domain_contact — no page-scrape,
     # TLD alternation when the guess has no MX. Kept in a SEPARATE list so a
     # domain can yield BOTH its careers@ inbox (P0) and a named person (P1).
+    # Primary-match leads first so sibling-only domains can't consume the
+    # careers-lead cap ahead of them (stable sort keeps feed order otherwise).
+    needs_resolve.sort(key=lambda r: 1 if r.get("_sibling") else 0)
+
     # Domains where the user already OWNS the role inbox are skipped — the
     # careers@ probe would only prove a duplicate. Owning a mere person at a
     # domain does NOT suppress its careers@ probe (that lead is new).
@@ -786,12 +814,18 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             # first with a name but an empty context field).
             cur_named = bool((cur.get("name") or "").strip())
             new_named  = bool((r.get("name") or "").strip())
+            # A domain matched by BOTH a primary and a sibling lead is primary.
+            if cur.get("_sibling") and not r.get("_sibling"):
+                cur.pop("_sibling", None)
             if not cur_named and new_named:
                 # Incoming has a name — adopt it, merge context from the old entry
                 merged_ctx = " ".join(
                     filter(None, [r.get("context"), cur.get("context")])
                 )[:2000]
-                by_domain[d] = {**r, "context": merged_ctx or r.get("context")}
+                merged = {**r, "context": merged_ctx or r.get("context")}
+                if not cur.get("_sibling"):
+                    merged.pop("_sibling", None)
+                by_domain[d] = merged
             else:
                 # Keep existing name; supplement context if the new entry has more
                 existing_ctx = (cur.get("context") or "")
@@ -799,9 +833,14 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 if extra_ctx and extra_ctx not in existing_ctx:
                     merged_ctx = (existing_ctx + "\n" + extra_ctx).strip()[:2000]
                     by_domain[d] = {**cur, "context": merged_ctx}
+    # Primaries before siblings, then named before nameless: sibling matches
+    # must never displace a primary from the resolve slice or the careers cap.
     needs_resolve = sorted(
         by_domain.values(),
-        key=lambda r: 0 if " " in (r.get("name") or "").strip() else 1,
+        key=lambda r: (
+            1 if r.get("_sibling") else 0,
+            0 if " " in (r.get("name") or "").strip() else 1,
+        ),
     )
 
     # ── Pattern memory: seed the cache with formats learned in PREVIOUS hunts
@@ -831,8 +870,11 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # P0 careers leads first — they're the hunt's primary output and their
     # grounding scan is capped tight (2 concurrent fetches, ~4s), so they
     # must land inside the time budget.
+    # deepen widens BREADTH only (never time): 20 extra resolve candidates are
+    # cancelled at the same deadline, not given more of the 60s wall.
+    resolve_slots = 60 if req.deepen else 40
     tasks = [asyncio.create_task(guarded_resolve(r))
-             for r in careers_leads + needs_resolve[:40]]
+             for r in careers_leads + needs_resolve[:resolve_slots]]
     if tasks:
         # Adaptive: whatever wall-clock the scrape phase consumed comes out of
         # the resolve budget so the total stays inside the serverless limit.
@@ -874,6 +916,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 # a verify slot or shows up as a save-time duplicate.
                 if email in owned_emails:
                     skipped_known += 1
+                    skipped_owned_emails.add(email)
                     continue
                 with_email.append(r)
 
@@ -1011,8 +1054,62 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             confidence   = r.get("confidence") or 0,
             email_status = r.get("email_status") or "unknown",
         ))
-    saved = repo.bulk_create(contacts_to_save)
+    saved, save_time_existing = repo.bulk_create(contacts_to_save)
     log.info(f"Hunt complete: {len(saved)} new contacts saved")
+
+    # ── Which existing contacts made leads duplicates? ─────────────────────────
+    # Hydrated from the user's contact list in ONE fetch: exact-email skips map
+    # directly; domain-level skips (nameless/careers) map to a representative
+    # owned contact at that domain (role-inbox contact preferred, since that is
+    # what the skipped probe would have found). Deduped by id, capped — the
+    # list is illustrative, so its length may not equal the duplicates count.
+    duplicate_contacts: list[dict] = []
+    try:
+        seen_dup_ids: set[int] = set()
+        skipped_domains = skipped_nameless_domains | skipped_careers_domains
+        if skipped_owned_emails or skipped_domains or save_time_existing:
+            all_owned = repo.get_all()
+            by_owned_email = {c.email.lower(): c for c in all_owned if c.email}
+            def _add(c) -> None:
+                if c is not None and c.id not in seen_dup_ids and len(duplicate_contacts) < 25:
+                    seen_dup_ids.add(c.id)
+                    duplicate_contacts.append({
+                        "id": c.id, "name": c.name, "company": c.company,
+                        "email": c.email, "status": c.status,
+                    })
+            for em in sorted(skipped_owned_emails):
+                _add(by_owned_email.get(em))
+            for c in save_time_existing:
+                _add(c)
+            for dom in sorted(skipped_domains):
+                at_domain = [c for c in all_owned
+                             if c.email and c.email.lower().endswith("@" + dom)]
+                if at_domain:
+                    rolebox = [c for c in at_domain
+                               if c.email.split("@", 1)[0].lower() in _ROLEBOX_LOCALS]
+                    _add((rolebox or at_domain)[0])
+    except Exception as e:
+        log.debug(f"Hunt: duplicate-contact hydration skipped: {e}")
+
+    # ── Exploration cursor write-back ──────────────────────────────────────────
+    # A slug is "explored" only on a definitive outcome: its fetch completed
+    # with no matching roles, OR its leads actually reached the persist stage.
+    # Leads dropped mid-pipeline (resolve cancel, slot caps, confidence floor,
+    # verify-invalid, role filter) never mark their board explored — the user
+    # never received them, so a future hunt must retry.
+    if not company_query and probed:
+        try:
+            persisted_keys: set[str] = set()
+            for r in contacts_to_save:
+                ats_name, sep, slug = (r.source or "").partition("/")
+                if sep and slug:
+                    persisted_keys.add(f"{ats_name.strip().lower()}:{slug.strip().lower()}")
+            explored_add = {f"{a}:{s}" for a, s, n in probed if n == 0}
+            explored_add |= {f"{a}:{s}" for a, s, n in probed if n > 0} & persisted_keys
+            record_explored_slugs(db, user.id, query_norm, explored_add)
+        except Exception as e:
+            db.rollback()
+            log.debug(f"Hunt: cursor write skipped: {e}")
 
     # Signal for a useful empty state: how many leads we *found* (before resolution)
     # vs. how many resolved-but-were-already-saved. Lets the UI distinguish
@@ -1038,4 +1135,5 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         found=found,
         duplicates=duplicates + skipped_known,
         role_filtered=role_filtered,
+        duplicate_contacts=duplicate_contacts,
     )

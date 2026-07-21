@@ -73,9 +73,11 @@ function buildChips(resume: string, hiringCompanies: string[]): string[] {
 }
 
 // Honest, specific empty-state copy based on what the hunt actually found.
-function emptyHuntMessage(query: string, found: number, duplicates: number, roleFiltered: number): string {
+function emptyHuntMessage(query: string, found: number, duplicates: number, roleFiltered: number, deepened = false): string {
+  if (duplicates > 0 && deepened)
+    return `Hunted deeper — still nothing new for "${query}" right now (${duplicates} match${duplicates > 1 ? 'es' : ''} you already have). Feeds refresh daily; try one of the suggestions below or a narrower stack.`
   if (duplicates > 0)
-    return `You already have every new match for "${query}" (${duplicates} contact${duplicates > 1 ? 's' : ''} skipped as yours). Hunt again to dig deeper — known contacts no longer use up the budget — or click a suggested company above (hiring now, not in your list), or narrow the stack (e.g. "rust backend", "fintech golang").`
+    return `You already have every new match for "${query}" (${duplicates} contact${duplicates > 1 ? 's' : ''} skipped as yours).`
   // Role filter accounted for the misses — don't blame "no reachable email".
   if (roleFiltered > 0)
     return `Found ${roleFiltered} reachable lead${roleFiltered > 1 ? 's' : ''} for "${query}", but none matched your role filter (founders & recruiters are always kept). Switch to "Any role" or pick a different role to see them.`
@@ -534,7 +536,7 @@ export default function Hunt() {
           <span>
             {huntResults.length > 0
               ? `Showing ${huntResults.length} new contact${huntResults.length !== 1 ? 's' : ''} found for "${huntInfo.query}"`
-              : emptyHuntMessage(huntInfo.query, huntInfo.found, huntInfo.duplicates, huntInfo.roleFiltered)}
+              : emptyHuntMessage(huntInfo.query, huntInfo.found, huntInfo.duplicates, huntInfo.roleFiltered, huntInfo.deepened)}
           </span>
           {contacts.length > 0 && (
             <button
@@ -546,6 +548,59 @@ export default function Hunt() {
             </button>
           )}
         </p>
+      )}
+
+      {/* ── All-duplicates action panel: turn the dead end into a next step ── */}
+      {!hunting && huntResults !== null && huntResults.length === 0 && huntInfo && huntInfo.duplicates > 0 && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {huntInfo.duplicateContacts.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                Already in your list:
+              </span>
+              {huntInfo.duplicateContacts.slice(0, 8).map(dc => (
+                <button
+                  key={dc.id}
+                  onClick={() => setDrawerId(dc.id)}
+                  className="text-xs px-2 py-1 rounded-full"
+                  style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)',
+                           color: 'var(--text)', cursor: 'pointer' }}
+                  title={dc.email}
+                >
+                  {dc.company}{dc.name && dc.name !== 'Contact' ? ` · ${dc.name}` : ''} · {STATUS_META[dc.status as ContactStatus]?.label ?? dc.status}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* A deepen run that still found nothing gets no second deepen —
+                only the alternate-query chips (a futile-loop invitation otherwise). */}
+            {!huntInfo.deepened && (
+              <button
+                onClick={() => { if (!hunting) void runHunt(huntInfo.query, role, true) }}
+                disabled={hunting}
+                className="btn-primary text-xs px-3 py-1.5"
+                style={{ borderRadius: 8 }}
+              >
+                Hunt deeper
+              </button>
+            )}
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {huntInfo.deepened ? 'Try instead:' : 'or try:'}
+            </span>
+            {chips.filter(c => c.toLowerCase() !== huntInfo.query.toLowerCase()).slice(0, 3).map(chip => (
+              <button
+                key={chip}
+                onClick={() => { setQuery(chip); doHunt(chip) }}
+                className="text-xs px-2 py-1 rounded-full"
+                style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)',
+                         color: 'var(--accent-text)', cursor: 'pointer' }}
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ── Contact grid ─────────────────────────────────────────────── */}

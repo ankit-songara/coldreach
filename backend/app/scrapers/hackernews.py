@@ -162,7 +162,7 @@ class HackerNewsScraper(BaseScraper):
     # every post is free. A first-N cap in thread order made repeat hunts return
     # the same leads; downstream funnel caps bound the resolve work instead.
 
-    async def search(self, query: str, **_) -> list[dict]:
+    async def search(self, query: str, *, query_variants: tuple = (), **_) -> list[dict]:
         posts = await _load_thread()
         if not posts:
             return []
@@ -173,12 +173,17 @@ class HackerNewsScraper(BaseScraper):
         seen_domain: set[str] = set()
         for p in posts:
             # Relevance: role queries match the post text; company queries match
-            # the parsed company name.
+            # the parsed company name. A post matching only a sibling tech token
+            # still emits, tagged _sibling (deprioritised downstream).
+            sibling = False
             if company_mode:
                 if not p["company"] or not company_matches(query, p["company"]):
                     continue
             elif not role_match(query, p["text"][:300]):
-                continue
+                if not (query_variants and
+                        any(role_match(v, p["text"][:300]) for v in query_variants)):
+                    continue
+                sibling = True
 
             company = p["company"] or "Unknown"
             ctx = f"From the HN 'Who is hiring' thread: {p['text'][:400]}"
@@ -187,7 +192,7 @@ class HackerNewsScraper(BaseScraper):
                 if p["email"] in seen_email:
                     continue
                 seen_email.add(p["email"])
-                leads.append({
+                lead = {
                     # Person-like locals only; role mailboxes get "" so the
                     # greeting falls back to "Hi," not "Hi Careers,".
                     "name":        person_name_from_email(p["email"], company),
@@ -196,10 +201,13 @@ class HackerNewsScraper(BaseScraper):
                     "designation": "Recruiter",
                     "source":      self.name,
                     "context":     ctx,
-                })
+                }
+                if sibling:
+                    lead["_sibling"] = True
+                leads.append(lead)
             elif p["domain"] and p["domain"] not in seen_domain:
                 seen_domain.add(p["domain"])
-                leads.append({
+                lead = {
                     "name":        "",
                     "email":       "",
                     "company":     company if company != "Unknown" else p["domain"].split(".")[0].title(),
@@ -207,5 +215,8 @@ class HackerNewsScraper(BaseScraper):
                     "source":      self.name,
                     "context":     ctx,
                     "_domain":     p["domain"],
-                })
+                }
+                if sibling:
+                    lead["_sibling"] = True
+                leads.append(lead)
         return leads

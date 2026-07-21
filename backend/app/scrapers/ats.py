@@ -117,9 +117,21 @@ class BaseATSScraper(BaseScraper):
         """
         ...
 
-    async def search(self, query: str, **_) -> list[dict]:
+    async def search(self, query: str, *, explored_slugs: frozenset = frozenset(),
+                     probed_out: list | None = None, query_variants: tuple = (), **_) -> list[dict]:
+        """kwargs contract (threaded from hunt.py via safe_search, ignored by
+        scrapers that don't declare them):
+          explored_slugs — "ats:slug" keys this user's repeat hunts already
+            probed for this query; excluded from the shuffle so each re-run
+            covers a fresh directory slice (per-ATS wraparound when exhausted).
+          probed_out — mutable list; (ats_key, slug, n_leads) appended for every
+            board whose fetch COMPLETED (cancelled/errored fetches are not
+            definitive and must be retried by future hunts).
+          query_variants — sibling tech tokens; jobs matching only a variant
+            still emit leads, tagged _sibling for downstream deprioritisation.
+        """
         company_mode = looks_like_company(query)
-        targets = self._targets(query, company_mode)[: self.MAX_TARGETS]
+        targets = self._targets(query, company_mode, explored_slugs)[: self.MAX_TARGETS]
         if not targets:
             return []
         # ONE client per source: all this ATS's boards live on one API host, so
@@ -129,7 +141,8 @@ class BaseATSScraper(BaseScraper):
 
         async def bounded(slug: str, dh: str) -> list[dict]:
             async with sem:
-                return await self._collect(client, slug, dh, query, company_mode)
+                return await self._collect(client, slug, dh, query, company_mode,
+                                            probed_out, query_variants)
 
         async with httpx.AsyncClient(
             timeout=10, headers={"User-Agent": UA},
@@ -150,14 +163,21 @@ class BaseATSScraper(BaseScraper):
                 leads.extend(r)
         return leads
 
-    def _targets(self, query: str, company_mode: bool) -> list[tuple[str, str]]:
+    def _targets(self, query: str, company_mode: bool,
+                 explored_slugs: frozenset = frozenset()) -> list[tuple[str, str]]:
         """Return (slug, domain_hint) pairs to probe on this ATS."""
         if not company_mode:
-            # Role query → scan directory companies, randomized so repeated hunts
-            # reach different companies rather than always the same first MAX_TARGETS.
+            # Role query → scan directory companies the cursor hasn't covered
+            # yet, randomized. Wraparound is PER-ATS: four of the seven pools
+            # are smaller than MAX_TARGETS and exhaust on the first hunt — when
+            # everything is explored, fall back to the full pool rather than
+            # returning nothing.
             all_cos = [(c.slug, c.domain) for c in companies_for_ats(self.ats_key)]
-            random.shuffle(all_cos)
-            return all_cos
+            fresh = [t for t in all_cos
+                     if f"{self.ats_key}:{t[0].lower()}" not in explored_slugs]
+            pool = fresh or all_cos
+            random.shuffle(pool)
+            return pool
 
         known = lookup(query)
         if known:
@@ -166,24 +186,46 @@ class BaseATSScraper(BaseScraper):
         # Unknown company: try derived slugs (only the right ATS will 200).
         return [(s, "") for s in slugify_company(query)]
 
-    async def _collect(self, client: httpx.AsyncClient, slug: str, domain_hint: str, query: str, company_mode: bool) -> list[dict]:
+    async def _collect(self, client: httpx.AsyncClient, slug: str, domain_hint: str,
+                       query: str, company_mode: bool,
+                       probed_out: list | None = None,
+                       query_variants: tuple = ()) -> list[dict]:
         try:
             company, api_domain, jobs = await self._fetch(client, slug)
         except Exception:
-            return []
+            return []   # not definitive — do NOT mark probed
+
+        def _done(leads: list[dict]) -> list[dict]:
+            # Fetch completed → definitive outcome (even "no jobs"/"no match"),
+            # safe for the exploration cursor to record.
+            if probed_out is not None:
+                probed_out.append((self.ats_key, slug.lower(), len(leads)))
+            return leads
+
         if not jobs:
-            return []
+            return _done([])
 
         domain = domain_hint or api_domain or _slug_to_domain(slug)
 
         if not company_mode:
             # Tech-aware filter: "react engineer" must match React roles, not every
             # job titled "…Engineer". Tags aren't available here, so match on title.
-            jobs = [j for j in jobs if role_match(query, j["title"])]
-            if not jobs:
-                return []
+            primary = [j for j in jobs if role_match(query, j["title"])]
+            if primary:
+                jobs = primary
+            elif query_variants:
+                # Sibling pass over the SAME fetched jobs (zero extra HTTP):
+                # per-variant matching, never a concatenated multi-tech query.
+                jobs = [j for j in jobs
+                        if any(role_match(v, j["title"]) for v in query_variants)]
+                if not jobs:
+                    return _done([])
+                return _done([{**lead, "_sibling": True}
+                              for lead in self._emit(company, domain, jobs, slug)])
+            else:
+                return _done([])
 
-        return self._emit(company, domain, jobs, slug)
+        return _done(self._emit(company, domain, jobs, slug))
 
     def _emit(self, company: str, domain: str, jobs: list[dict], slug: str) -> list[dict]:
         source = f"{self.name}/{slug}"

@@ -51,6 +51,10 @@ class HuntRequest(BaseModel):
     # Optional target-role family ("engineering", "management", "recruiting", …).
     # Empty = no filtering (return every reachable lead, current behaviour).
     role_filter:    str = Field("", max_length=32)
+    # "Hunt deeper" re-run: widens the resolve slice (breadth only, same time
+    # budgets). Marginal by design — exclusions already make every re-run dig
+    # deeper; this squeezes a little more from an all-duplicates dead end.
+    deepen:         bool = False
 
 
 class HuntResult(BaseModel):
@@ -61,3 +65,7 @@ class HuntResult(BaseModel):
     found:         int = 0         # leads discovered (pre-resolution)
     duplicates:    int = 0         # matches already in the user's list (skipped early or at save)
     role_filtered: int = 0         # reachable leads dropped by the role filter
+    # The existing contacts that made this hunt's leads duplicates — lets the
+    # UI turn "all duplicates" into a review of the pipeline the user already
+    # has. Illustrative (deduped, capped), so len() may differ from duplicates.
+    duplicate_contacts: list[dict] = []

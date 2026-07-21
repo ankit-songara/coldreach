@@ -75,11 +75,20 @@ def _guess_domain(company: str) -> str:
     return f"{s}.com" if s else ""
 
 
-def _matches(query: str, company_mode: bool, title: str, tags: list[str], company: str) -> bool:
+def _matches(query: str, company_mode: bool, title: str, tags: list[str],
+             company: str, query_variants: tuple = ()) -> str:
+    """"primary" | "sibling" | "" (no match). Sibling = matches a related tech
+    token (per-variant role_match — never a concatenated multi-tech query) but
+    not the query itself; those leads are tagged and deprioritised downstream."""
     if company_mode:
-        return company_matches(query, company)
+        return "primary" if company_matches(query, company) else ""
     # Tech-aware: "react engineer" must match React roles, not every "…Engineer".
-    return role_match(query, f"{title} {' '.join(tags)}")
+    hay = f"{title} {' '.join(tags)}"
+    if role_match(query, hay):
+        return "primary"
+    if query_variants and any(role_match(v, hay) for v in query_variants):
+        return "sibling"
+    return ""
 
 
 class _JsonBoard(BaseScraper):
@@ -97,7 +106,7 @@ class _JsonBoard(BaseScraper):
         """Return normalized dicts: {title, company, tags[], text, domain}."""
         raise NotImplementedError
 
-    async def search(self, query: str, **_) -> list[dict]:
+    async def search(self, query: str, *, query_variants: tuple = (), **_) -> list[dict]:
         company_mode = looks_like_company(query)
         try:
             async with httpx.AsyncClient(
@@ -112,10 +121,13 @@ class _JsonBoard(BaseScraper):
         seen_domains: set[str] = set()
 
         for it in items:
-            if not it.get("title") or not _matches(
-                query, company_mode, it["title"], it.get("tags", []), it.get("company", "")
-            ):
+            if not it.get("title"):
                 continue
+            match = _matches(query, company_mode, it["title"], it.get("tags", []),
+                             it.get("company", ""), query_variants)
+            if not match:
+                continue
+            sibling = match == "sibling"
 
             company = it.get("company") or "Unknown"
             ctx = f"Actively hiring for '{it['title']}' at {company} (via {self.name})"
@@ -126,7 +138,7 @@ class _JsonBoard(BaseScraper):
                 if em in seen_emails:
                     continue
                 seen_emails.add(em)
-                leads.append({
+                lead = {
                     # Person-like locals only; role mailboxes get "" so the greeting
                     # falls back to "Hi," instead of "Hi Jobs,".
                     "name":        person_name_from_email(em, company),
@@ -135,7 +147,10 @@ class _JsonBoard(BaseScraper):
                     "designation": "Recruiter",
                     "source":      self.name,
                     "context":     ctx,
-                })
+                }
+                if sibling:
+                    lead["_sibling"] = True
+                leads.append(lead)
             else:
                 # No embedded email (the norm for these boards — they route through
                 # apply links). Emit an identity-only domain lead so the resolver can
@@ -147,7 +162,7 @@ class _JsonBoard(BaseScraper):
                 if not domain or domain in seen_domains:
                     continue
                 seen_domains.add(domain)
-                leads.append({
+                lead = {
                     "name":        "",
                     "email":       "",
                     "company":     company,
@@ -155,7 +170,10 @@ class _JsonBoard(BaseScraper):
                     "source":      self.name,
                     "context":     ctx,
                     "_domain":     domain,
-                })
+                }
+                if sibling:
+                    lead["_sibling"] = True
+                leads.append(lead)
         return leads
 
 

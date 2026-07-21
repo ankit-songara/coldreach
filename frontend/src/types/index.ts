@@ -42,14 +42,26 @@ export interface HuntRequest {
   query:           string
   hunter_api_key?: string
   role_filter?:    string   // target role family: '' = any (no filtering)
+  deepen?:         boolean  // "Hunt deeper" re-run: widens the resolve slice server-side
+}
+
+export interface DuplicateContact {
+  id:      number
+  name:    string
+  company: string
+  email:   string
+  status:  string
 }
 
 export interface HuntResult {
   contacts:       Partial<Contact>[]
   total:          number
   found?:         number   // leads discovered (pre-resolution)
-  duplicates?:    number   // resolved contacts already in the user's list
+  duplicates?:    number   // matches already in the user's list (skipped early or at save)
   role_filtered?: number   // reachable leads dropped by the role filter
+  // Existing contacts that made leads duplicates (illustrative: deduped,
+  // capped server-side — length may differ from `duplicates`).
+  duplicate_contacts?: DuplicateContact[]
 }
 
 export interface ComposeRequest {
