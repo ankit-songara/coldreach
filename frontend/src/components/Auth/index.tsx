@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { LogIn, UserPlus } from 'lucide-react'
+import { LogIn, UserPlus, ArrowLeft } from 'lucide-react'
 import Logo from '../shared/Logo'
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { useStore } from '../../store'
@@ -79,17 +79,27 @@ export default function Auth({ initialMode = 'login', onBack }: {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-screen flex items-center justify-center px-4 relative" style={{ background: 'var(--bg)' }}>
+      {/* Page-level back nav — anchored to the top-left corner (the universal
+          spot) so it reads as "leave this page", not a stray line above the card. */}
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-[13px] font-semibold transition-colors"
+          style={{
+            // Inline position beats the global `.hit-target { position: relative }`
+            // rule that otherwise pins this out of the corner.
+            position: 'absolute', top: 16, left: 16, zIndex: 10,
+            background: 'var(--surface-1)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-full)', cursor: 'pointer',
+            color: 'var(--text-muted)', padding: '7px 14px 7px 11px',
+          }}
+        >
+          <ArrowLeft size={15} strokeWidth={2.4} />
+          Back
+        </button>
+      )}
       <div className="w-full max-w-sm">
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="text-[13px] font-semibold mb-4 hit-target"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}
-          >
-            ← Back
-          </button>
-        )}
         <div className="flex flex-col items-center mb-8">
           {/* Kit lockup: horizontal tile + lowercase cold↗reach */}
           <Logo size={40} wordmark />
