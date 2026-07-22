@@ -989,6 +989,12 @@ class TestCorsOriginRegex:
         "https://coldreach-niyp-cold-reach.vercel.app",
         "https://coldreach-niyp-git-master-cold-reach.vercel.app",
         "https://coldreach-niyp-ovji96fdp-cold-reach.vercel.app",
+        # Rename-friendly: any clean `coldreach-…` project name keeps matching,
+        # so the frontend project can be renamed without a CORS change.
+        "https://coldreach-app.vercel.app",
+        "https://coldreach-hq.vercel.app",
+        "https://coldreach.vercel.app",
+        "https://coldreach-app-git-master-cold-reach.vercel.app",
     ])
     def test_matches_every_real_deployment_url(self, pattern, origin):
         assert pattern.fullmatch(origin)
@@ -997,7 +1003,8 @@ class TestCorsOriginRegex:
         "https://evil-coldreach-niyp.vercel.app",     # prefix spoof
         "https://coldreach-niyp.vercel.app.evil.com", # suffix-domain spoof
         "http://coldreach-niyp.vercel.app",           # wrong scheme
-        "https://notcoldreach-niyp.vercel.app",
+        "https://notcoldreach-niyp.vercel.app",       # not the coldreach prefix
+        "https://coldreachevil.vercel.app",           # no hyphen boundary — not a suffix
         "https://coldreach-niyp.vercelapp.com",
     ])
     def test_rejects_spoofed_or_wrong_domains(self, pattern, origin):

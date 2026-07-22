@@ -29,9 +29,17 @@ class Settings(BaseSettings):
     # per-deployment URL on every deploy — a static allowlist always eventually
     # misses one, and a blocked CORS request looks identical to "server
     # unreachable" in the browser. This regex covers every URL shape Vercel
-    # generates for the frontend project. Override via CORS_ORIGIN_REGEX if the
-    # project name changes.
-    cors_origin_regex: str = r"^https://coldreach-niyp(-[a-z0-9]+)*\.vercel\.app$"
+    # generates for the frontend project.
+    #
+    # Scoped to `coldreach` + any hyphenated suffix on vercel.app, so the
+    # frontend project can be RENAMED to any clean `coldreach-…` name
+    # (coldreach-app, coldreach-hq, …) without touching this — the new domain
+    # keeps matching. Anchored at both ends (^…$) so look-alikes are still
+    # rejected: evil-coldreach.vercel.app (wrong prefix), coldreach.vercel.app.evil.com
+    # (wrong suffix), coldreach.vercelapp.com (not vercel.app). Auth is Bearer-token,
+    # not cookie, so CORS breadth here isn't a credential-exposure vector.
+    # Override via CORS_ORIGIN_REGEX for a custom domain.
+    cors_origin_regex: str = r"^https://coldreach(-[a-z0-9]+)*\.vercel\.app$"
 
     # ── Auth ─────────────────────────────────────────────────────────────────
     # Google OAuth 2.0 Web client ID for "Sign in with Google". Empty → the
