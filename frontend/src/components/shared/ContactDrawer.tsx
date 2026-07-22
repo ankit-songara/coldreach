@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { X, Copy, ExternalLink } from 'lucide-react'
@@ -199,7 +200,12 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
   const timeline = buildTimeline(meta, drafts)
   const noteDirty = notes !== (c.notes ?? '')
 
-  return (
+  // Portal to <body> so the scrim + panel escape the Hunt/<main> subtree.
+  // Rendered inline, a `fixed inset-0` scrim can be clipped by an ancestor's
+  // stacking/containing context (it left the top strip of the page undimmed —
+  // a stray "white line" above the dimmed content). As a direct child of body
+  // it reliably covers the whole viewport.
+  return createPortal(
     <>
       {/* Slide-in + responsive width can't come from inline styles; the app
           stylesheet is off-limits here so the drawer carries its own rules.
@@ -378,6 +384,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
           </button>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }
