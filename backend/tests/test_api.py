@@ -171,14 +171,15 @@ class TestRoleFilter:
         assert _role_match_rank("Product Manager", "engineering") is None  # off-target dropped
 
     @pytest.mark.parametrize("designation, priority", [
-        ("Talent/Recruiting (role inbox)", 0),   # P0: careers@/jobs@ inbox first
-        ("Founder",                        1),   # P1 tier 1
-        ("CTO",                            1),
-        ("Technical Recruiter",            2),   # P1 tier 2 (named HR/TA person)
-        ("Software Engineer",              3),   # P1 tier 3
-        ("Office Manager",                 4),
+        ("Founder",                        0),   # named people lead the results
+        ("CTO",                            0),
+        ("Technical Recruiter",            1),   # named HR/TA person
+        ("Software Engineer",              2),
+        ("Office Manager",                 3),   # any other named person
+        ("Talent/Recruiting (role inbox)", 4),   # grounded fallback, after people
+        ("Company Inbox (role inbox)",     4),
     ])
-    def test_p0_careers_inbox_sorts_before_named_people(self, designation, priority):
+    def test_named_people_sort_before_role_inboxes(self, designation, priority):
         from app.api.hunt import _desig_priority
         assert _desig_priority(designation) == priority
 
@@ -494,6 +495,103 @@ class TestRoleInboxFallback:
         from app.llm.prompts import get_designation_key
         assert _desig_priority("Talent/Recruiting (unverified guess)") == 5
         assert get_designation_key("Talent/Recruiting (unverified guess)") == "hiring_inbox"
+
+
+class TestHttpVerifyFallback:
+    """Hunter's HTTP email-verifier grounds named-person emails where SMTP is
+    impossible (Vercel port 25 blocked) — the fix that lets founders/HR/eng
+    leads survive the confidence floor in production instead of being dropped."""
+
+    def _run(self, monkeypatch, *, smtp, http, seed_pattern="first.last"):
+        import asyncio
+        from app.scrapers import resolver as R
+        from app.scrapers.resolver import ResolutionCache
+
+        async def fake_mx(self, domain):
+            return ["mx.example.com"]
+        async def fake_catch_all(domain, mx):
+            return False
+        def fake_smtp(email, mx_host, timeout=6):
+            return smtp
+        async def fake_http(email):
+            return http
+
+        monkeypatch.setattr(ResolutionCache, "mx", fake_mx)
+        monkeypatch.setattr(R, "detect_catch_all", fake_catch_all)
+        monkeypatch.setattr(R, "_smtp_probe", fake_smtp)
+        monkeypatch.setattr(R, "http_verify_email", fake_http)
+
+        cache = ResolutionCache()
+        if seed_pattern:
+            cache.seed_pattern("acme.com", seed_pattern)
+        return asyncio.run(R.resolve("jane", "doe", "acme.com", cache=cache))
+
+    def test_http_valid_grounds_email_when_smtp_inconclusive(self, monkeypatch):
+        # SMTP returns None (blocked/inconclusive); Hunter says "valid".
+        res = self._run(monkeypatch, smtp=None, http="valid")
+        assert res is not None
+        assert res.email == "jane.doe@acme.com"
+        assert res.verified is True
+        assert res.confidence >= 40      # clears the hunt confidence floor
+        assert res.confidence == 85      # pattern-matched + confirmed
+
+    def test_http_accept_all_marked_catch_all(self, monkeypatch):
+        res = self._run(monkeypatch, smtp=None, http="accept_all")
+        assert res is not None
+        assert res.catch_all is True
+
+    def test_http_invalid_falls_through_to_pattern_guess(self, monkeypatch):
+        # Hunter rejects it → not verified; with a learned pattern the resolver
+        # still returns a (low-confidence) pattern guess, never a false "valid".
+        res = self._run(monkeypatch, smtp=None, http="invalid")
+        assert res is not None
+        assert res.verified is False
+
+    def test_http_verify_budget_capped_per_hunt(self, monkeypatch):
+        import asyncio
+        from app.scrapers.resolver import ResolutionCache, _HTTP_VERIFY_MAX_PER_HUNT
+        from app.scrapers import resolver as R
+
+        calls = {"n": 0}
+        async def counting_http(email):
+            calls["n"] += 1
+            return "unknown"
+        monkeypatch.setattr(R, "http_verify_email", counting_http)
+
+        cache = ResolutionCache()
+        async def drive():
+            # More distinct emails than the budget — extra calls must no-op.
+            for i in range(_HTTP_VERIFY_MAX_PER_HUNT + 5):
+                await cache.http_verify(f"user{i}@acme.com")
+        asyncio.run(drive())
+        assert calls["n"] == _HTTP_VERIFY_MAX_PER_HUNT
+
+    def test_http_verify_memoised(self, monkeypatch):
+        import asyncio
+        from app.scrapers.resolver import ResolutionCache
+        from app.scrapers import resolver as R
+
+        calls = {"n": 0}
+        async def counting_http(email):
+            calls["n"] += 1
+            return "valid"
+        monkeypatch.setattr(R, "http_verify_email", counting_http)
+
+        cache = ResolutionCache()
+        async def drive():
+            a = await cache.http_verify("jane@acme.com")
+            b = await cache.http_verify("jane@acme.com")   # repeat → cached
+            return a, b
+        a, b = asyncio.run(drive())
+        assert a == b == "valid"
+        assert calls["n"] == 1
+
+    def test_http_verify_noop_without_hunter_key(self, monkeypatch):
+        import asyncio
+        from app.scrapers.resolver import http_verify_email
+        from app.config import settings
+        monkeypatch.setattr(settings, "hunter_api_key", "")
+        assert asyncio.run(http_verify_email("jane@acme.com")) is None
 
 
 class TestHuntQuality:

@@ -6,14 +6,16 @@ Pipeline for a given (first, last, domain):
   2. learn_pattern(domain) — inspect GitHub commit emails to detect format
   3. detect_catch_all(domain, mx) — probe a random address; skip SMTP if catch-all
   4. smtp_rcpt_probe(email, mx) — RCPT TO check per candidate (non-destructive)
+  4b. HTTP verification fallback (Hunter email-verifier) — the only check that
+      works where outbound port 25 is blocked (Vercel); budgeted per hunt
   5. confidence_score — weighted 0-100
 
 Confidence bands:
-  85-95  SMTP confirmed + pattern match
-  50-60  SMTP confirmed, no pattern signal
+  85-95  SMTP or HTTP confirmed + pattern match
+  50-60  SMTP or HTTP confirmed, no pattern signal
   35-45  catch-all domain, pattern learned
   20-30  catch-all, no pattern (first.last guess)
-  10-15  SMTP inconclusive, no signal
+  10-15  probes inconclusive, no signal
 """
 
 import asyncio
@@ -169,6 +171,38 @@ def _smtp_probe(email: str, mx_host: str, timeout: int = _SMTP_TIMEOUT) -> Optio
         return None
 
 
+# ── HTTP verification fallback (Hunter email-verifier) ───────────────────────
+# Hunter's free tier allows only ~50 verifications/month, so calls are strictly
+# budgeted per hunt and spent ONLY on named-person candidates (the careers@
+# grounding paths never reach this code).
+_HTTP_VERIFY_MAX_PER_HUNT = 8
+_HTTP_VERIFY_CANDIDATES   = 2   # ordered candidates checked per person
+
+
+async def http_verify_email(email: str) -> Optional[str]:
+    """
+    Verify deliverability over HTTPS via Hunter's email-verifier — usable where
+    outbound port 25 is blocked (serverless). Returns Hunter's status string
+    ("valid" | "invalid" | "accept_all" | "webmail" | "disposable" | "unknown")
+    or None (no API key / request failed).
+    """
+    key = (settings.hunter_api_key or "").strip()
+    if not key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.hunter.io/v2/email-verifier",
+                params={"email": email, "api_key": key},
+            )
+            if not r.is_success:
+                return None
+            return (r.json().get("data") or {}).get("status") or None
+    except Exception as exc:
+        log.debug(f"http_verify_email({email}): {exc}")
+        return None
+
+
 async def detect_catch_all(domain: str, mx: list[str]) -> bool:
     """True if the domain accepts any address (SMTP probing pointless)."""
     if not mx:
@@ -253,6 +287,10 @@ class ResolutionCache:
         self._catchall: dict[str, bool]      = {}
         self._pattern:  dict[str, Optional[str]] = {}
         self._observed: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        # HTTP-verification budget + memo (Hunter quota is precious: ~50/month
+        # free). The memo also makes repeat candidates across leads free.
+        self._http_verdicts: dict[str, Optional[str]] = {}
+        self._http_calls = 0
         # Per-domain locks prevent concurrent tasks from double-firing catch_all
         # detection or learn_pattern for the same domain, which would waste API
         # calls and, for catch_all, produce non-deterministic results (two probes
@@ -300,6 +338,18 @@ class ResolutionCache:
                 if domain not in self._catchall:
                     self._catchall[domain] = await detect_catch_all(domain, mx)
         return self._catchall[domain]
+
+    async def http_verify(self, email: str) -> Optional[str]:
+        """Budgeted, memoised Hunter email-verifier call. None once the per-hunt
+        budget is spent (callers treat None as 'no signal — stop')."""
+        if email in self._http_verdicts:
+            return self._http_verdicts[email]
+        if self._http_calls >= _HTTP_VERIFY_MAX_PER_HUNT:
+            return None
+        self._http_calls += 1
+        verdict = await http_verify_email(email)
+        self._http_verdicts[email] = verdict
+        return verdict
 
     async def pattern(self, domain: str) -> Optional[str]:
         if domain in self._pattern:
@@ -376,6 +426,31 @@ async def resolve(
             continue
         else:
             break  # server policy — stop probing this domain
+
+    # 5b. HTTP fallback (Hunter email-verifier): the only verification that
+    # works where port 25 is blocked (Vercel) or when the server's SMTP policy
+    # was inconclusive. Strictly budgeted via the cache — a "valid" verdict is
+    # as strong a grounding as an SMTP RCPT accept.
+    for email, patt in ordered[:_HTTP_VERIFY_CANDIDATES]:
+        verdict = await cache.http_verify(email)
+        if verdict == "valid":
+            bonus = 35 if (pattern and patt == pattern) else 10
+            return ResolvedEmail(
+                email=email, confidence=min(50 + bonus, 95),
+                pattern=patt, verified=True, catch_all=False,
+                notes="HTTP-verified (Hunter)",
+            )
+        if verdict == "accept_all":
+            # Same semantics as SMTP catch-all detection: deliverable by
+            # definition, unprovable for this specific mailbox.
+            confidence = 40 if pattern else 20
+            return ResolvedEmail(
+                email=email, confidence=confidence,
+                pattern=patt, verified=False, catch_all=True,
+                notes="catch-all domain (Hunter) — HTTP probe skipped",
+            )
+        if verdict != "invalid":
+            break  # no key / budget spent / no signal — stop burning quota
 
     # 6. Fallback: pattern-only guess
     if pattern:

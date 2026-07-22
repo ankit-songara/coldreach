@@ -14,10 +14,13 @@ site, so nothing beyond the factual projection (name, domain, batch, tagline,
 founder names) is persisted — long descriptions are never stored.
 
 For the handful of companies actually emitted, the YC company page exposes a
-founders array (full_name + title) in its embedded page props — appended to
-the lead's CONTEXT so drafts can address the founder by name. No email is ever
-derived from a founder name here (that would violate never-invent); reachable
-addresses still come from the normal grounding scan of the company's domain.
+founders array (full_name + title) in its embedded page props. The first
+founder becomes the lead's NAME + DESIGNATION (the person a job seeker most
+wants to reach at a YC-stage startup), and the full founder list is appended
+to the lead's CONTEXT so drafts can reference co-founders. This scraper still
+never invents an address: the named lead goes through the standard resolver
+pipeline (pattern learning + verification + the confidence floor), so an
+ungrounded founder guess is dropped downstream, not persisted.
 """
 
 import asyncio
@@ -70,19 +73,15 @@ async def _load_companies() -> list[dict]:
     return _cache["companies"]
 
 
-async def _founder_names(client: httpx.AsyncClient, slug: str) -> str:
-    """"Jane Doe (CEO), John Roe (CTO)" from the YC company page, or ""."""
+async def _founders(client: httpx.AsyncClient, slug: str) -> list[tuple[str, str]]:
+    """[(full_name, title), ...] from the YC company page, or []."""
     try:
         r = await client.get(_COMPANY_PAGE.format(slug=slug))
         if not r.is_success:
-            return ""
-        pairs = _FOUNDER_RE.findall(r.text)[:4]
-        return ", ".join(
-            f"{name} ({title})" if title else name
-            for name, title in pairs
-        )
+            return []
+        return _FOUNDER_RE.findall(r.text)[:4]
     except Exception:
-        return ""
+        return []
 
 
 class YCStartupsScraper(BaseScraper):
@@ -117,14 +116,15 @@ class YCStartupsScraper(BaseScraper):
         if not matched:
             return []
 
-        # Founder names for the first few matches — appended to context only.
-        founders_by_slug: dict[str, str] = {}
+        # Founder names for the first few matches — the first founder becomes
+        # the lead identity, the rest enrich the draft context.
+        founders_by_slug: dict[str, list[tuple[str, str]]] = {}
         try:
             sem = asyncio.Semaphore(3)
 
             async def fetch(slug: str) -> None:
                 async with sem:
-                    founders_by_slug[slug] = await _founder_names(client, slug)
+                    founders_by_slug[slug] = await _founders(client, slug)
 
             async with httpx.AsyncClient(
                 timeout=8, headers={"User-Agent": UA}, follow_redirects=True,
@@ -144,14 +144,27 @@ class YCStartupsScraper(BaseScraper):
             # specific role (the feed carries no per-role data).
             ctx = (f"YC {batch} startup ({(c.get('one_liner') or '').strip()[:140]}) — "
                    f"listed as actively hiring on the YC directory")
-            founders = founders_by_slug.get(c.get("slug") or "")
-            if founders:
-                ctx += f". Founders: {founders}"
+            pairs = founders_by_slug.get(c.get("slug") or "") or []
+            if pairs:
+                ctx += ". Founders: " + ", ".join(
+                    f"{name} ({title})" if title else name for name, title in pairs
+                )
+            # First founder with a resolvable "First Last" name becomes the
+            # lead identity — a founder tier-1 contact instead of a nameless
+            # role-inbox fallback. The resolver derives + verifies the address
+            # downstream; nothing is invented here.
+            lead_name, lead_desig = "", "Recruiter"
+            for fname, ftitle in pairs:
+                fname = " ".join(fname.split())
+                if " " in fname:
+                    lead_name = fname
+                    lead_desig = (ftitle.strip() or "Co-founder")[:60]
+                    break
             leads.append({
-                "name":        "",
+                "name":        lead_name,
                 "email":       "",
                 "company":     c["name"],
-                "designation": "Recruiter",
+                "designation": lead_desig,
                 "source":      self.name,
                 "context":     ctx,
                 "_domain":     c["_lead_domain"],
