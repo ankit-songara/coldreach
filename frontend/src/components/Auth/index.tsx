@@ -20,6 +20,9 @@ export default function Auth({ initialMode = 'login', onBack }: {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  // A Google-only account can't use email/password. Rather than a transient red
+  // error, we surface a persistent inline prompt pointing at the Google button.
+  const [googleHint, setGoogleHint] = useState(false)
 
   // Fixed 304px overflowed 320px phones (288px available) — and a one-shot
   // read of innerWidth goes stale after phone rotation, so track resizes.
@@ -47,7 +50,15 @@ export default function Auth({ initialMode = 'login', onBack }: {
       setAuth(res.token, res.email)
       toast.success(mode === 'login' ? 'Welcome back' : 'Account created')
     } catch (err: any) {
-      toast.error(err.message ?? 'Authentication failed')
+      const msg = err?.message ?? 'Authentication failed'
+      // The backend flags a Google-only account on both login and register with
+      // "…Google Sign-In…". Guide the user to the right button instead of just
+      // flashing an error they'll read as "login is broken".
+      if (GOOGLE_ENABLED && /google sign-in/i.test(msg)) {
+        setGoogleHint(true)
+      } else {
+        toast.error(msg)
+      }
     } finally {
       setBusy(false)
     }
@@ -88,9 +99,30 @@ export default function Auth({ initialMode = 'login', onBack }: {
         </div>
 
         <form onSubmit={submit} className="card space-y-4">
+          {googleHint && GOOGLE_ENABLED && (
+            <div
+              role="status"
+              style={{
+                padding: '11px 13px', borderRadius: 10,
+                background: 'var(--accent-tint)', border: '1px solid var(--accent)',
+                color: 'var(--accent-text)', fontSize: 13, lineHeight: 1.5,
+              }}
+            >
+              This email is registered with <strong>Google Sign-In</strong>, so it
+              has no password. Use the <strong>Continue with Google</strong> button
+              below — no password needed.
+            </div>
+          )}
+
           {GOOGLE_ENABLED && (
             <>
-              <div className="flex justify-center">
+              <div
+                className="flex justify-center"
+                style={googleHint ? {
+                  borderRadius: 10, padding: 4,
+                  boxShadow: '0 0 0 2px var(--accent)',
+                } : undefined}
+              >
                 <GoogleLogin
                   onSuccess={onGoogle}
                   onError={() => toast.error('Google sign-in failed')}
@@ -112,7 +144,7 @@ export default function Auth({ initialMode = 'login', onBack }: {
               <button
                 key={m}
                 type="button"
-                onClick={() => setMode(m)}
+                onClick={() => { setMode(m); setGoogleHint(false) }}
                 className="flex-1 text-sm font-semibold py-2 rounded-md transition-colors"
                 style={{
                   background: mode === m ? 'var(--surface-1)' : 'transparent',
@@ -130,7 +162,7 @@ export default function Auth({ initialMode = 'login', onBack }: {
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => { setEmail(e.target.value); setGoogleHint(false) }}
               placeholder="you@example.com"
               className="input text-sm w-full mt-1"
               autoComplete="email"

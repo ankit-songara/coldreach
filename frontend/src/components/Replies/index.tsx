@@ -7,6 +7,7 @@ import type { ReplyMessage } from '../../api/inbox'
 import Logo from '../shared/Logo'
 import { STATUS_META } from '../../types'
 import type { ContactStatus } from '../../types'
+import { displayDesignation } from '../../lib/display'
 
 // Outcomes recordable straight from a reply row. ('replied' is where the row
 // already is — offering it as a button would be a no-op.)
@@ -145,7 +146,7 @@ export default function Replies() {
                 <div className="text-sm font-bold truncate">
                   {r.name}
                   {r.designation && (
-                    <span className="font-medium text-[12.5px]" style={{ color: 'var(--text-muted)' }}> · {r.designation}</span>
+                    <span className="font-medium text-[12.5px]" style={{ color: 'var(--text-muted)' }}> · {displayDesignation(r.designation)}</span>
                   )}
                 </div>
                 <div className="text-[10.5px] font-mono truncate" style={{ color: 'var(--text-dim)' }}>

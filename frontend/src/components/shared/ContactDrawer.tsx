@@ -5,7 +5,7 @@ import { X, Copy, ExternalLink } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { STATUS_META, type Contact, type ContactStatus } from '../../types'
-import { contactDisplayName } from '../../lib/display'
+import { contactDisplayName, displayDesignation } from '../../lib/display'
 import { getDesigColor } from '../Hunt/ContactCard'
 
 // The API still returns these fields; the shared Contact type dropped them.
@@ -249,7 +249,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
           <div className="min-w-0 flex-1">
             <div className="text-base font-bold truncate">{displayName}</div>
             <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-              {c.designation} · {c.company}
+              {displayDesignation(c.designation)} · {c.company}
             </div>
           </div>
           <button

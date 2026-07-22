@@ -327,12 +327,6 @@ export default function App() {
     return <Auth initialMode={authView} onBack={() => setAuthView('landing')} />
   }
 
-  // Sidebar meter: sends made today vs the pacing cap (backend caps at 25/day).
-  const todayStr = new Date().toDateString()
-  const sentToday = contacts.filter(c =>
-    c.last_emailed_at && new Date(c.last_emailed_at).toDateString() === todayStr
-  ).length
-
   return (
     <div className="min-h-screen flex flex-col md:pl-[232px]" style={{ background: 'var(--bg)' }}>
       {/* ── v2 shell: persistent sidebar on desktop ─────────────────────────── */}
@@ -340,8 +334,6 @@ export default function App() {
         items={sidebarItems}
         activeId={activeTab}
         onSelect={onSidebarSelect}
-        sentToday={sentToday}
-        sendCap={25}
         email={userEmail}
         onLogout={logout}
       />

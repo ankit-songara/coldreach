@@ -8,7 +8,7 @@ import api from '../../api/client'
 import { STATUS_META, SENT_STATUSES } from '../../types'
 import type { Contact, ComposeRequest } from '../../types'
 import { ResumeReadyCtx } from '../../App'
-import { contactDisplayName, isGenericName } from '../../lib/display'
+import { contactDisplayName, isGenericName, displayDesignation } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
 
 export default function Compose() {
@@ -373,7 +373,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
             </span>
           </div>
           <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            {c.designation} · {c.company}
+            {displayDesignation(c.designation)} · {c.company}
           </div>
         </div>
 

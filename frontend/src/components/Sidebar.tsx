@@ -15,26 +15,23 @@ export interface SidebarItem {
   badge?: number
 }
 
-// v2 desktop shell: persistent left rail with nav, the ⌘K entry point, the
-// daily-send meter, theme, and the user row. Mobile keeps the bottom tab bar.
+// v2 desktop shell: persistent left rail with nav, the ⌘K entry point, theme,
+// and the user row. Mobile keeps the bottom tab bar.
 // memo'd: App re-renders on every store change (hunt progress ticks, draft
 // writes), and all Sidebar props are referentially stable between those
 // renders (items/onSelect are memoized in App) — so the whole rail skips.
 function Sidebar({
-  items, activeId, onSelect, sentToday, sendCap, email, onLogout,
+  items, activeId, onSelect, email, onLogout,
 }: {
   items: SidebarItem[]
   activeId: string
   onSelect: (id: string) => void
-  sentToday: number
-  sendCap: number
   email: string
   onLogout: () => void
 }) {
   const [theme, setTheme] = useState<Theme>(getStoredTheme)
   const ThemeIcon = THEME_ICON[theme]
   const initials = (email.split('@')[0] || '?').slice(0, 2).toUpperCase()
-  const pct = Math.min(100, Math.round((sentToday / Math.max(1, sendCap)) * 100))
 
   return (
     <aside
@@ -89,33 +86,6 @@ function Sidebar({
       </nav>
 
       <div className="flex-1" />
-
-      {/* Daily send meter */}
-      <div
-        style={{
-          padding: '11px 12px', borderRadius: 12, marginBottom: 10,
-          background: 'var(--surface-2)', border: '1px solid var(--border)',
-        }}
-      >
-        <div className="flex items-baseline justify-between mb-1.5">
-          <span
-            className="text-[10px] font-mono font-bold tracking-widest"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            TODAY'S SENDS
-          </span>
-          <span className="tnum text-[12px] font-bold" style={{ color: 'var(--text)' }}>
-            {sentToday}<span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>/{sendCap}</span>
-          </span>
-        </div>
-        <div style={{ height: 6, borderRadius: 99, background: 'var(--surface-3)', overflow: 'hidden' }}>
-          <div style={{
-            height: '100%', width: `${pct}%`, borderRadius: 99,
-            background: pct >= 100 ? 'var(--warning)' : 'var(--accent)',
-            transition: 'width .4s var(--ease-out)',
-          }} />
-        </div>
-      </div>
 
       {/* Theme */}
       <button

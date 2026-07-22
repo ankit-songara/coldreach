@@ -5,7 +5,7 @@ import { X, Check } from 'lucide-react'
 import { contactsApi } from '../../api/contacts'
 import { useStore } from '../../store'
 import { STATUS_META, type Contact, type ContactStatus } from '../../types'
-import { contactDisplayName, isGenericName } from '../../lib/display'
+import { contactDisplayName, isGenericName, displayDesignation } from '../../lib/display'
 
 // The API still sends email_status; the shared Contact type dropped it, so
 // it's typed locally and the chip simply doesn't render when it's absent.
@@ -155,7 +155,7 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
               marginTop: '2px',
             }}
           >
-            {c.designation}
+            {displayDesignation(c.designation)}
           </span>
         </div>
       </div>
