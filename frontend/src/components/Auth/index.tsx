@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
-import { LogIn, UserPlus, ArrowLeft } from 'lucide-react'
+import { LogIn, UserPlus, X } from 'lucide-react'
 import Logo from '../shared/Logo'
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { useStore } from '../../store'
@@ -10,10 +11,10 @@ import { authApi } from '../../api/auth'
 // Without it the GoogleLogin widget can't render, so we fall back to email/password.
 const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
 
-export default function Auth({ initialMode = 'login', onBack }: {
+export default function Auth({ initialMode = 'login', onClose }: {
   initialMode?: 'login' | 'register'
-  // Present when Auth was reached from the landing page — renders a way back.
-  onBack?: () => void
+  // Closes the modal and returns to whatever was behind it (the landing page).
+  onClose?: () => void
 } = {}) {
   const { setAuth } = useStore()
   const [mode, setMode] = useState<'login' | 'register'>(initialMode)
@@ -32,6 +33,18 @@ export default function Auth({ initialMode = 'login', onBack }: {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  // Modal behaviour: Esc closes; lock the page behind it from scrolling while open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [onClose])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -78,149 +91,163 @@ export default function Auth({ initialMode = 'login', onBack }: {
     }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative" style={{ background: 'var(--bg)' }}>
-      {/* Page-level back nav — anchored to the top-left corner (the universal
-          spot) so it reads as "leave this page", not a stray line above the card. */}
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-[13px] font-semibold transition-colors"
-          style={{
-            // Inline position beats the global `.hit-target { position: relative }`
-            // rule that otherwise pins this out of the corner.
-            position: 'absolute', top: 16, left: 16, zIndex: 10,
-            background: 'var(--surface-1)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-full)', cursor: 'pointer',
-            color: 'var(--text-muted)', padding: '7px 14px 7px 11px',
-          }}
+  // Rendered as a modal OVER the landing page (portaled to <body> so it's never
+  // clipped by an ancestor). The overlay scrolls on short/mobile viewports; the
+  // inner flex-center keeps the card centred with breathing room on every size.
+  return createPortal(
+    <div
+      className="fixed inset-0 overflow-y-auto"
+      style={{ zIndex: 200, background: 'rgba(0, 0, 0, 0.55)' }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={mode === 'login' ? 'Sign in' : 'Create account'}
+    >
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div
+          className="w-full max-w-sm relative"
+          onClick={e => e.stopPropagation()}
         >
-          <ArrowLeft size={15} strokeWidth={2.4} />
-          Back
-        </button>
-      )}
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8">
-          {/* Kit lockup: horizontal tile + lowercase cold↗reach */}
-          <Logo size={40} wordmark />
-          <p className="text-sm mt-3" style={{ color: 'var(--text-muted)' }}>
-            Email the people who decide.
-          </p>
-        </div>
-
-        <form onSubmit={submit} className="card space-y-4">
-          {googleHint && GOOGLE_ENABLED && (
-            <div
-              role="status"
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="flex items-center justify-center transition-colors"
               style={{
-                padding: '11px 13px', borderRadius: 10,
-                background: 'var(--accent-tint)', border: '1px solid var(--accent)',
-                color: 'var(--accent-text)', fontSize: 13, lineHeight: 1.5,
+                position: 'absolute', top: 0, right: 0, zIndex: 1,
+                width: 34, height: 34, borderRadius: 'var(--radius-full)',
+                background: 'var(--surface-1)', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', cursor: 'pointer',
               }}
             >
-              This email is registered with <strong>Google Sign-In</strong>, so it
-              has no password. Use the <strong>Continue with Google</strong> button
-              below — no password needed.
-            </div>
+              <X size={16} />
+            </button>
           )}
 
-          {GOOGLE_ENABLED && (
-            <>
+          <div className="flex flex-col items-center mb-6">
+            {/* Kit lockup: horizontal tile + lowercase cold↗reach */}
+            <Logo size={40} wordmark />
+            <p className="text-sm mt-3" style={{ color: 'var(--text-muted)' }}>
+              Email the people who decide.
+            </p>
+          </div>
+
+          <form onSubmit={submit} className="card space-y-4">
+            {googleHint && GOOGLE_ENABLED && (
               <div
-                className="flex justify-center"
-                style={googleHint ? {
-                  borderRadius: 10, padding: 4,
-                  boxShadow: '0 0 0 2px var(--accent)',
-                } : undefined}
-              >
-                <GoogleLogin
-                  onSuccess={onGoogle}
-                  onError={() => toast.error('Google sign-in failed')}
-                  text="continue_with"
-                  shape="rectangular"
-                  width={String(googleWidth)}
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                <span className="text-xs font-medium" style={{ color: 'var(--text-dim)' }}>or</span>
-                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-              </div>
-            </>
-          )}
-
-          <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-            {(['login', 'register'] as const).map(m => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => { setMode(m); setGoogleHint(false) }}
-                className="flex-1 text-sm font-semibold py-2 rounded-md transition-colors"
+                role="status"
                 style={{
-                  background: mode === m ? 'var(--surface-1)' : 'transparent',
-                  color: mode === m ? 'var(--accent)' : 'var(--text-muted)',
-                  boxShadow: mode === m ? 'var(--shadow-xs)' : 'none',
+                  padding: '11px 13px', borderRadius: 10,
+                  background: 'var(--accent-tint)', border: '1px solid var(--accent)',
+                  color: 'var(--accent-text)', fontSize: 13, lineHeight: 1.5,
                 }}
               >
-                {m === 'login' ? 'Log in' : 'Sign up'}
-              </button>
-            ))}
-          </div>
+                This email is registered with <strong>Google Sign-In</strong>, so it
+                has no password. Use the <strong>Continue with Google</strong> button
+                below — no password needed.
+              </div>
+            )}
 
-          <div>
-            <label className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setGoogleHint(false) }}
-              placeholder="you@example.com"
-              className="input text-sm w-full mt-1"
-              autoComplete="email"
-            />
-          </div>
+            {GOOGLE_ENABLED && (
+              <>
+                <div
+                  className="flex justify-center"
+                  style={googleHint ? {
+                    borderRadius: 10, padding: 4,
+                    boxShadow: '0 0 0 2px var(--accent)',
+                  } : undefined}
+                >
+                  <GoogleLogin
+                    onSuccess={onGoogle}
+                    onError={() => toast.error('Google sign-in failed')}
+                    text="continue_with"
+                    shape="rectangular"
+                    width={String(googleWidth)}
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-dim)' }}>or</span>
+                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                </div>
+              </>
+            )}
 
-          <div>
-            <label className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder={mode === 'register' ? 'at least 8 characters' : '••••••••'}
-              minLength={mode === 'register' ? 8 : undefined}
-              className="input text-sm w-full mt-1"
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            />
-          </div>
+            <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+              {(['login', 'register'] as const).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => { setMode(m); setGoogleHint(false) }}
+                  className="flex-1 text-sm font-semibold py-2 rounded-md transition-colors"
+                  style={{
+                    background: mode === m ? 'var(--surface-1)' : 'transparent',
+                    color: mode === m ? 'var(--accent)' : 'var(--text-muted)',
+                    boxShadow: mode === m ? 'var(--shadow-xs)' : 'none',
+                  }}
+                >
+                  {m === 'login' ? 'Log in' : 'Sign up'}
+                </button>
+              ))}
+            </div>
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="btn btn-primary w-full flex items-center justify-center gap-2 text-sm font-semibold"
-          >
-            {mode === 'login' ? <LogIn size={14} /> : <UserPlus size={14} />}
-            {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
-          </button>
+            <div>
+              <label className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setGoogleHint(false) }}
+                placeholder="you@example.com"
+                className="input text-sm w-full mt-1"
+                autoComplete="email"
+              />
+            </div>
 
-          {/* Honest interim until an email-based reset exists — better than a
-              dead end with no guidance at all. */}
-          {mode === 'login' && (
-            <details className="text-xs" style={{ color: 'var(--text-dim)' }}>
-              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
-                Forgot password?
-              </summary>
-              <p className="mt-1.5" style={{ lineHeight: 1.6 }}>
-                {GOOGLE_ENABLED && 'If you signed up with Google, use the "Continue with Google" button above — no password needed. '}
-                Automated password reset isn't available yet; contact whoever runs
-                this ColdReach server to reset your account.
-              </p>
-            </details>
-          )}
+            <div>
+              <label className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder={mode === 'register' ? 'at least 8 characters' : '••••••••'}
+                minLength={mode === 'register' ? 8 : undefined}
+                className="input text-sm w-full mt-1"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              />
+            </div>
 
-          <p className="text-xs text-center" style={{ color: 'var(--text-dim)' }}>
-            Your data is private to your account.
-          </p>
-        </form>
+            <button
+              type="submit"
+              disabled={busy}
+              className="btn btn-primary w-full flex items-center justify-center gap-2 text-sm font-semibold"
+            >
+              {mode === 'login' ? <LogIn size={14} /> : <UserPlus size={14} />}
+              {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
+            </button>
+
+            {/* Honest interim until an email-based reset exists — better than a
+                dead end with no guidance at all. */}
+            {mode === 'login' && (
+              <details className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+                  Forgot password?
+                </summary>
+                <p className="mt-1.5" style={{ lineHeight: 1.6 }}>
+                  {GOOGLE_ENABLED && 'If you signed up with Google, use the "Continue with Google" button above — no password needed. '}
+                  Automated password reset isn't available yet; contact whoever runs
+                  this ColdReach server to reset your account.
+                </p>
+              </details>
+            )}
+
+            <p className="text-xs text-center" style={{ color: 'var(--text-dim)' }}>
+              Your data is private to your account.
+            </p>
+          </form>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

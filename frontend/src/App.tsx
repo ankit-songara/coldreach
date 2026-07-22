@@ -317,14 +317,17 @@ export default function App() {
   ], [setActiveTab, logout])
 
   if (!token) {
-    if (authView === 'landing') {
-      return (
-        <Suspense fallback={<TabLoading />}>
-          <Landing onLogin={() => setAuthView('login')} onSignup={() => setAuthView('register')} />
-        </Suspense>
-      )
-    }
-    return <Auth initialMode={authView} onBack={() => setAuthView('landing')} />
+    // The landing stays mounted; Sign In / Sign up open the auth form as a
+    // MODAL over it (Auth portals itself to <body>), so the nav + page stay
+    // visible behind a dimmed backdrop instead of a full-page navigation.
+    return (
+      <Suspense fallback={<TabLoading />}>
+        <Landing onLogin={() => setAuthView('login')} onSignup={() => setAuthView('register')} />
+        {authView !== 'landing' && (
+          <Auth initialMode={authView} onClose={() => setAuthView('landing')} />
+        )}
+      </Suspense>
+    )
   }
 
   return (
