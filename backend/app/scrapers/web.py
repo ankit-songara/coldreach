@@ -14,7 +14,30 @@ import httpx
 from app.netguard import resolves_public
 
 EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
-_PAGES = ("/contact", "/about", "/team", "/careers", "/about-us", "/company")
+# Pages a real person's email is most likely printed on. Ordered by yield:
+# contact/team/about first, then leadership/founder pages, then the well-known
+# humans.txt (a convention that lists the team with contact info).
+_PAGES = ("/contact", "/about", "/team", "/careers", "/about-us", "/company",
+          "/our-team", "/people", "/leadership", "/founders", "/humans.txt")
+
+# Anti-scrape obfuscation on "mailto"-shy sites: "jane [at] acme [dot] com",
+# "jane(at)acme(dot)com", "jane {at} acme {dot} com". Only the BRACKETED /
+# PARENTHESISED / BRACED forms are de-mangled — bare " at "/" dot " are ordinary
+# English words and would corrupt prose, so they are deliberately NOT matched.
+_AT_RE  = re.compile(r"\s*[\[({<]\s*(?:at|@)\s*[\])}>]\s*", re.IGNORECASE)
+_DOT_RE = re.compile(r"\s*[\[({<]\s*(?:dot|\.)\s*[\])}>]\s*", re.IGNORECASE)
+
+
+def _emails_in(text: str) -> list[str]:
+    """All email addresses in a blob of page text, including bracket-obfuscated
+    ones. De-mangling runs on a COPY so the plain-form matches are never lost."""
+    if not text:
+        return []
+    out = EMAIL_RE.findall(text)
+    if "[" in text or "(" in text or "{" in text or "<" in text:
+        demangled = _DOT_RE.sub(".", _AT_RE.sub("@", text))
+        out += EMAIL_RE.findall(demangled)
+    return out
 
 # Image filenames and vendor domains that regex matches as "emails" — skip them.
 _JUNK_RE = re.compile(
@@ -168,7 +191,7 @@ async def find_published_role_email(domain: str, timeout: int = 4) -> str | None
 
     found: list[str] = []
     for text in texts:
-        found.extend(EMAIL_RE.findall(text))
+        found.extend(_emails_in(text))
     cleaned = _clean(found)
 
     general: str | None = None
@@ -296,6 +319,43 @@ async def emails_from_company_pages(domain: str, timeout: int = 8) -> list[str]:
     return await _scrape_httpx(domain, timeout)
 
 
+def _local_matches_person(local: str, first: str, last: str) -> bool:
+    """True if an email's local-part is a recognizable spelling of this person's
+    name — the standard corporate permutations. Used to confirm that a mailbox
+    scraped off a company page really belongs to the named lead (a real,
+    published address), not just any mailbox at the domain."""
+    local = local.lower()
+    f, l = first.lower().strip(), last.lower().strip()
+    if not f or not l:
+        return False
+    f1, l1 = f[0], l[0]
+    return local in {
+        f"{f}.{l}", f"{f}{l}", f"{f1}{l}", f"{f1}.{l}", f"{f}{l1}",
+        f"{f}.{l1}", f"{f}-{l}", f"{f}_{l}", f"{l}.{f}", f"{l}{f}", f, l,
+    }
+
+
+async def find_person_email(domain: str, first: str, last: str,
+                            timeout: int = 8) -> str | None:
+    """
+    Keyless personal-email grounding: scrape the company's own pages and return
+    the address that belongs to THIS person (their name's standard permutation
+    at the domain). A published address is real evidence — the resolver's
+    pattern-guess needs SMTP/HTTP verification the serverless host can't do, but
+    an email printed on the company's own /team page needs no verification at
+    all. Returns None if no name-matched mailbox is published.
+    """
+    if not first or not last:
+        return None
+    emails = await emails_from_company_pages(domain, timeout)
+    domain = domain.lower()
+    for e in emails:
+        local, _, mail_domain = e.partition("@")
+        if mail_domain == domain and _local_matches_person(local, first, last):
+            return e
+    return None
+
+
 async def _scrape_scrapling(domain: str, timeout: int) -> list[str]:
     try:
         from scrapling.fetchers import StealthyFetcher
@@ -311,7 +371,7 @@ async def _scrape_scrapling(domain: str, timeout: int) -> list[str]:
                 timeout=timeout,
             )
             text = page.get_all_text(ignore_tags=("script", "style", "noscript"))
-            found.extend(EMAIL_RE.findall(text))
+            found.extend(_emails_in(text))
         except Exception:
             pass
         if len(found) >= 12:
@@ -332,7 +392,7 @@ async def _scrape_httpx(domain: str, timeout: int) -> list[str]:
             for path in _PAGES:
                 text = await _cached_get(client, f"https://{domain}{path}", timeout)
                 if text:
-                    found.extend(EMAIL_RE.findall(text))
+                    found.extend(_emails_in(text))
                 if len(found) >= 12:
                     break
     except Exception:

@@ -39,7 +39,7 @@ from app.scrapers.jobboards import (
 from app.scrapers.hackernews import HackerNewsScraper
 from app.scrapers.yc import YCStartupsScraper
 from app.scrapers.web import (
-    emails_from_company_pages, find_published_role_email,
+    emails_from_company_pages, find_published_role_email, find_person_email,
     search_role_email_on_web, HIRING_PREFIXES, GENERAL_PREFIXES,
 )
 from app.scrapers import directory
@@ -371,7 +371,20 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
         w.lower() in _ROLE_TITLE_WORDS for w in name.split()[:2]
     ):
         parts = name.split()
-        resolved = await resolver_resolve(parts[0], parts[-1], domain, cache=cache)
+        first, last = parts[0], parts[-1]
+        # A) Keyless grounding first: the person's REAL email published on the
+        # company's own pages. No key, no SMTP — a printed address needs no
+        # verification, so this is the one path that surfaces named people on a
+        # serverless host where port 25 is blocked. Only taken when the scraped
+        # mailbox actually matches this person's name.
+        published = await find_person_email(domain, first, last)
+        if published:
+            cache.observe(published, name)   # teaches this domain's pattern for free
+            return {**raw, "email": published, "confidence": 72,
+                    "email_status": "valid", "_domain": None}
+        # B) Fall back to pattern-resolution + verification (SMTP where allowed,
+        # else the pattern memory learned this hunt / keyless GitHub).
+        resolved = await resolver_resolve(first, last, domain, cache=cache)
         if not resolved:
             return None
         out = {**raw, "email": resolved.email, "confidence": resolved.confidence,

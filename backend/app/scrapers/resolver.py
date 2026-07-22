@@ -3,16 +3,23 @@ Email pattern-resolution + SMTP verification engine.
 
 Pipeline for a given (first, last, domain):
   1. MX lookup — confirm domain receives mail
-  2. learn_pattern(domain) — inspect GitHub commit emails to detect format
+  2. pattern learning — infer the domain's email format, keyless: from emails
+     already observed this hunt, else from public GitHub commit authors
+     (authenticated commit-search if a token is set, else an unauthenticated
+     org-repo commit scan)
   3. detect_catch_all(domain, mx) — probe a random address; skip SMTP if catch-all
   4. smtp_rcpt_probe(email, mx) — RCPT TO check per candidate (non-destructive)
-  4b. HTTP verification fallback (Hunter email-verifier) — the only check that
-      works where outbound port 25 is blocked (Vercel); budgeted per hunt
   5. confidence_score — weighted 0-100
 
+No API key is required anywhere in this pipeline. On a serverless host where
+outbound port 25 is blocked, SMTP verification is impossible, so a *guessed*
+personal address stays low-confidence and is dropped by the hunt's floor — the
+keyless way to surface a named person there is find_person_email() in web.py
+(their address printed on the company's own pages), not this resolver.
+
 Confidence bands:
-  85-95  SMTP or HTTP confirmed + pattern match
-  50-60  SMTP or HTTP confirmed, no pattern signal
+  85-95  SMTP confirmed + pattern match
+  50-60  SMTP confirmed, no pattern signal
   35-45  catch-all domain, pattern learned
   20-30  catch-all, no pattern (first.last guess)
   10-15  probes inconclusive, no signal
@@ -171,38 +178,6 @@ def _smtp_probe(email: str, mx_host: str, timeout: int = _SMTP_TIMEOUT) -> Optio
         return None
 
 
-# ── HTTP verification fallback (Hunter email-verifier) ───────────────────────
-# Hunter's free tier allows only ~50 verifications/month, so calls are strictly
-# budgeted per hunt and spent ONLY on named-person candidates (the careers@
-# grounding paths never reach this code).
-_HTTP_VERIFY_MAX_PER_HUNT = 8
-_HTTP_VERIFY_CANDIDATES   = 2   # ordered candidates checked per person
-
-
-async def http_verify_email(email: str) -> Optional[str]:
-    """
-    Verify deliverability over HTTPS via Hunter's email-verifier — usable where
-    outbound port 25 is blocked (serverless). Returns Hunter's status string
-    ("valid" | "invalid" | "accept_all" | "webmail" | "disposable" | "unknown")
-    or None (no API key / request failed).
-    """
-    key = (settings.hunter_api_key or "").strip()
-    if not key:
-        return None
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                "https://api.hunter.io/v2/email-verifier",
-                params={"email": email, "api_key": key},
-            )
-            if not r.is_success:
-                return None
-            return (r.json().get("data") or {}).get("status") or None
-    except Exception as exc:
-        log.debug(f"http_verify_email({email}): {exc}")
-        return None
-
-
 async def detect_catch_all(domain: str, mx: list[str]) -> bool:
     """True if the domain accepts any address (SMTP probing pointless)."""
     if not mx:
@@ -270,6 +245,72 @@ async def learn_pattern(domain: str) -> Optional[str]:
         return None
 
 
+def _org_guess(domain: str) -> str:
+    """Best-guess GitHub org slug from a domain — its registrable base label.
+    'acme.com' -> 'acme', 'acme.co.uk' -> 'acme'. Empty if none usable."""
+    labels = domain.lower().split(".")
+    if len(labels) < 2:
+        return ""
+    base = labels[-2]
+    if base in ("co", "com", "org", "net", "ac", "gov", "edu") and len(labels) >= 3:
+        base = labels[-3]
+    return base if len(base) > 1 else ""
+
+
+# Unauthenticated GitHub REST is rate-limited to 60 req/hr per IP, so the keyless
+# scan is bounded: one org-repo listing + a couple of repos' recent commits.
+_KEYLESS_REPOS       = 2    # repos scanned per domain
+_KEYLESS_COMMITS     = 30   # commits pulled per repo
+_GH_KEYLESS_MAX_PER_HUNT = 4   # domains that may use the keyless scan per hunt
+
+
+async def learn_pattern_keyless(domain: str) -> Optional[str]:
+    """
+    Token-free pattern learning: guess the company's GitHub org from its domain,
+    read a couple of its public repos' recent commit authors, and infer the
+    email format from any author addresses @domain. Uses the UNauthenticated
+    REST API (no key), so it's best-effort and rate-limited — returns None on
+    any miss. Complements the free in-hunt observed-email learning.
+    """
+    org = _org_guess(domain)
+    if not org:
+        return None
+    headers = {"Accept": "application/vnd.github+json",
+               "User-Agent": "ColdReach/1.0"}
+    samples: list[tuple[str, str]] = []
+    try:
+        async with httpx.AsyncClient(timeout=10, headers=headers) as client:
+            repo_r = await client.get(
+                f"{GH_API}/users/{org}/repos",
+                params={"per_page": 6, "sort": "pushed", "type": "public"},
+            )
+            if not repo_r.is_success:
+                return None
+            repos = [r.get("name") for r in repo_r.json()
+                     if isinstance(r, dict) and not r.get("fork") and r.get("name")]
+            for repo in repos[:_KEYLESS_REPOS]:
+                commit_r = await client.get(
+                    f"{GH_API}/repos/{org}/{repo}/commits",
+                    params={"per_page": _KEYLESS_COMMITS},
+                )
+                if not commit_r.is_success:
+                    continue
+                for item in commit_r.json():
+                    author = ((item.get("commit") or {}).get("author") or {})
+                    email = (author.get("email") or "").lower()
+                    name = (author.get("name") or "").strip()
+                    if ("@" in email and email.split("@", 1)[1] == domain.lower()
+                            and not any(s in email for s in _NOREPLY)
+                            and name and " " in name):
+                        samples.append((email, name))
+                if len(samples) >= 4:
+                    break
+        return _infer_pattern(samples)
+    except Exception as exc:
+        log.debug(f"learn_pattern_keyless({domain}): {exc}")
+        return None
+
+
 # ── Per-hunt resolution cache ───────────────────────────────────────────────────
 
 class ResolutionCache:
@@ -277,9 +318,10 @@ class ResolutionCache:
     Memoises domain-level facts across all contacts resolved in one hunt, so we
     never re-do MX / catch-all / pattern work for a shared domain.
 
-    Crucially, observed real emails (from GitHub commits, HN posts, Hunter, …)
-    are pooled per domain and used to learn the company's pattern FOR FREE —
-    no API call, no token. learn_pattern (GitHub) is only the fallback.
+    Crucially, observed real emails (from GitHub commits, HN posts, page scrapes,
+    …) are pooled per domain and used to learn the company's pattern FOR FREE —
+    no API call, no token. GitHub learning is only the fallback, and its keyless
+    (unauthenticated) variant is budgeted per hunt against the 60-req/hr limit.
     """
 
     def __init__(self) -> None:
@@ -287,10 +329,9 @@ class ResolutionCache:
         self._catchall: dict[str, bool]      = {}
         self._pattern:  dict[str, Optional[str]] = {}
         self._observed: dict[str, list[tuple[str, str]]] = defaultdict(list)
-        # HTTP-verification budget + memo (Hunter quota is precious: ~50/month
-        # free). The memo also makes repeat candidates across leads free.
-        self._http_verdicts: dict[str, Optional[str]] = {}
-        self._http_calls = 0
+        # Keyless-GitHub budget: unauthenticated REST is 60 req/hr per IP, so
+        # only a few domains per hunt may fall back to the org-repo commit scan.
+        self._gh_keyless_calls = 0
         # Per-domain locks prevent concurrent tasks from double-firing catch_all
         # detection or learn_pattern for the same domain, which would waste API
         # calls and, for catch_all, produce non-deterministic results (two probes
@@ -339,18 +380,6 @@ class ResolutionCache:
                     self._catchall[domain] = await detect_catch_all(domain, mx)
         return self._catchall[domain]
 
-    async def http_verify(self, email: str) -> Optional[str]:
-        """Budgeted, memoised Hunter email-verifier call. None once the per-hunt
-        budget is spent (callers treat None as 'no signal — stop')."""
-        if email in self._http_verdicts:
-            return self._http_verdicts[email]
-        if self._http_calls >= _HTTP_VERIFY_MAX_PER_HUNT:
-            return None
-        self._http_calls += 1
-        verdict = await http_verify_email(email)
-        self._http_verdicts[email] = verdict
-        return verdict
-
     async def pattern(self, domain: str) -> Optional[str]:
         if domain in self._pattern:
             return self._pattern[domain]
@@ -358,9 +387,14 @@ class ResolutionCache:
             if domain in self._pattern:
                 return self._pattern[domain]
             # 1. Free: infer from emails already discovered at this domain this hunt.
-            observed = _infer_pattern(self._observed.get(domain.lower(), []))
-            # 2. Fallback: GitHub commit search (needs a token; else None).
-            result = observed or await learn_pattern(domain)
+            result = _infer_pattern(self._observed.get(domain.lower(), []))
+            # 2. GitHub commit SEARCH — precise but needs a token.
+            if not result and (settings.github_token or "").strip():
+                result = await learn_pattern(domain)
+            # 3. Keyless fallback: unauthenticated org-repo commit scan, budgeted.
+            if not result and self._gh_keyless_calls < _GH_KEYLESS_MAX_PER_HUNT:
+                self._gh_keyless_calls += 1
+                result = await learn_pattern_keyless(domain)
             self._pattern[domain] = result
         return result
 
@@ -426,31 +460,6 @@ async def resolve(
             continue
         else:
             break  # server policy — stop probing this domain
-
-    # 5b. HTTP fallback (Hunter email-verifier): the only verification that
-    # works where port 25 is blocked (Vercel) or when the server's SMTP policy
-    # was inconclusive. Strictly budgeted via the cache — a "valid" verdict is
-    # as strong a grounding as an SMTP RCPT accept.
-    for email, patt in ordered[:_HTTP_VERIFY_CANDIDATES]:
-        verdict = await cache.http_verify(email)
-        if verdict == "valid":
-            bonus = 35 if (pattern and patt == pattern) else 10
-            return ResolvedEmail(
-                email=email, confidence=min(50 + bonus, 95),
-                pattern=patt, verified=True, catch_all=False,
-                notes="HTTP-verified (Hunter)",
-            )
-        if verdict == "accept_all":
-            # Same semantics as SMTP catch-all detection: deliverable by
-            # definition, unprovable for this specific mailbox.
-            confidence = 40 if pattern else 20
-            return ResolvedEmail(
-                email=email, confidence=confidence,
-                pattern=patt, verified=False, catch_all=True,
-                notes="catch-all domain (Hunter) — HTTP probe skipped",
-            )
-        if verdict != "invalid":
-            break  # no key / budget spent / no signal — stop burning quota
 
     # 6. Fallback: pattern-only guess
     if pattern:

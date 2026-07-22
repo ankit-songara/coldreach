@@ -166,6 +166,55 @@ def _author_is_founder(text: str, email: str) -> bool:
     return bool(_FOUNDER_TEXT_RE.search(body)) and not _FOUNDER_NEG_RE.search(body)
 
 
+# ── Author self-introduction (name + title) ──────────────────────────────────
+# Many posters name themselves in the body ("I'm Jane Smith, co-founder …",
+# "Hi, I am Raj Patel — CTO"). When the post carries no embedded email we can
+# still create a NAMED lead from this, so the resolver + company-page grounding
+# have a real person to work with instead of a nameless role inbox. Requires a
+# genuine "First Last" (two capitalised tokens) to keep precision high.
+_INTRO_NAME_RE = re.compile(
+    r"\b(?:I['’]?m|I am|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b"
+)
+_INTRO_TITLE_RE = re.compile(
+    r"\b(co-?founder|founder|ceo|cto|coo|cpo|chief[a-z ]{0,20}officer|"
+    r"vp[a-z ]{2,22}|head of [a-z ]{2,22}|engineering manager|"
+    r"hiring manager|recruiter|talent[a-z ]{0,15})\b",
+    re.IGNORECASE,
+)
+# Words that look like a name after "I'm" but aren't one ("I'm Looking For …").
+_INTRO_NAME_STOP = frozenset({
+    "looking", "hiring", "seeking", "building", "the", "a", "an", "here",
+    "reaching", "posting", "writing", "currently", "really", "super",
+})
+# Capitalised words the greedy 2-3 token capture can spill into after the real
+# surname ("I'm Jane Smith We are hiring") — trimmed from the tail end.
+_INTRO_TRAILING_STOP = frozenset({
+    "we", "our", "the", "i", "and", "you", "it", "here", "at", "currently",
+})
+
+
+def _self_intro(text: str) -> tuple[str, str]:
+    """(name, title) if the post author introduces themselves, else ('', '').
+    Only reads the body past the 'Company | Role | …' header."""
+    body = text.split("|", 1)[-1]
+    m = _INTRO_NAME_RE.search(body)
+    if not m:
+        return "", ""
+    tokens = m.group(1).split()
+    while len(tokens) > 2 and tokens[-1].lower() in _INTRO_TRAILING_STOP:
+        tokens.pop()
+    if tokens[0].lower() in _INTRO_NAME_STOP:
+        return "", ""
+    name = " ".join(tokens)
+    # Title, if stated within the same clause (~60 chars after the name).
+    tail = body[m.end():m.end() + 60]
+    tm = _INTRO_TITLE_RE.search(tail)
+    if not tm or _FOUNDER_NEG_RE.search(body):
+        return name, ""
+    title = tm.group(1).strip()
+    return name, title.upper() if title.lower() in {"ceo", "cto", "coo", "cpo"} else title.title()
+
+
 # ── Per-process thread cache ───────────────────────────────────────────────────
 # The thread is identical for every query in a month and changes slowly, so one
 # fetch serves every hunt. Keyed nothing (global) with a 1h TTL; the monthly
@@ -335,11 +384,15 @@ class HackerNewsScraper(BaseScraper):
                 leads.append(lead)
             elif p["domain"] and p["domain"] not in seen_domain:
                 seen_domain.add(p["domain"])
+                # No embedded email — but if the author named themselves, emit a
+                # NAMED lead so the resolver + company-page grounding can find
+                # THAT person's address instead of falling back to careers@.
+                intro_name, intro_title = _self_intro(p["text"])
                 lead = {
-                    "name":        "",
+                    "name":        intro_name,
                     "email":       "",
                     "company":     company if company != "Unknown" else p["domain"].split(".")[0].title(),
-                    "designation": "Recruiter",
+                    "designation": intro_title or "Recruiter",
                     "source":      self.name,
                     "context":     ctx,
                     "_domain":     p["domain"],

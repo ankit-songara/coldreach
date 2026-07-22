@@ -62,6 +62,20 @@ class TestEmailPageScraper:
         assert "real@startup.io" in result
         assert all("sentry" not in e and "cloudflare" not in e for e in result)
 
+    @pytest.mark.parametrize("text, expected", [
+        ("reach jane [at] acme [dot] com today", "jane@acme.com"),
+        ("email: raj(at)startup(dot)io", "raj@startup.io"),
+        ("plain jane@acme.com works too", "jane@acme.com"),
+    ])
+    def test_demangles_obfuscated_emails(self, text, expected):
+        from app.scrapers.web import _emails_in, _clean
+        assert expected in _clean(_emails_in(text))
+
+    def test_bare_at_and_dot_words_not_demangled(self):
+        # " at "/" dot " are ordinary English — must NOT be turned into an email.
+        from app.scrapers.web import _emails_in
+        assert _emails_in("meet me at the office, dot your i's") == []
+
 
 class TestSiblingVariants:
     def test_backend_expands_to_language_tokens(self):
@@ -235,6 +249,34 @@ class TestHNFounderRelabel:
         from app.scrapers.hackernews import _author_is_founder
         # "Founder" in the company/role header must not fire.
         assert not _author_is_founder("Founder Institute | Engineer | remote", "x@fi.co")
+
+
+class TestHNSelfIntro:
+    """A poster who names themselves ('I'm Jane Smith, co-founder') becomes a
+    named lead even with no embedded email, so the resolver/page-scrape can find
+    that person instead of falling back to careers@."""
+
+    @pytest.mark.parametrize("body, name, title", [
+        ("Acme | Backend | I'm Jane Smith, co-founder. We use Go.", "Jane Smith", "Co-Founder"),
+        ("Acme | Eng | Hi, I am Raj Patel, CTO here.", "Raj Patel", "CTO"),
+        ("Acme | Remote | this is Mary Ann Lee, head of talent", "Mary Ann Lee", "Head Of Talent"),
+        # name but no stated title -> named lead, neutral designation
+        ("Acme | Eng | I'm Kevin Ortiz and we're growing fast", "Kevin Ortiz", ""),
+    ])
+    def test_extracts_name_and_title(self, body, name, title):
+        from app.scrapers.hackernews import _self_intro
+        assert _self_intro(body) == (name, title)
+
+    @pytest.mark.parametrize("body", [
+        "Acme | Eng | I'm looking for a senior Go engineer",   # not a name
+        "Acme | Eng | We're hiring a founding engineer",        # neg-guarded role
+        "Acme | Eng | email us at jobs@acme.com",              # no self-intro
+        "Founder Institute | Program | apply here",            # header-only
+    ])
+    def test_no_false_names(self, body):
+        from app.scrapers.hackernews import _self_intro
+        name, _ = _self_intro(body)
+        assert name == ""
 
 
 class TestYCFounderLead:
