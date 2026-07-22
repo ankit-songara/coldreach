@@ -121,21 +121,25 @@ def _company_from_email(email: str) -> str:
 
 
 def _desig_priority(designation: str) -> int:
-    """Sort key. P0: grounded role inbox = 0. P1: Founder/CxO = 1, HR/TA = 2,
-    Engineer = 3, other = 4. Unverified guesses = 5 (below every real lead —
-    only reached if nothing else was found for that company)."""
+    """Sort key. Named people first — the product's pitch is "email the people
+    who decide", so a reachable human always outranks a shared mailbox:
+    Founder/CxO = 0, HR/TA = 1, Engineer = 2, other named person = 3.
+    Grounded role inboxes (careers@/jobs@) = 4 — still a solid, deliverable
+    lead, but the fallback for companies where no human was reachable.
+    Unverified guesses = 5 (below every real lead — only reached if nothing
+    else was found for that company)."""
     d = designation.lower()
     if "unverified guess" in d:
         return 5
     if "role inbox" in d:
-        return 0
+        return 4
     if any(k in d for k in ("founder", "co-founder", "ceo", "cto", "chief", "founding")):
-        return 1
+        return 0
     if any(k in d for k in ("hr", "human resource", "talent", "recruiter", "recruiting", "people ops", "people partner")):
-        return 2
+        return 1
     if any(k in d for k in ("engineer", "developer", "swe", "software", "backend", "frontend", "fullstack", "devops", "data")):
-        return 3
-    return 4
+        return 2
+    return 3
 
 
 # ── Query-relevance role filtering ────────────────────────────────────────────
@@ -673,9 +677,9 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     1. ATS/job-board scrapers run in parallel (Greenhouse, Lever, Ashby, …, Hunter)
     2. P0: every discovered company domain yields a careers@/jobs@ role-inbox lead
     3. P1: contacts with emails validated directly; identity-only leads go through
-       the resolver pipeline (pattern learning + SMTP probe)
-    4. All resolved contacts saved — role inboxes first, then founders, HR/TA,
-       then role-relevant people
+       the resolver pipeline (pattern learning + SMTP/HTTP verification)
+    4. All resolved contacts saved — founders first, then HR/TA, engineers and
+       other named people, with grounded role inboxes as the per-company fallback
     """
     # Rate limit: one hunt per user per cooldown window.
     now = time.monotonic()
@@ -840,7 +844,9 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         log.info(f"Hunt: dropped {dropped_junk} test-identity leads")
 
     # ── P0: careers@/jobs@ role-inbox lead for EVERY company discovered ────────
-    # The primary product output of a hunt. One synthetic lead per unique
+    # The guaranteed-reachable baseline of a hunt (named people rank above
+    # these in the results, but a role inbox is grounded for nearly every
+    # company while a person is not). One synthetic lead per unique
     # corporate domain, gathered from every source: identity-only leads,
     # direct-email leads, and (for company-name queries) the query itself.
     # Resolved via the fast path in _resolve_domain_contact — no page-scrape,
@@ -975,9 +981,10 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         async with semaphore:
             return await _resolve_domain_contact(raw, cache)
 
-    # P0 careers leads first — they're the hunt's primary output and their
-    # grounding scan is capped tight (2 concurrent fetches, ~4s), so they
-    # must land inside the time budget.
+    # P0 careers leads still resolve first — they're the hunt's guaranteed
+    # baseline (cheap grounding scan, capped tight at 2 concurrent fetches,
+    # ~4s) so they must land inside the time budget; ranking at the end puts
+    # named people above them regardless of resolve order.
     # deepen widens BREADTH only (never time): 20 extra resolve candidates are
     # cancelled at the same deadline, not given more of the 60s wall.
     resolve_slots = 60 if req.deepen else 40
@@ -1108,18 +1115,19 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         role_filtered = len(with_email) - len(ranked)
         if role_filtered:
             log.info(f"Hunt: role filter '{target}' dropped {role_filtered} off-target leads")
-        # Careers inboxes stay first even under a role filter — they're the P0
-        # product output regardless of which people the filter targets.
+        # Named people outrank role inboxes at equal relevance — the filter
+        # targets PEOPLE; a shared mailbox is the fallback, not the headline.
         ranked.sort(key=lambda pr: (
-            0 if "role inbox" in (pr[1].get("designation") or "").lower() else 1,
             pr[0],                                                     # role relevance
+            1 if "role inbox" in (pr[1].get("designation") or "").lower() else 0,
             _status_rank.get(pr[1].get("email_status") or "unknown", 1),
             -(pr[1].get("confidence") or 0),
         ))
         with_email = [r for _, r in ranked]
     else:
-        # P0 careers inboxes → Founders → HR/TA → Engineers → rest; within each
-        # tier, verified emails before risky/unknown, then higher confidence.
+        # Founders → HR/TA → Engineers → other named people → role inboxes;
+        # within each tier, verified emails before risky/unknown, then higher
+        # confidence.
         with_email.sort(key=lambda r: (
             _desig_priority(r.get("designation") or ""),
             _status_rank.get(r.get("email_status") or "unknown", 1),

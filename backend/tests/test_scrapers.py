@@ -237,6 +237,56 @@ class TestHNFounderRelabel:
         assert not _author_is_founder("Founder Institute | Engineer | remote", "x@fi.co")
 
 
+class TestYCFounderLead:
+    """A YC company's first founder becomes the lead identity (name + title),
+    so YC hunts surface reachable founders instead of nameless role inboxes.
+    The full founder list still enriches the draft context."""
+
+    def _search(self, monkeypatch, founders):
+        import asyncio
+        from app.scrapers import yc as yc_mod
+
+        async def fake_load():
+            return [{
+                "name": "Acme", "website": "https://acme.com", "slug": "acme",
+                "batch": "W24", "one_liner": "widgets", "status": "Active",
+                "isHiring": True, "industries": [], "tags": [],
+            }]
+        async def fake_founders(client, slug):
+            return founders
+
+        monkeypatch.setattr(yc_mod, "_load_companies", fake_load)
+        monkeypatch.setattr(yc_mod, "_founders", fake_founders)
+        leads = asyncio.run(yc_mod.YCStartupsScraper().search("Acme"))
+        assert len(leads) == 1
+        return leads[0]
+
+    def test_first_named_founder_becomes_lead_identity(self, monkeypatch):
+        lead = self._search(monkeypatch, [("Jane Doe", "CEO"), ("John Roe", "CTO")])
+        assert lead["name"] == "Jane Doe"
+        assert lead["designation"] == "CEO"
+        assert lead["company"] == "Acme"
+        assert lead["_domain"] == "acme.com"
+        assert lead["_pool"] is True
+        # Never invents an address — resolver grounds it downstream.
+        assert lead["email"] == ""
+        # Co-founders still enrich the draft context.
+        assert "Jane Doe (CEO)" in lead["context"]
+        assert "John Roe (CTO)" in lead["context"]
+
+    def test_single_token_founder_skipped_for_identity(self, monkeypatch):
+        # "Madonna" has no "First Last" → not a resolvable person; fall back to
+        # the next founder that does.
+        lead = self._search(monkeypatch, [("Madonna", "CEO"), ("Kai Lin", "CTO")])
+        assert lead["name"] == "Kai Lin"
+        assert lead["designation"] == "CTO"
+
+    def test_no_named_founder_stays_nameless_recruiter(self, monkeypatch):
+        lead = self._search(monkeypatch, [])
+        assert lead["name"] == ""
+        assert lead["designation"] == "Recruiter"
+
+
 class TestAtsDomainGuessGate:
     def test_guess_only_when_slug_matches_company(self):
         import asyncio

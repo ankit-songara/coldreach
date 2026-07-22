@@ -67,6 +67,16 @@ async def lifespan(_: FastAPI):
     except RuntimeError as e:
         log.warning(str(e))      # non-fatal — compose routes will error if called
 
+    # Hunt enrichment capability status — makes "why so few named people?"
+    # diagnosable from the prod logs instead of a code dive. SMTP probing is
+    # impossible on Vercel (outbound port 25 blocked), so there the Hunter key
+    # is the only email-verification path for named-person leads.
+    import os as _os
+    _smtp = "available" if not _os.environ.get("VERCEL") else "blocked (Vercel port 25)"
+    _gh   = "set" if settings.github_token else "MISSING — email-pattern learning disabled"
+    _hun  = "set" if settings.hunter_api_key else "MISSING — named-people enrichment + HTTP verification disabled"
+    log.info(f"Hunt enrichment: smtp_probes={_smtp} | github_token={_gh} | hunter_api_key={_hun}")
+
     yield
     # ── Shutdown ──────────────────────────────────────────────────────────────
     log.info("Shutting down")
