@@ -97,7 +97,13 @@ export default function Auth({ initialMode = 'login', onClose }: {
   return createPortal(
     <div
       className="fixed inset-0 overflow-y-auto"
-      style={{ zIndex: 200, background: 'rgba(0, 0, 0, 0.55)' }}
+      style={{
+        zIndex: 200,
+        // Strong dark scrim + blur so the busy landing recedes and the card is
+        // the clear focus (a light 0.55 scrim left the page fully legible behind).
+        background: 'rgba(0, 0, 0, 0.7)',
+        backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+      }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -105,35 +111,36 @@ export default function Auth({ initialMode = 'login', onClose }: {
     >
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className="w-full max-w-sm relative"
+          className="w-full max-w-sm"
           onClick={e => e.stopPropagation()}
         >
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="flex items-center justify-center transition-colors"
-              style={{
-                position: 'absolute', top: 0, right: 0, zIndex: 1,
-                width: 34, height: 34, borderRadius: 'var(--radius-full)',
-                background: 'var(--surface-1)', border: '1px solid var(--border)',
-                color: 'var(--text-muted)', cursor: 'pointer',
-              }}
-            >
-              <X size={16} />
-            </button>
-          )}
+          {/* One self-contained card: brand header, close, and form all inside —
+              no elements floating on the scrim behind it. */}
+          <form onSubmit={submit} className="card space-y-4" style={{ position: 'relative' }}>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="flex items-center justify-center transition-colors"
+                style={{
+                  position: 'absolute', top: 12, right: 12, zIndex: 1,
+                  width: 30, height: 30, borderRadius: 'var(--radius-full)',
+                  background: 'transparent', border: 'none',
+                  color: 'var(--text-dim)', cursor: 'pointer',
+                }}
+              >
+                <X size={18} />
+              </button>
+            )}
 
-          <div className="flex flex-col items-center mb-6">
             {/* Kit lockup: horizontal tile + lowercase cold↗reach */}
-            <Logo size={40} wordmark />
-            <p className="text-sm mt-3" style={{ color: 'var(--text-muted)' }}>
-              Email the people who decide.
-            </p>
-          </div>
-
-          <form onSubmit={submit} className="card space-y-4">
+            <div className="flex flex-col items-center pb-1">
+              <Logo size={34} wordmark />
+              <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
+                Email the people who decide.
+              </p>
+            </div>
             {googleHint && GOOGLE_ENABLED && (
               <div
                 role="status"
