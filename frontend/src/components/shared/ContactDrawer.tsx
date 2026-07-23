@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { X, Copy, ExternalLink, Linkedin } from 'lucide-react'
 import { useStore } from '../../store'
@@ -200,6 +200,21 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
   const timeline = buildTimeline(meta, drafts)
   const noteDirty = notes !== (c.notes ?? '')
 
+  // On-demand LinkedIn: kept off the hunt's critical path, so we look it up the
+  // first time the drawer opens (only for named individuals that don't already
+  // have one). The server persists the result, so it's instant next time.
+  const isNamedPerson =
+    (c.name || '').trim().split(/\s+/).filter(Boolean).length >= 2 && c.name !== 'Contact'
+  const liQuery = useQuery({
+    queryKey: ['contact-linkedin', c.id],
+    queryFn: () => contactsApi.findLinkedin(c.id),
+    enabled: isNamedPerson && !c.linkedin_url,
+    staleTime: Infinity,
+    retry: false,
+  })
+  const linkedinUrl = c.linkedin_url || liQuery.data?.linkedin_url || null
+  const linkedinLoading = liQuery.isFetching && !linkedinUrl
+
   // Portal to <body> so the scrim + panel escape the Hunt/<main> subtree.
   // Rendered inline, a `fixed inset-0` scrim can be clipped by an ancestor's
   // stacking/containing context (it left the top strip of the page undimmed —
@@ -300,10 +315,10 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
           )}
         </div>
 
-        {/* ── LinkedIn (public profile, keyless-discovered) ── */}
-        {c.linkedin_url && (
+        {/* ── LinkedIn (public profile, keyless — looked up on open) ── */}
+        {linkedinUrl ? (
           <a
-            href={c.linkedin_url}
+            href={linkedinUrl}
             target="_blank"
             rel="noopener noreferrer nofollow"
             className="inline-flex items-center gap-1.5 text-xs font-semibold mb-5 transition-colors"
@@ -313,7 +328,15 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
             View LinkedIn profile
             <ExternalLink size={11} style={{ opacity: 0.7 }} />
           </a>
-        )}
+        ) : linkedinLoading ? (
+          <div
+            className="inline-flex items-center gap-1.5 text-xs mb-5"
+            style={{ color: 'var(--text-dim)' }}
+          >
+            <Linkedin size={13} />
+            Finding LinkedIn…
+          </div>
+        ) : null}
 
         {/* ── Timeline ── */}
         <div className="text-[10px] font-mono font-bold tracking-widest mb-2.5" style={{ color: 'var(--text-muted)' }}>

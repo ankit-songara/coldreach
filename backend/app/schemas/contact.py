@@ -46,6 +46,7 @@ class ContactUpdate(BaseModel):
     name:            str | None = Field(None, max_length=255)
     designation:     str | None = Field(None, max_length=255)
     company:         str | None = Field(None, max_length=255)
+    linkedin_url:    str | None = Field(None, max_length=255)
     status:          ContactStatus | None = None
     notes:           str | None = Field(None, max_length=2_000)
     last_emailed_at: datetime | None = None

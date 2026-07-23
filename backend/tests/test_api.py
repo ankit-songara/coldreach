@@ -54,6 +54,59 @@ class TestContacts:
         r = auth_client.delete("/api/contacts/9999")
         assert r.status_code == 404
 
+    def test_ondemand_linkedin_lookup_and_persist(self, auth_client, monkeypatch):
+        from app.api import contacts as contacts_mod
+
+        async def fake_search(first, last, company="", timeout=6):
+            assert (first, last) == ("Priya", "Sharma")
+            return "https://www.linkedin.com/in/priya-sharma"
+        monkeypatch.setattr(contacts_mod, "search_person_linkedin", fake_search)
+
+        c = auth_client.post("/api/contacts", json={
+            "name": "Priya Sharma", "email": "priya@finch.io",
+            "designation": "CTO", "company": "Finch",
+        }).json()
+        r = auth_client.post(f"/api/contacts/{c['id']}/linkedin")
+        assert r.status_code == 200
+        assert r.json()["linkedin_url"] == "https://www.linkedin.com/in/priya-sharma"
+        # Persisted — shows up on the contact without re-searching.
+        got = auth_client.get(f"/api/contacts/{c['id']}").json()
+        assert got["linkedin_url"] == "https://www.linkedin.com/in/priya-sharma"
+
+    def test_ondemand_linkedin_skips_role_inbox(self, auth_client, monkeypatch):
+        from app.api import contacts as contacts_mod
+
+        async def boom(*a, **k):
+            raise AssertionError("must not search for a role inbox")
+        monkeypatch.setattr(contacts_mod, "search_person_linkedin", boom)
+
+        c = auth_client.post("/api/contacts", json={
+            "name": "Careers", "email": "careers@finch.io",
+            "designation": "Talent/Recruiting (role inbox)", "company": "Finch",
+        }).json()
+        r = auth_client.post(f"/api/contacts/{c['id']}/linkedin")
+        assert r.status_code == 200
+        assert r.json()["linkedin_url"] is None
+
+    def test_ondemand_linkedin_returns_existing_without_search(self, auth_client, monkeypatch):
+        from app.api import contacts as contacts_mod
+
+        async def boom(*a, **k):
+            raise AssertionError("must not search when a URL already exists")
+        monkeypatch.setattr(contacts_mod, "search_person_linkedin", boom)
+
+        c = auth_client.post("/api/contacts", json={
+            "name": "Jane Doe", "email": "jane@finch.io", "company": "Finch",
+        }).json()
+        auth_client.patch(f"/api/contacts/{c['id']}",
+                          json={"linkedin_url": "https://www.linkedin.com/in/jane-doe"})
+        r = auth_client.post(f"/api/contacts/{c['id']}/linkedin")
+        assert r.json()["linkedin_url"] == "https://www.linkedin.com/in/jane-doe"
+
+    def test_ondemand_linkedin_404_for_missing_contact(self, auth_client):
+        r = auth_client.post("/api/contacts/9999/linkedin")
+        assert r.status_code == 404
+
 
 class TestDemoSeed:
     def test_seed_populates_then_clears(self, auth_client):
