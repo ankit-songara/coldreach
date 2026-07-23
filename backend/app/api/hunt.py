@@ -40,7 +40,8 @@ from app.scrapers.hackernews import HackerNewsScraper
 from app.scrapers.yc import YCStartupsScraper
 from app.scrapers.web import (
     emails_from_company_pages, find_published_role_email, find_person_email,
-    search_role_email_on_web, HIRING_PREFIXES, GENERAL_PREFIXES,
+    search_role_email_on_web, search_person_linkedin, linkedin_for_person,
+    HIRING_PREFIXES, GENERAL_PREFIXES,
 )
 from app.scrapers import directory
 from app.scrapers.directory import looks_like_company, sibling_variants
@@ -76,6 +77,10 @@ _ROLE_ADDRESSES = ("careers", "jobs", "hiring", "hr", "talent", "recruiting", "r
 # Minimum confidence to persist a resolver-generated email. Direct scraper emails
 # (confidence=0) are always kept; only resolver outputs are gated.
 _MIN_RESOLVER_CONFIDENCE = 40
+
+# Cap on keyless LinkedIn search-engine lookups per hunt (the free provenance
+# extraction is unbounded — this only bounds the DuckDuckGo calls).
+_LI_MAX_SEARCHES = 12
 
 # Cap on P0 careers-inbox leads per hunt (one per unique company domain).
 _MAX_CAREERS_LEADS = 30
@@ -1170,6 +1175,36 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 name = "Contact"
         return name, company
 
+    # ── LinkedIn discovery (keyless, best-effort) ──────────────────────────────
+    # Attach each NAMED contact's PUBLIC LinkedIn URL — first from the provenance
+    # note we already captured (HN self-intros, GitHub, YC founders: free), then
+    # a bounded DuckDuckGo lookup for the rest, only if the hunt has time to
+    # spare. Never contacts LinkedIn itself. Whatever doesn't finish just stays
+    # empty — the contact is saved either way.
+    named_rows = [
+        (r, nm.split()[0], nm.split()[-1])
+        for r in with_email
+        if (nm := _clean_identity(r)[0]) and " " in nm and nm != "Contact"
+    ]
+    li_todo: list[tuple[dict, str, str]] = []
+    for r, first, last in named_rows:
+        found = linkedin_for_person(r.get("context") or "", first, last)
+        if found:
+            r["linkedin_url"] = found
+        else:
+            li_todo.append((r, first, last))
+    li_residual = _TOTAL_HUNT_BUDGET_SECONDS - (time.monotonic() - hunt_t0)
+    if li_todo and li_residual > 3:
+        async def _one_li(r: dict, first: str, last: str) -> None:
+            url = await search_person_linkedin(first, last, r.get("company") or "")
+            if url:
+                r["linkedin_url"] = url
+        li_tasks = [asyncio.create_task(_one_li(r, f, l))
+                    for r, f, l in li_todo[:_LI_MAX_SEARCHES]]
+        _, li_pending = await asyncio.wait(li_tasks, timeout=min(li_residual - 1, 8))
+        for t in li_pending:
+            t.cancel()
+
     contacts_to_save = []
     for r in with_email:
         name, company = _clean_identity(r)
@@ -1180,6 +1215,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             company      = company,
             source       = r.get("source") or "",
             context      = r.get("context") or None,
+            linkedin_url = r.get("linkedin_url") or None,
             confidence   = r.get("confidence") or 0,
             email_status = r.get("email_status") or "unknown",
         ))

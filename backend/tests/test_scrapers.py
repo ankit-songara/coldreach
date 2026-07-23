@@ -251,6 +251,58 @@ class TestHNFounderRelabel:
         assert not _author_is_founder("Founder Institute | Engineer | remote", "x@fi.co")
 
 
+class TestLinkedInDiscovery:
+    """Keyless public-LinkedIn-URL discovery — from text we already have, or a
+    DDG search. Never contacts LinkedIn itself."""
+
+    def test_extracts_and_normalizes(self):
+        from app.scrapers.web import linkedin_urls_in
+        text = ('reach me at https://www.linkedin.com/in/jane-doe-1a2b/ or '
+                'linkedin.com/in/JohnRoe · noise linkedin.com/company/acme')
+        urls = linkedin_urls_in(text)
+        assert "https://www.linkedin.com/in/jane-doe-1a2b" in urls
+        assert "https://www.linkedin.com/in/johnroe" in urls
+        # /company/ pages are not personal /in/ profiles
+        assert all("/in/" in u for u in urls)
+
+    def test_handles_percent_encoded(self):
+        # DDG wraps result links: linkedin.com%2Fin%2Fjane-doe
+        from app.scrapers.web import linkedin_urls_in
+        urls = linkedin_urls_in("uddg=https%3A%2F%2Flinkedin.com%2Fin%2Fjane-doe")
+        assert "https://www.linkedin.com/in/jane-doe" in urls
+
+    def test_person_match_by_slug(self):
+        from app.scrapers.web import linkedin_for_person
+        text = "team: linkedin.com/in/bob-smith and linkedin.com/in/jane-doe-99"
+        assert linkedin_for_person(text, "Jane", "Doe") == "https://www.linkedin.com/in/jane-doe-99"
+        # no slug contains "kai lin" → no false match
+        assert linkedin_for_person(text, "Kai", "Lin") is None
+
+    def test_search_returns_name_matched_url(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+
+        class FakeResp:
+            status_code = 200
+            text = ('<a href="/l/?uddg=https%3A%2F%2Fwww.linkedin.com%2Fin%2F'
+                    'priya-sharma-eng">Priya Sharma - Finch Labs | LinkedIn</a>')
+        class FakeClient:
+            def __init__(self, *a, **k): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def get(self, *a, **k): return FakeResp()
+        monkeypatch.setattr(web.httpx, "AsyncClient", FakeClient)
+        web._li_cache.clear()
+
+        got = asyncio.run(web.search_person_linkedin("Priya", "Sharma", "Finch Labs"))
+        assert got == "https://www.linkedin.com/in/priya-sharma-eng"
+
+    def test_search_caches_and_needs_full_name(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+        assert asyncio.run(web.search_person_linkedin("Priya", "", "Acme")) is None  # no last name
+
+
 class TestHNSelfIntro:
     """A poster who names themselves ('I'm Jane Smith, co-founder') becomes a
     named lead even with no embedded email, so the resolver/page-scrape can find

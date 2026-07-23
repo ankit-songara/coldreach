@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { X, Copy, ExternalLink } from 'lucide-react'
+import { X, Copy, ExternalLink, Linkedin } from 'lucide-react'
 import { useStore } from '../../store'
 import { contactsApi } from '../../api/contacts'
 import { STATUS_META, type Contact, type ContactStatus } from '../../types'
@@ -299,6 +299,21 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
             </span>
           )}
         </div>
+
+        {/* ── LinkedIn (public profile, keyless-discovered) ── */}
+        {c.linkedin_url && (
+          <a
+            href={c.linkedin_url}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold mb-5 transition-colors"
+            style={{ color: 'var(--accent-text)' }}
+          >
+            <Linkedin size={13} />
+            View LinkedIn profile
+            <ExternalLink size={11} style={{ opacity: 0.7 }} />
+          </a>
+        )}
 
         {/* ── Timeline ── */}
         <div className="text-[10px] font-mono font-bold tracking-widest mb-2.5" style={{ color: 'var(--text-muted)' }}>

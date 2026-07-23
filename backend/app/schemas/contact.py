@@ -25,6 +25,7 @@ class ContactCreate(BaseModel):
     company:      str = Field("Unknown",         max_length=255)
     source:       str = Field("",                max_length=255)
     context:      str | None = Field(None,       max_length=4_000)
+    linkedin_url: str | None = Field(None,       max_length=255)
     status:       ContactStatus = "new"
     notes:        str | None = Field(None,       max_length=2_000)
     confidence:   int = 0
@@ -70,6 +71,7 @@ class ContactOut(BaseModel):
     followups_sent:  int = 0
     email_status:    str = "unknown"
     confidence:      int = 0
+    linkedin_url:    str | None = None
     created_at:      datetime
     updated_at:      datetime
 

@@ -10,6 +10,7 @@ address the company actually publishes.
 
 import re
 import asyncio
+from urllib.parse import unquote
 import httpx
 from app.netguard import resolves_public
 
@@ -234,6 +235,79 @@ def _cache_put(kind: str, domain: str, value: str | None) -> None:
     if len(_ground_cache) > 2048:
         _ground_cache.clear()
     _ground_cache[f"{kind}:{domain}"] = (time.monotonic(), value)
+
+
+# ── Public LinkedIn profile discovery (keyless, never scrapes LinkedIn) ───────
+# We only ever DISCOVER a public profile URL — from text we already fetched, or
+# from a search engine's results. We never request linkedin.com, log in, or read
+# profile content (that's against LinkedIn's ToS and gets blocked/banned).
+_LINKEDIN_IN_RE = re.compile(r"linkedin\.com/in/([A-Za-z0-9._%\-]{2,100})", re.IGNORECASE)
+
+
+def linkedin_urls_in(text: str) -> list[str]:
+    """Every public LinkedIn /in/ profile URL in a blob of text, normalized and
+    deduped. Handles percent-encoded forms (DDG wraps result links)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _LINKEDIN_IN_RE.finditer(unquote(text or "")):
+        slug = m.group(1).rstrip("/").lower()
+        if slug and slug != "in" and slug not in seen:
+            seen.add(slug)
+            out.append(f"https://www.linkedin.com/in/{slug}")
+    return out
+
+
+def linkedin_for_person(text: str, first: str, last: str) -> str | None:
+    """The LinkedIn URL in `text` whose slug plausibly belongs to this person —
+    LinkedIn slugs almost always contain the name (/in/jane-doe-1a2b)."""
+    f, l = (first or "").lower(), (last or "").lower()
+    for url in linkedin_urls_in(text):
+        slug = url.rsplit("/", 1)[-1]
+        if (f and f in slug) or (l and l in slug):
+            return url
+    return None
+
+
+# Per-person LinkedIn cache (hits AND misses) so repeat hunts / multi-source
+# leads never re-search the same name — DDG rate-limits repeated queries.
+_LI_TTL = 6 * 3600
+_li_cache: dict[str, tuple[float, str | None]] = {}
+
+
+async def search_person_linkedin(first: str, last: str, company: str = "",
+                                 timeout: int = 6) -> str | None:
+    """DuckDuckGo lookup for a person's PUBLIC LinkedIn profile URL — reads the
+    search results, never LinkedIn itself. Returns the name-matched /in/ URL or
+    None. Cached per (name, company)."""
+    import time
+    if not first or not last:
+        return None
+    key = f"{first} {last} {company}".lower().strip()
+    hit = _li_cache.get(key)
+    if hit and time.monotonic() - hit[0] < _LI_TTL:
+        return hit[1]
+
+    query = f'"{first} {last}" {company} site:linkedin.com/in'.strip()
+    async with _WEB_SEARCH_SEM:
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout, follow_redirects=True,
+                headers={"User-Agent": _BROWSER_UA},
+            ) as client:
+                resp = await client.get(
+                    "https://html.duckduckgo.com/html/", params={"q": query})
+                # 202 challenge = rate-limited; transient, don't cache as a miss.
+                if resp.status_code != 200:
+                    return None
+                text = resp.text
+        except Exception:
+            return None
+
+    result = linkedin_for_person(text, first, last)
+    if len(_li_cache) > 2048:
+        _li_cache.clear()
+    _li_cache[key] = (time.monotonic(), result)
+    return result
 
 
 async def search_role_email_on_web(domain: str, company: str = "",

@@ -44,6 +44,10 @@ class Contact(Base):
     # job posting this lead came from. Fed to the LLM so it can anchor on real
     # signal instead of inventing details.
     context:     Mapped[str|None] = mapped_column(Text,        nullable=True)
+    # Public LinkedIn profile URL for this person, discovered keylessly at hunt
+    # time (from the provenance note or a search-engine lookup — never scraped
+    # from LinkedIn). A second way to reach the contact besides email.
+    linkedin_url: Mapped[str|None] = mapped_column(String(255), nullable=True)
     status:      Mapped[str]      = mapped_column(String(50),  default="new")
     notes:       Mapped[str|None] = mapped_column(Text,        nullable=True)
 

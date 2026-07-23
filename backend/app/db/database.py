@@ -123,6 +123,7 @@ _NEW_COLUMNS = {
         ("confidence",      "INTEGER DEFAULT 0"),
         ("user_id",         "INTEGER DEFAULT 1"),
         ("context",         "TEXT"),
+        ("linkedin_url",    "VARCHAR(255)"),
     ],
     "users":            [("token_version", "INTEGER DEFAULT 0"),
                          ("google_sub",    "VARCHAR(255)")],

@@ -22,6 +22,7 @@ export interface Contact {
   replied_at?:      string | null
   bounced?:         boolean
   followups_sent?:  number
+  linkedin_url?:    string | null
   created_at:       string
   updated_at:       string
 }

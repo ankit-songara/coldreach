@@ -1,7 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { X, Check } from 'lucide-react'
+import { X, Check, Linkedin } from 'lucide-react'
 import { contactsApi } from '../../api/contacts'
 import { useStore } from '../../store'
 import { STATUS_META, type Contact, type ContactStatus } from '../../types'
@@ -176,6 +176,20 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
           >
             ✓ Verified email
           </span>
+        )}
+        {c.linkedin_url && (
+          <a
+            href={c.linkedin_url}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            onClick={e => e.stopPropagation()}
+            aria-label="Open LinkedIn profile"
+            title="LinkedIn profile"
+            className="hit-target inline-flex items-center flex-shrink-0"
+            style={{ color: 'var(--accent-text)' }}
+          >
+            <Linkedin size={13} />
+          </a>
         )}
       </div>
       {/* ── Status pills ── */}
