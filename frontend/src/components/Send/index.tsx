@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { CheckCircle2, XCircle, Send as SendIcon, Settings, ExternalLink, RefreshCw, Search } from 'lucide-react'
 import { useStore } from '../../store'
+import { useShallow } from 'zustand/react/shallow'
 import { contactsApi } from '../../api/contacts'
 import { sendApi } from '../../api/send'
 import { inboxApi } from '../../api/inbox'
@@ -28,8 +29,20 @@ const MAX_GMAIL_URL = 1900
 // Contact rows rendered before "Show more" takes over.
 const PAGE_SIZE = 100
 
+// Mirror the backend guard: a contact already actioned (emailed in any later
+// state) must not be re-sent a first-touch — keeps the "Send All (N)" count honest.
+const ACTIONED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced']
+// Ungrounded role-inbox guesses (no evidence the address exists) are excluded
+// from bulk "Send All" — most likely to bounce. Still individually sendable.
+const isUnverifiedGuess = (c: Contact) => (c.designation || '').toLowerCase().includes('unverified guess')
+
 export default function Send() {
-  const { contacts, drafts, upsertContact, setContacts, gmailAddress, gmailAppPassword, setActiveTab } = useStore()
+  const { contacts, drafts, upsertContact, setContacts, gmailAddress, gmailAppPassword, setActiveTab } = useStore(
+    useShallow(s => ({
+      contacts: s.contacts, drafts: s.drafts, upsertContact: s.upsertContact, setContacts: s.setContacts,
+      gmailAddress: s.gmailAddress, gmailAppPassword: s.gmailAppPassword, setActiveTab: s.setActiveTab,
+    })),
+  )
   const qc = useQueryClient()
   const [showConfirm, setShowConfirm] = useState(false)
   const [results, setResults] = useState<SendResult[] | null>(null)
@@ -50,17 +63,16 @@ export default function Send() {
   const { data: cfg } = useAutomationConfig()
   const serverGmail = { has: cfg?.has_gmail ?? false, address: cfg?.gmail_address ?? '' }
 
-  const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
-  // Mirror the backend guard: a contact already actioned (emailed in any later
-  // state) must not be re-sent a first-touch. Keeps the "Send All (N)" count honest.
-  const ACTIONED = ['emailed', 'followed_up', 'replied', 'interview', 'offer', 'rejected', 'bounced']
-  // Ungrounded role-inbox guesses (no real evidence the address exists) are
-  // excluded from bulk "Send All" — they're the leads most likely to bounce.
-  // Still shown in the list and individually sendable, just not auto-included.
-  const isUnverifiedGuess = (c: Contact) => (c.designation || '').toLowerCase().includes('unverified guess')
-  const sendable = withDraft.filter(c => !ACTIONED.includes(c.status) && !c.last_emailed_at)
-  const unsent = sendable.filter(c => !isUnverifiedGuess(c))
-  const sentCount = contacts.filter(c => SENT_STATUSES.includes(c.status)).length
+  // All derived in one memo (was recomputed on every render — incl. every
+  // keystroke in the filter box). `sendableIds` is an O(1) membership set for
+  // the per-row send check, which was `sendable.some(...)` per row → O(n²).
+  const { withDraft, sendableIds, unsent, sentCount } = useMemo(() => {
+    const withDraft = contacts.filter(c => (drafts[c.id] ?? []).some(d => !d.is_followup))
+    const sendable = withDraft.filter(c => !ACTIONED.includes(c.status) && !c.last_emailed_at)
+    const unsent = sendable.filter(c => !isUnverifiedGuess(c))
+    const sentCount = contacts.filter(c => SENT_STATUSES.includes(c.status)).length
+    return { withDraft, sendableIds: new Set(sendable.map(c => c.id)), unsent, sentCount }
+  }, [contacts, drafts])
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: ContactStatus }) =>
@@ -489,7 +501,7 @@ export default function Send() {
                       )}
                       {/* Direct SMTP send for THIS contact only — first-touch
                           contacts, when Gmail is connected. */}
-                      {!isFollowupSend && sendable.some(u => u.id === c.id) && !noCredentials && (
+                      {!isFollowupSend && sendableIds.has(c.id) && !noCredentials && (
                         <button
                           onClick={() => sendOne(c.id, c.name)}
                           disabled={sendingId !== null || sending}

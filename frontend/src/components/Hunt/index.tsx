@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useShallow } from 'zustand/react/shallow'
 import toast from 'react-hot-toast'
 import { Search, Trash2, Download, CheckSquare, Check, X } from 'lucide-react'
 import { useStore } from '../../store'
@@ -159,10 +160,18 @@ export default function Hunt() {
   const [drawerId, setDrawerId] = useState<number | null>(null)
   // Hunt state lives in the store: switching tabs mid-hunt no longer kills it —
   // the request finishes in the background and this tab restores progress/results.
+  // Selective subscription: only re-render when one of THESE slices changes, not
+  // on every unrelated store write (e.g. a bulk-generate writing drafts while
+  // this tab is kept mounted).
   const {
     contacts, clearContacts, upsertContact, removeContact, resume,
     hunting, huntStage, huntResults, huntInfo, runHunt, cancelHunt, clearHunt, removeHuntResult,
-  } = useStore()
+  } = useStore(useShallow(s => ({
+    contacts: s.contacts, clearContacts: s.clearContacts, upsertContact: s.upsertContact,
+    removeContact: s.removeContact, resume: s.resume,
+    hunting: s.hunting, huntStage: s.huntStage, huntResults: s.huntResults, huntInfo: s.huntInfo,
+    runHunt: s.runHunt, cancelHunt: s.cancelHunt, clearHunt: s.clearHunt, removeHuntResult: s.removeHuntResult,
+  })))
   const qc = useQueryClient()
 
   // Live "who's hiring right now" companies for the suggestion chips. The
@@ -242,14 +251,16 @@ export default function Hunt() {
     URL.revokeObjectURL(url)
   }
 
-  const toggleSelect = (id: number) => {
+  // Stable ref (functional setState, no deps) so it can be passed to every
+  // memoized ContactCard without breaking their memoization.
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
-  }
+  }, [])
 
   const selectAll = () => setSelectedIds(new Set(filtered.map(c => c.id)))
   const deselectAll = () => setSelectedIds(new Set())
@@ -296,9 +307,14 @@ export default function Hunt() {
   // After a hunt: show only results for that query.
   // Before any hunt: show all saved contacts.
   const displayList = huntResults ?? contacts
-  const filtered = statusFilter === 'all'
-    ? displayList
-    : displayList.filter((c: any) => c.status === statusFilter)
+  // Memoized so typing in the hunt-query box (which does NOT filter the list)
+  // doesn't re-filter + re-map 245 contacts on every keystroke.
+  const filtered = useMemo(
+    () => statusFilter === 'all'
+      ? displayList
+      : displayList.filter(c => c.status === statusFilter),
+    [displayList, statusFilter],
+  )
 
   // Live drawer contact — falls back to the saved list so the drawer keeps
   // working when a hunt-result contact is also (or only) in `contacts`, and
@@ -626,8 +642,8 @@ export default function Hunt() {
               contact={c}
               selectable={selectMode}
               selected={selectedIds.has(c.id)}
-              onToggleSelect={() => toggleSelect(c.id)}
-              onOpenDetails={() => setDrawerId(c.id)}
+              onToggleSelect={toggleSelect}
+              onOpenDetails={setDrawerId}
             />
           ))}
         </div>

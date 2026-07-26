@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   TrendingUp, Activity, MailOpen, CalendarCheck, Clock, Wand2,
   Send as SendIcon, MessageCircle, BarChart2, Lightbulb,
@@ -9,6 +9,7 @@ import type { LucideIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../../store'
+import { useShallow } from 'zustand/react/shallow'
 import api from '../../api/client'
 import { demoApi, DEMO_SENTINEL } from '../../api/demo'
 import { contactsApi } from '../../api/contacts'
@@ -342,7 +343,12 @@ const llmOk = (h?: { llm_ok?: boolean; llm?: string }) =>
   h ? (h.llm_ok ?? !(h.llm || '').includes('unavailable')) : undefined
 
 export default function Today() {
-  const { contacts, drafts, userEmail, resume, gmailAddress, setActiveTab, setContacts, setResume } = useStore()
+  const { contacts, drafts, userEmail, resume, gmailAddress, setActiveTab, setContacts, setResume } = useStore(
+    useShallow(s => ({
+      contacts: s.contacts, drafts: s.drafts, userEmail: s.userEmail, resume: s.resume,
+      gmailAddress: s.gmailAddress, setActiveTab: s.setActiveTab, setContacts: s.setContacts, setResume: s.setResume,
+    })),
+  )
   const [seeding, setSeeding] = useState(false)
   const [gmailSkipped, setGmailSkipped] = useState(
     () => localStorage.getItem('coldreach-gmail-skipped') === '1'
@@ -400,7 +406,16 @@ export default function Today() {
 
   const isDemo = contacts.some(c => (c.notes ?? '') === DEMO_SENTINEL)
 
-  const hasDraftFor = (id: number) => (drafts[id] ?? []).some(d => !d.is_followup)
+  // Precompute once (O(drafts)) instead of scanning each contact's drafts inside
+  // the two O(contacts) filters below — that was O(contacts × drafts) per render.
+  const draftedIds = useMemo(() => {
+    const ids = new Set<number>()
+    for (const [id, ds] of Object.entries(drafts)) {
+      if (ds.some(d => !d.is_followup)) ids.add(Number(id))
+    }
+    return ids
+  }, [drafts])
+  const hasDraftFor = (id: number) => draftedIds.has(id)
 
   const total     = contacts.length
   const hasDraft  = contacts.filter(c => hasDraftFor(c.id)).length

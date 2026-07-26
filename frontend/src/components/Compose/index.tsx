@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, X, Search, StopCircle } from 'lucide-react'
 import { useStore } from '../../store'
+import { useShallow } from 'zustand/react/shallow'
 import { composeApi } from '../../api/compose'
 import api from '../../api/client'
 import { STATUS_META, SENT_STATUSES } from '../../types'
@@ -11,11 +12,21 @@ import { ResumeReadyCtx } from '../../App'
 import { contactDisplayName, isGenericName, displayDesignation } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
 
+const COMPOSE_PAGE_SIZE = 50
+
 export default function Compose() {
-  const { contacts, resume, drafts, setDrafts, setActiveTab } = useStore()
+  const { contacts, resume, drafts, setDrafts, setActiveTab } = useStore(
+    useShallow(s => ({
+      contacts: s.contacts, resume: s.resume, drafts: s.drafts,
+      setDrafts: s.setDrafts, setActiveTab: s.setActiveTab,
+    })),
+  )
   const resumeReady = useContext(ResumeReadyCtx)
   const [showSent, setShowSent] = useState(false)
   const [search, setSearch] = useState('')
+  // Render the new-contact list in pages — mounting every heavy card (edit state
+  // + textareas) at 245 contacts is slow. Matches Send's paged list.
+  const [visibleLimit, setVisibleLimit] = useState(COMPOSE_PAGE_SIZE)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   // Set by the Stop button; checked between iterations of the bulk loop.
   const bulkStopRef = useRef(false)
@@ -251,7 +262,17 @@ export default function Compose() {
         </p>
       ) : (
         <div className="space-y-4">
-          {visibleNew.map(c => <ContactCard key={c.id} contact={c} drafts={drafts} composeMutation={composeMutation} followupMutation={followupMutation} resume={resume} />)}
+          {visibleNew.slice(0, visibleLimit).map(c => <ContactCard key={c.id} contact={c} drafts={drafts} composeMutation={composeMutation} followupMutation={followupMutation} resume={resume} />)}
+          {visibleNew.length > visibleLimit && (
+            <button
+              onClick={() => setVisibleLimit(n => n + COMPOSE_PAGE_SIZE)}
+              className="btn btn-ghost text-xs w-full"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Show {Math.min(COMPOSE_PAGE_SIZE, visibleNew.length - visibleLimit)} more
+              &nbsp;({visibleLimit} of {visibleNew.length})
+            </button>
+          )}
         </div>
       )}
 

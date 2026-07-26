@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -24,16 +25,29 @@ export function getDesigColor(d: string): string {
   return 'var(--tier-default)'
 }
 
+// Hoisted so the 8 status buttons aren't rebuilt from scratch for every card on
+// every render — compounds hard at 245 cards during background hunt-stage ticks.
+const STATUS_ENTRIES = Object.entries(STATUS_META) as [ContactStatus, typeof STATUS_META[ContactStatus]][]
+
 interface Props {
   contact: Contact
   selectable?: boolean
   selected?: boolean
-  onToggleSelect?: () => void
-  onOpenDetails?: () => void
+  // Take the id so the parent can pass ONE stable callback for all cards
+  // (inline `() => fn(c.id)` closures would defeat React.memo).
+  onToggleSelect?: (id: number) => void
+  onOpenDetails?: (id: number) => void
 }
 
-export default function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenDetails }: Props) {
-  const { upsertContact, removeContact, removeHuntResult, updateHuntResult } = useStore()
+function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenDetails }: Props) {
+  // Action-only selectors: Zustand action refs are stable, so this card never
+  // re-renders from a store DATA change — only when its own props change (paired
+  // with React.memo below). Was `useStore()` with no selector, which subscribed
+  // every card to the WHOLE store → all 245 re-rendered on any write.
+  const upsertContact   = useStore(s => s.upsertContact)
+  const removeContact   = useStore(s => s.removeContact)
+  const removeHuntResult = useStore(s => s.removeHuntResult)
+  const updateHuntResult = useStore(s => s.updateHuntResult)
   const qc = useQueryClient()
 
   // Cards can render from the hunt-results list (fresh hunt) OR the saved
@@ -71,9 +85,9 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
   // elements are invalid. The keyboard/AT path is the header region below,
   // which contains no interactive children and so can be a proper button.
   const handleCardClick = (e: ReactMouseEvent) => {
-    if (selectable) { onToggleSelect?.(); return }
+    if (selectable) { onToggleSelect?.(c.id); return }
     if ((e.target as HTMLElement).closest('button, [role="button"]')) return
-    onOpenDetails?.()
+    onOpenDetails?.(c.id)
   }
 
   return (
@@ -125,13 +139,13 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
           tabIndex: 0,
           'aria-label': `View details for ${displayName}`,
           onKeyDown: (e: ReactKeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetails() }
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetails(c.id) }
           },
           // Must handle clicks itself: the card-level handler ignores clicks
           // inside any [role="button"] — which includes THIS region — so
           // without this, clicking the name/avatar (the most natural target)
           // would do nothing.
-          onClick: (e: ReactMouseEvent) => { e.stopPropagation(); onOpenDetails() },
+          onClick: (e: ReactMouseEvent) => { e.stopPropagation(); onOpenDetails(c.id) },
         } : {})}
       >
         <div
@@ -194,7 +208,7 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
       </div>
       {/* ── Status pills ── */}
       <div className="flex flex-wrap gap-1">
-        {(Object.entries(STATUS_META) as [ContactStatus, typeof STATUS_META[ContactStatus]][]).map(([key, meta]) => (
+        {STATUS_ENTRIES.map(([key, meta]) => (
           <button
             key={key}
             onClick={() => statusMutation.mutate(key)}
@@ -213,3 +227,8 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
     </div>
   )
 }
+
+// Memoized: with stable id-based callbacks from the parent + action-only store
+// selectors above, a card re-renders only when ITS contact/selected/selectable
+// change — not when any other contact or unrelated store slice changes.
+export default memo(ContactCard)

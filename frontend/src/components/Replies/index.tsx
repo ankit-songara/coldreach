@@ -37,7 +37,7 @@ function timeAgo(iso: string | null): string {
 }
 
 export default function Replies() {
-  const { upsertContact } = useStore()
+  const upsertContact = useStore(s => s.upsertContact)   // stable action ref — never re-renders on data
   const qc = useQueryClient()
 
   const { data: replies, isLoading, isError, refetch } = useQuery({

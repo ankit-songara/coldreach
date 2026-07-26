@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { X, Copy, ExternalLink, Linkedin } from 'lucide-react'
 import { useStore } from '../../store'
+import { useShallow } from 'zustand/react/shallow'
 import { contactsApi } from '../../api/contacts'
 import { STATUS_META, type Contact, type ContactStatus } from '../../types'
 import { contactDisplayName, displayDesignation } from '../../lib/display'
@@ -101,7 +102,9 @@ export default function ContactDrawer({ contact, onClose }: Props) {
 
 function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () => void }) {
   const meta = c as ContactMeta
-  const { drafts, upsertContact, updateHuntResult } = useStore()
+  const { drafts, upsertContact, updateHuntResult } = useStore(
+    useShallow(s => ({ drafts: s.drafts, upsertContact: s.upsertContact, updateHuntResult: s.updateHuntResult })),
+  )
   const qc = useQueryClient()
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
