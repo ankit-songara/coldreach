@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.crud import (
     ContactRepository, add_known_company,
-    get_domain_patterns, record_domain_pattern,
+    get_domain_patterns, record_domain_patterns,
     get_explored_slugs, record_explored_slugs,
     get_all_company_tags, upsert_company_tags,
     get_scrape_cache, put_scrape_cache,
@@ -63,11 +63,19 @@ router = APIRouter(prefix="/hunt", tags=["hunt"])
 # the total past the wall once the ATS scan breadth was widened.
 _SCRAPE_BUDGET_SECONDS  = 18 if os.environ.get("VERCEL") else 40
 _RESOLVE_BUDGET_SECONDS = 35 if os.environ.get("VERCEL") else 45
-# Vercel Hobby kills a function at 60s. The batched persist (crud.bulk_create)
-# now costs ~1 round-trip instead of O(N), so the post-budget tail is small — but
-# keep a comfortable margin (cold start + persist + duplicate hydration + cursor
-# writeback + response) well under 60s. 48s leaves ~12s of headroom.
-_TOTAL_HUNT_BUDGET_SECONDS = 48 if os.environ.get("VERCEL") else 120
+# Vercel Hobby kills a function at 60s. Batched persist (crud.bulk_create) +
+# batched pattern writes (crud.record_domain_patterns) shrank the post-budget
+# tail, but on a broad hunt (300+ leads, a big owned list) the tail's
+# duplicate-hydration + cursor/tag writes still added up right at the wall and
+# 504'd — yielding NOTHING despite a good scrape+resolve. Cap network work at 44s
+# so the tail has real headroom, and hard-stop the best-effort tail at 55s (see
+# _TAIL_HARD_DEADLINE_SECONDS) so the hunt ALWAYS returns its saved contacts.
+_TOTAL_HUNT_BUDGET_SECONDS = 44 if os.environ.get("VERCEL") else 120
+# Absolute wall-clock (from hunt start) past which the post-persist best-effort
+# work — duplicate-contact hydration, exploration-cursor and tag write-back — is
+# skipped. Saving the contacts (bulk_create) and returning them always happens;
+# only the "make the NEXT hunt smarter" bookkeeping is sacrificed near the wall.
+_TAIL_HARD_DEADLINE_SECONDS = 55 if os.environ.get("VERCEL") else 1_000
 _MIN_RESOLVE_SECONDS = 8    # floor: always give resolution a real chance
 # Held back from the resolve budget for the (third) verify phase, and used as a
 # hard deadline on it, so a flood of direct-email leads with slow/flaky MX
@@ -1094,17 +1102,22 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # ── Persist pattern memory for future hunts: SMTP-verified resolutions are
     #    strong confirmations, everything else the cache learned is a weak
     #    observation. Best-effort — never breaks a hunt. ─────────────────────────
+    # ONE batched upsert, not O(N) per-domain commits — on a broad hunt this loop
+    # sits in the tail between resolve and the 60s wall, so per-row round-trips to
+    # Supabase were a direct 504 contributor.
     try:
+        pattern_items: list[tuple[str, str, bool]] = []
         recorded: set[str] = set()
         for r in with_email:
             patt = r.get("_pattern")
             if patt and r.get("email"):
                 dom = r["email"].rsplit("@", 1)[-1].lower()
-                record_domain_pattern(db, dom, patt, bool(r.get("_pattern_verified")))
+                pattern_items.append((dom, patt, bool(r.get("_pattern_verified"))))
                 recorded.add(dom)
         for dom, patt in cache.learned_patterns().items():
             if dom not in recorded:
-                record_domain_pattern(db, dom, patt, verified=False)
+                pattern_items.append((dom, patt, False))
+        record_domain_patterns(db, pattern_items)
     except Exception as e:
         log.debug(f"Hunt: pattern persistence skipped: {e}")
 
@@ -1252,11 +1265,21 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # owned contact at that domain (role-inbox contact preferred, since that is
     # what the skipped probe would have found). Deduped by id, capped — the
     # list is illustrative, so its length may not equal the duplicates count.
+    # Everything from here on is best-effort bookkeeping (illustrative duplicate
+    # list + "make the next hunt smarter" writes). On a broad hunt that spent its
+    # whole budget, this is what used to tip the function past the 60s wall AFTER
+    # the contacts were already saved — so hard-stop it near the wall and just
+    # return. bulk_create above already ran; the user gets their leads regardless.
+    tail_ok = (time.monotonic() - hunt_t0) < _TAIL_HARD_DEADLINE_SECONDS
+    if not tail_ok:
+        log.info(f"Hunt: {time.monotonic() - hunt_t0:.0f}s elapsed — skipping best-effort "
+                 f"tail (dup hydration, cursor + tag write-back) to stay under the wall")
+
     duplicate_contacts: list[dict] = []
     try:
         seen_dup_ids: set[int] = set()
         skipped_domains = skipped_nameless_domains | skipped_careers_domains
-        if skipped_owned_emails or skipped_domains or save_time_existing:
+        if tail_ok and (skipped_owned_emails or skipped_domains or save_time_existing):
             all_owned = repo.get_all()
             by_owned_email = {c.email.lower(): c for c in all_owned if c.email}
             def _add(c) -> None:
@@ -1286,7 +1309,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # Leads dropped mid-pipeline (resolve cancel, slot caps, confidence floor,
     # verify-invalid, role filter) never mark their board explored — the user
     # never received them, so a future hunt must retry.
-    if not company_query and probed:
+    if tail_ok and not company_query and probed:
         try:
             persisted_keys: set[str] = set()
             for r in contacts_to_save:

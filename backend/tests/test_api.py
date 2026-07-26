@@ -205,6 +205,57 @@ class TestScrapeCache:
         assert get_scrape_cache(db_session, "sc-huge", ["one"]) is None
 
 
+class TestRecordDomainPatternsBatch:
+    """Batched pattern persistence — one query + one commit instead of the O(N)
+    per-domain round-trips that sat in the hunt's post-resolve tail and helped
+    push broad hunts past the 60s wall. Same upsert semantics as the per-row form."""
+
+    def _patterns(self, db, domains):
+        from app.db.crud import get_domain_patterns
+        return get_domain_patterns(db, domains)
+
+    def test_batch_insert_new(self, db_session):
+        from app.db.crud import record_domain_patterns
+        record_domain_patterns(db_session, [
+            ("rdpb-a.com", "first.last", False),
+            ("rdpb-b.com", "flast", True),
+        ])
+        got = self._patterns(db_session, ["rdpb-a.com", "rdpb-b.com"])
+        assert got == {"rdpb-a.com": "first.last", "rdpb-b.com": "flast"}
+
+    def test_same_pattern_reconfirms(self, db_session):
+        from app.db.crud import record_domain_patterns
+        from app.db.models import EmailPattern
+        record_domain_patterns(db_session, [("rdpb-c.com", "first", False)])
+        record_domain_patterns(db_session, [("rdpb-c.com", "first", False)])
+        row = db_session.query(EmailPattern).filter_by(domain="rdpb-c.com").one()
+        assert row.pattern == "first" and row.verified_count == 2   # 1 + 1
+
+    def test_verified_wins_within_batch(self, db_session):
+        from app.db.crud import record_domain_patterns
+        from app.db.models import EmailPattern
+        # Same domain twice in one batch: the verified observation must win the
+        # dedup so an unverified guess never suppresses confirmed evidence.
+        record_domain_patterns(db_session, [
+            ("rdpb-d.com", "first.last", False),
+            ("rdpb-d.com", "flast", True),
+        ])
+        row = db_session.query(EmailPattern).filter_by(domain="rdpb-d.com").one()
+        assert row.pattern == "flast"
+
+    def test_verified_replaces_conflicting_stored(self, db_session):
+        from app.db.crud import record_domain_patterns
+        record_domain_patterns(db_session, [("rdpb-e.com", "first.last", False)])
+        record_domain_patterns(db_session, [("rdpb-e.com", "flast", True)])  # SMTP-confirmed
+        assert self._patterns(db_session, ["rdpb-e.com"]) == {"rdpb-e.com": "flast"}
+
+    def test_empty_and_blank_ignored(self, db_session):
+        from app.db.crud import record_domain_patterns
+        record_domain_patterns(db_session, [])
+        record_domain_patterns(db_session, [("", "x", False), ("rdpb-f.com", "", False)])
+        assert self._patterns(db_session, ["rdpb-f.com"]) == {}
+
+
 class TestDemoSeed:
     def test_seed_populates_then_clears(self, auth_client):
         r = auth_client.post("/api/demo/seed")

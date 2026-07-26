@@ -773,6 +773,49 @@ def record_domain_pattern(db: Session, domain: str, pattern: str, verified: bool
         db.rollback()
 
 
+def record_domain_patterns(db: Session, items: list[tuple[str, str, bool]]) -> None:
+    """Batched record_domain_pattern: ONE existence query + ONE commit for a whole
+    hunt's worth of learned patterns, instead of O(N) per-domain round-trips in the
+    unbudgeted post-resolve tail (the same class of bottleneck as the per-row
+    contact persist). Same upsert semantics. Deduped by domain, a verified
+    observation winning over an unverified one. Best-effort — never breaks a hunt."""
+    by_domain: dict[str, tuple[str, bool]] = {}
+    for domain, pattern, verified in items:
+        domain = (domain or "").lower().strip()
+        pattern = (pattern or "").strip()
+        if not (domain and pattern):
+            continue
+        prev = by_domain.get(domain)
+        # First writer wins for a domain, unless a later one is verified and it
+        # wasn't — verified evidence is allowed to take over.
+        if prev is None or (verified and not prev[1]):
+            by_domain[domain] = (pattern, verified)
+    if not by_domain:
+        return
+    try:
+        existing = {
+            r.domain: r for r in db.query(EmailPattern)
+            .filter(EmailPattern.domain.in_(list(by_domain.keys()))).all()
+        }
+        for domain, (pattern, verified) in by_domain.items():
+            row = existing.get(domain)
+            if row is None:
+                db.add(EmailPattern(domain=domain, pattern=pattern,
+                                    verified_count=2 if verified else 1))
+            elif row.pattern == pattern:
+                row.verified_count += 2 if verified else 1
+            elif verified:
+                # Contradicting evidence, but ours is SMTP-confirmed — replace.
+                row.pattern = pattern
+                row.verified_count = 2
+                row.bounced_count = 0
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+    except Exception:
+        db.rollback()
+
+
 def record_pattern_bounce(db: Session, email: str) -> None:
     """A bounce at this domain is a strike against its stored pattern. Once
     strikes reach confirmations the pattern stops being trusted (and the next
