@@ -150,6 +150,61 @@ class TestBulkCreateBatching:
         assert [e.email for e in existing] == ["owned@acme.com"]
 
 
+class TestScrapeCache:
+    """The shared cross-user scrape cache: a popular query's network scrape is
+    stored once and replayed for the next hunter, so broad hunts skip the most
+    expensive phase and stay under the serverless wall."""
+
+    SIG = ["greenhouse", "lever", "hn"]
+    RESULTS = [
+        [{"name": "Ann Lee", "email": "ann@acme.com", "company": "Acme",
+          "designation": "CTO", "source": "greenhouse/acme", "confidence": 90,
+          "_domain": "acme.com", "_pool": False}],
+        [],
+        [{"name": "", "company": "Beta", "source": "hn", "_domain": "beta.io"}],
+    ]
+    PROBED = [("greenhouse", "acme", 1, ["golang"]), ("lever", "beta", 0, [])]
+
+    def _put_get(self, db, q):
+        from app.db.crud import get_scrape_cache, put_scrape_cache
+        put_scrape_cache(db, q, self.SIG, self.RESULTS, self.PROBED)
+        return get_scrape_cache(db, q, self.SIG)
+
+    def test_miss_when_absent(self, db_session):
+        from app.db.crud import get_scrape_cache
+        assert get_scrape_cache(db_session, "no-such-query", self.SIG) is None
+
+    def test_round_trip(self, db_session):
+        results, probed = self._put_get(db_session, "sc-round-trip")
+        assert results == self.RESULTS          # leads survive the JSON round-trip
+        # probed comes back as (ats, slug, n, tags) tuples for the cursor write-back
+        assert probed == [("greenhouse", "acme", 1, ["golang"]),
+                          ("lever", "beta", 0, [])]
+
+    def test_signature_mismatch_is_a_miss(self, db_session):
+        from app.db.crud import get_scrape_cache, put_scrape_cache
+        put_scrape_cache(db_session, "sc-sig", self.SIG, self.RESULTS, self.PROBED)
+        # A code change that adds/removes/reorders a source must invalidate the
+        # cached shape rather than mis-zip it onto today's scrapers.
+        assert get_scrape_cache(db_session, "sc-sig", self.SIG + ["workday"]) is None
+
+    def test_expired_is_a_miss(self, db_session):
+        from datetime import datetime, timedelta
+        from app.db.crud import get_scrape_cache, put_scrape_cache, _SCRAPE_CACHE_TTL
+        from app.db.models import ScrapeCache
+        put_scrape_cache(db_session, "sc-ttl", self.SIG, self.RESULTS, self.PROBED)
+        row = db_session.get(ScrapeCache, "sc-ttl")
+        row.updated_at = datetime.utcnow() - _SCRAPE_CACHE_TTL - timedelta(minutes=1)
+        db_session.commit()
+        assert get_scrape_cache(db_session, "sc-ttl", self.SIG) is None
+
+    def test_oversized_payload_is_skipped(self, db_session):
+        from app.db.crud import get_scrape_cache, put_scrape_cache, _SCRAPE_CACHE_MAX_LEADS
+        huge = [[{"email": f"p{i}@acme.com"} for i in range(_SCRAPE_CACHE_MAX_LEADS + 1)]]
+        put_scrape_cache(db_session, "sc-huge", ["one"], huge, [])
+        assert get_scrape_cache(db_session, "sc-huge", ["one"]) is None
+
+
 class TestDemoSeed:
     def test_seed_populates_then_clears(self, auth_client):
         r = auth_client.post("/api/demo/seed")

@@ -15,6 +15,7 @@ from app.db.crud import (
     get_domain_patterns, record_domain_pattern,
     get_explored_slugs, record_explored_slugs,
     get_all_company_tags, upsert_company_tags,
+    get_scrape_cache, put_scrape_cache,
 )
 from app.db.models import Contact, User
 from app.deps import get_current_user
@@ -773,39 +774,76 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
         query_tokens = frozenset(toks)
     probed: list[tuple] = []   # (ats_key, slug, n_leads, board_tags) per completed fetch
 
-    # Sources hit distinct hosts, so run them fully concurrently (no
-    # staggering) — but bounded: one slow board must not eat the wall-clock
-    # budget the resolve phase needs. Completed scrapers are harvested; the
-    # stragglers are cancelled and count as empty.
-    scrape_tasks = [asyncio.create_task(s.safe_search(
-        req.query, explored_slugs=explored, probed_out=probed,
-        query_variants=variants, query_tokens=query_tokens,
-    )) for s in scrapers]
-    done_scrape, pending_scrape = await asyncio.wait(scrape_tasks, timeout=_SCRAPE_BUDGET_SECONDS)
-    if pending_scrape:
-        for t in pending_scrape:
-            t.cancel()
-        await asyncio.gather(*pending_scrape, return_exceptions=True)
-        slow = [s.name for s, t in zip(scrapers, scrape_tasks) if t in pending_scrape]
-        log.info(f"Hunt: scrape budget hit — dropped slow sources: {', '.join(slow)}")
-    results_per_scraper = [
-        t.result() if (t in done_scrape and not t.cancelled() and t.exception() is None) else []
-        for t in scrape_tasks
-    ]
-    log.info(f"Hunt: scrape phase took {time.monotonic() - hunt_t0:.1f}s")
-
-    # Self-grow the directory: a company-name query that resolved on a real ATS
-    # board teaches us a new company→board mapping for everyone's future hunts.
-    if looks_like_company(req.query):
+    # ── Shared scrape cache ────────────────────────────────────────────────────
+    # The network scrape is the biggest slice of the wall-clock and is IDENTICAL
+    # for everyone hunting the same thing — so a popular query's first hunter
+    # pays for it and everyone else within the TTL skips straight to per-user
+    # resolution (which keeps broad hunts inside the serverless wall). Consulted
+    # ONLY on a "clean" hunt — empty exploration cursor (a first hunt for this
+    # query, or any company hunt, which never uses the cursor) — so a repeat
+    # hunter's cursor-driven FRESH slice is never displaced by an older cached
+    # one. Keyless only: the scraper set (hence the cached shape) must be stable.
+    scrapers_sig = [s.name for s in scrapers]
+    cache_eligible = not explored and not req.hunter_api_key
+    results_per_scraper: list | None = None
+    cache_hit = False
+    if cache_eligible:
         try:
-            _learn_companies(db, results_per_scraper)
+            cached = get_scrape_cache(db, query_norm, scrapers_sig)
+            if cached is not None:
+                results_per_scraper, probed = cached
+                cache_hit = True
+                n_cached = sum(len(r) for r in results_per_scraper)
+                log.info(f"Hunt: scrape cache HIT for {query_norm!r} "
+                         f"({n_cached} leads) — skipping scrape phase")
         except Exception as e:
-            log.debug(f"Hunt: company-learning skipped: {e}")
-    # HN apply-link harvest runs on EVERY hunt — the thread was just fetched.
-    try:
-        _learn_from_hn(db)
-    except Exception as e:
-        log.debug(f"Hunt: HN slug learning skipped: {e}")
+            log.debug(f"Hunt: scrape cache read skipped: {e}")
+
+    if not cache_hit:
+        # Sources hit distinct hosts, so run them fully concurrently (no
+        # staggering) — but bounded: one slow board must not eat the wall-clock
+        # budget the resolve phase needs. Completed scrapers are harvested; the
+        # stragglers are cancelled and count as empty.
+        scrape_tasks = [asyncio.create_task(s.safe_search(
+            req.query, explored_slugs=explored, probed_out=probed,
+            query_variants=variants, query_tokens=query_tokens,
+        )) for s in scrapers]
+        done_scrape, pending_scrape = await asyncio.wait(scrape_tasks, timeout=_SCRAPE_BUDGET_SECONDS)
+        if pending_scrape:
+            for t in pending_scrape:
+                t.cancel()
+            await asyncio.gather(*pending_scrape, return_exceptions=True)
+            slow = [s.name for s, t in zip(scrapers, scrape_tasks) if t in pending_scrape]
+            log.info(f"Hunt: scrape budget hit — dropped slow sources: {', '.join(slow)}")
+        results_per_scraper = [
+            t.result() if (t in done_scrape and not t.cancelled() and t.exception() is None) else []
+            for t in scrape_tasks
+        ]
+        log.info(f"Hunt: scrape phase took {time.monotonic() - hunt_t0:.1f}s")
+        # Populate the cache for the next hunter (best-effort — never break a hunt).
+        if cache_eligible:
+            try:
+                put_scrape_cache(db, query_norm, scrapers_sig, results_per_scraper, probed)
+            except Exception as e:
+                db.rollback()
+                log.debug(f"Hunt: scrape cache write skipped: {e}")
+
+    # Directory self-growth and HN slug learning feed on FRESHLY-scraped data —
+    # on a cache hit the writer already learned from it, so skip both (they also
+    # add network/DB work the cache hit exists to avoid).
+    if not cache_hit:
+        # Self-grow the directory: a company-name query that resolved on a real ATS
+        # board teaches us a new company→board mapping for everyone's future hunts.
+        if looks_like_company(req.query):
+            try:
+                _learn_companies(db, results_per_scraper)
+            except Exception as e:
+                log.debug(f"Hunt: company-learning skipped: {e}")
+        # HN apply-link harvest runs on every fresh hunt — the thread was just fetched.
+        try:
+            _learn_from_hn(db)
+        except Exception as e:
+            log.debug(f"Hunt: HN slug learning skipped: {e}")
 
     # ── Split: known-email contacts vs identity-only (need resolution) ─────────
     seen_emails: set[str] = set()

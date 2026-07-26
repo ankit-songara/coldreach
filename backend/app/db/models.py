@@ -222,3 +222,34 @@ class CompanyTag(Base):
     slug:       Mapped[str]      = mapped_column(String(255), primary_key=True)
     tags:       Mapped[dict]     = mapped_column(JSON, default=list)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ScrapeCache(Base):
+    """
+    Shared, cross-user cache of a hunt's RAW scrape output, keyed by normalized
+    query. The scrape phase (ATS/board/company-page fan-out over the network) is
+    the biggest slice of a hunt's wall-clock and is IDENTICAL for everyone
+    searching the same thing — so the first hunter for a popular query pays for
+    it, and everyone else within the short TTL skips straight to per-user
+    resolution and lands well inside the serverless wall.
+
+    Global (not user-scoped): scraped hiring signals are public facts about the
+    world, not about the searcher. The per-user owned-exclusion, resolve, verify
+    and exploration-cursor steps ALL still run downstream, so two users never see
+    each other's private list — only the same public leads. The cache is only
+    consulted on a "clean" hunt (empty exploration cursor: a first hunt for the
+    query, or any company hunt), so a repeat hunter's cursor-driven FRESH slice
+    is never displaced by an older cached one.
+
+    `payload` is {"scrapers": ["greenhouse", ...], "results": [[lead, ...], ...],
+    "probed": [["greenhouse","stripe",3,["golang"]], ...]} — plain JSON (not
+    Postgres JSONB) so SQLite dev/tests and Supabase share one model. Rows past
+    the TTL are ignored at read time (lazy expiry — no cron on serverless) and
+    overwritten on the next write. Created by create_all like every other table
+    (no manual DDL).
+    """
+    __tablename__ = "scrape_cache"
+
+    query_norm: Mapped[str]      = mapped_column(String(255), primary_key=True)
+    payload:    Mapped[dict]     = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

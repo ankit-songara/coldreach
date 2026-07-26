@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.db.models import (
     Contact, EmailDraft, Resume, ResumeFile, AppConfig, User, KnownCompany, EmailPattern,
-    ReplyMessage, HuntCursor, CompanyTag,
+    ReplyMessage, HuntCursor, CompanyTag, ScrapeCache,
 )
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.schemas.email import DraftCreate
@@ -646,6 +646,67 @@ def record_explored_slugs(db: Session, user_id: int, query_norm: str, new_keys: 
         row = HuntCursor(user_id=user_id, query_norm=query_norm)
         db.add(row)
     row.explored = {"ats_slugs": merged}
+    row.updated_at = datetime.utcnow()
+    db.commit()
+
+
+# ── Shared scrape cache ───────────────────────────────────────────────────────
+# A popular query's network scrape (ATS/board/company-page fan-out) is identical
+# for everyone and is the biggest slice of a hunt's wall-clock. Cache the raw
+# output globally so the first hunter pays for it and everyone else within the
+# TTL skips it. Short TTL because postings churn; lazy expiry (no cron on
+# serverless). See ScrapeCache for the cross-user-safety reasoning.
+_SCRAPE_CACHE_TTL = timedelta(hours=4)
+# Guard against a pathological payload bloating the row / JSON round-trip; a real
+# hunt caps far below this.
+_SCRAPE_CACHE_MAX_LEADS = 2000
+
+
+def get_scrape_cache(
+    db: Session, query_norm: str, scrapers_sig: list[str]
+) -> tuple[list, list] | None:
+    """Cached ``(results_per_scraper, probed)`` for this query, or ``None`` on a
+    miss / expiry / scraper-set mismatch (the sources changed since it was
+    written, so the cached shape no longer maps 1:1 onto today's scrapers)."""
+    row = db.get(ScrapeCache, query_norm)
+    if row is None or row.updated_at is None:
+        return None
+    if row.updated_at < datetime.utcnow() - _SCRAPE_CACHE_TTL:
+        return None
+    payload = row.payload or {}
+    if list(payload.get("scrapers") or []) != list(scrapers_sig):
+        return None
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return None
+    # `probed` is stored as lists; restore the (ats, slug, n, tags) tuple shape
+    # the cursor/tag write-back expects.
+    probed = [
+        tuple(p) for p in (payload.get("probed") or [])
+        if isinstance(p, (list, tuple)) and len(p) == 4
+    ]
+    return results, probed
+
+
+def put_scrape_cache(
+    db: Session, query_norm: str, scrapers_sig: list[str],
+    results_per_scraper: list, probed: list,
+) -> None:
+    """Store this hunt's raw scrape output for the next hunter (upsert). Skips
+    oversized payloads. Raises on a DB/serialization error — the caller wraps
+    this best-effort (a cache write must never break a hunt)."""
+    if sum(len(r) for r in results_per_scraper) > _SCRAPE_CACHE_MAX_LEADS:
+        return
+    payload = {
+        "scrapers": list(scrapers_sig),
+        "results":  [list(r) for r in results_per_scraper],
+        "probed":   [list(p) for p in probed],
+    }
+    row = db.get(ScrapeCache, query_norm)
+    if row is None:
+        row = ScrapeCache(query_norm=query_norm)
+        db.add(row)
+    row.payload = payload
     row.updated_at = datetime.utcnow()
     db.commit()
 
