@@ -12,33 +12,40 @@ import './styles/index.css'
 
 initTheme()
 
-// Empty string is fine: with no client ID the Auth screen hides the Google
-// button and falls back to email/password. The provider is harmless when unused.
+// With no client ID the Auth screen hides the Google button (GOOGLE_ENABLED)
+// and falls back to email/password — so the provider isn't needed. It is NOT
+// harmless when unused: GoogleOAuthProvider injects the third-party GSI
+// <script> on mount regardless of clientId, on EVERY visit (incl. the logged-out
+// landing). Mount it only when Google sign-in is actually configured.
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
+
+const app = (
+  <QueryClientProvider client={queryClient}>
+    <App />
+    <Toaster
+      position="bottom-right"
+      // On phones the fixed bottom tab bar would cover toasts — the CSS
+      // var lifts them above it (see index.css media query).
+      containerStyle={{ bottom: 'var(--toast-bottom, 16px)' }}
+      toastOptions={{
+      // Match the app's warm light theme instead of a stock dark toast.
+      style: {
+        background: 'var(--surface-1)',
+        color: 'var(--text)',
+        border: '1px solid var(--border-strong)',
+        boxShadow: 'var(--shadow-md)',
+      },
+    }} />
+    <SpeedInsights />
+  </QueryClientProvider>
+)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-    <GoogleOAuthProvider clientId={googleClientId}>
-      <QueryClientProvider client={queryClient}>
-        <App />
-        <Toaster
-          position="bottom-right"
-          // On phones the fixed bottom tab bar would cover toasts — the CSS
-          // var lifts them above it (see index.css media query).
-          containerStyle={{ bottom: 'var(--toast-bottom, 16px)' }}
-          toastOptions={{
-          // Match the app's warm light theme instead of a stock dark toast.
-          style: {
-            background: 'var(--surface-1)',
-            color: 'var(--text)',
-            border: '1px solid var(--border-strong)',
-            boxShadow: 'var(--shadow-md)',
-          },
-        }} />
-        <SpeedInsights />
-      </QueryClientProvider>
-    </GoogleOAuthProvider>
+      {googleClientId
+        ? <GoogleOAuthProvider clientId={googleClientId}>{app}</GoogleOAuthProvider>
+        : app}
     </ErrorBoundary>
   </React.StrictMode>,
 )
