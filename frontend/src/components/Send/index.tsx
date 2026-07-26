@@ -74,7 +74,11 @@ export default function Send() {
     },
     onSuccess: (updated) => {
       upsertContact(updated)
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      // Patch the cache in place instead of a full ['contacts'] refetch — the
+      // list is already correct locally, so re-downloading 245+ rows on every
+      // pill tap is pure waste.
+      qc.setQueryData<Contact[]>(['contacts'], rows =>
+        rows?.map(c => (c.id === updated.id ? updated : c)))
     },
     onError: (e: Error, _vars, ctx) => {
       if (ctx?.prev) upsertContact(ctx.prev)
@@ -83,9 +87,14 @@ export default function Send() {
   })
 
   const refreshContacts = async () => {
+    // A send changes server-side fields the client can't fully predict
+    // (last_emailed_at, followups_sent, status), so one real refetch is
+    // warranted — but only ONE: mirror it into both the store and the query
+    // cache rather than fetching the whole list twice (list() + invalidate).
     try {
-      setContacts(await contactsApi.list())
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      const rows = await contactsApi.list()
+      setContacts(rows)
+      qc.setQueryData(['contacts'], rows)
     } catch { /* next tab visit will refetch */ }
   }
 
@@ -114,7 +123,13 @@ export default function Send() {
         return
       }
     } else {
-      window.open(url, '_blank')
+      const win = window.open(url, '_blank')
+      if (!win) {
+        // Popup blocked — nothing opened, so nothing was sent; don't mark it
+        // (mirrors the long-body path above).
+        toast('Popup blocked — allow popups for this site, then try again', { icon: '🚫', duration: 6000 })
+        return
+      }
     }
     // Opening compose isn't proof it was sent — mark it, but offer an undo.
     statusMutation.mutate({ id: contactId, status: newStatus })
@@ -306,7 +321,7 @@ export default function Send() {
                 if (noCredentials) toast.error('Add your Gmail and App Password in Setup first')
                 else setShowConfirm(true)
               }}
-              disabled={sending}
+              disabled={sending || sendingId !== null}
               className="btn flex items-center gap-2 text-sm font-semibold"
               style={{
                 background: noCredentials ? 'var(--status-new-tint)' : 'color-mix(in srgb, var(--accent) 12%, transparent)',
@@ -538,6 +553,7 @@ export default function Send() {
                       <button
                         key={s}
                         onClick={() => statusMutation.mutate({ id: c.id, status: s })}
+                        disabled={statusMutation.isPending}
                         className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-all hit-target"
                         style={{
                           background: active ? meta.bg : 'transparent',

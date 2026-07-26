@@ -157,7 +157,8 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
     onSuccess: (updated) => {
       upsertContact(updated)
       updateHuntResult(updated)
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.setQueryData<Contact[]>(['contacts'], rows =>
+        rows?.map(x => (x.id === updated.id ? updated : x)))
     },
     onError: (e: Error, _status, ctx) => {
       if (ctx?.prev) { upsertContact(ctx.prev); updateHuntResult(ctx.prev) }
@@ -180,7 +181,8 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
       const updated = await contactsApi.update(c.id, { notes })
       upsertContact(updated)
       updateHuntResult(updated)
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.setQueryData<Contact[]>(['contacts'], rows =>
+        rows?.map(x => (x.id === updated.id ? updated : x)))
       toast.success('Note saved')
     } catch (e: any) {
       toast.error(e.message)
@@ -400,6 +402,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
                 <button
                   key={s}
                   onClick={() => statusMutation.mutate(s)}
+                  disabled={statusMutation.isPending}
                   className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-all hit-target"
                   style={{
                     background: active ? stMeta.bg : 'transparent',

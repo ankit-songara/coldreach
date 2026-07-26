@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { composeApi } from '../api/compose'
+import { getToken } from '../api/client'
 import { useStore } from '../store'
 import type { Draft } from '../types'
 
@@ -18,8 +19,12 @@ export function useAllDrafts() {
   const { data, isFetched } = useQuery({
     queryKey: ['drafts', 'all'],
     queryFn:  composeApi.getAllDrafts,
-    // Nothing to fetch with no contacts — and the endpoint would just 200 [].
-    enabled:  hasContacts,
+    // Gate on auth, not contact-count: gating on `hasContacts` forced this to
+    // wait for GET /contacts to resolve first (a serial waterfall on Compose/
+    // Send first paint). The endpoint 200s [] for a brand-new user, so the only
+    // cost of firing in parallel is one cheap empty call for the zero-contact
+    // case — in exchange for parallelizing the common path.
+    enabled:  !!getToken(),
   })
 
   // Fan the flat list back out into the store's per-contact shape.

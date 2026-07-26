@@ -52,7 +52,7 @@ export default function ContactCard({ contact: c, selectable, selected, onToggle
     onSuccess: () => {
       removeContact(c.id)
       removeHuntResult(c.id)
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.setQueryData<Contact[]>(['contacts'], rows => rows?.filter(x => x.id !== c.id))
       toast('Contact removed', { icon: '🗑️' })
     },
     onError: (e: Error) => toast.error(e.message),

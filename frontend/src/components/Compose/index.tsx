@@ -30,7 +30,10 @@ export default function Compose() {
       composeApi.generate(req),
     onSuccess: (draft, vars) => {
       const existing = drafts[draft.contact_id] ?? []
-      setDrafts(draft.contact_id, [draft, ...existing.filter(d => !d.is_followup)])
+      // Replacing the PRIMARY draft: keep the follow-up, drop the old primary.
+      // (Was inverted — it kept old primaries and deleted the follow-up, so a
+      // regen lost the follow-up and stacked duplicate primaries.)
+      setDrafts(draft.contact_id, [draft, ...existing.filter(d => d.is_followup)])
       if (!vars.silent) toast.success('Email generated')
     },
     onError: (e: Error) => toast.error(e.message),

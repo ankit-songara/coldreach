@@ -261,14 +261,15 @@ export default function Hunt() {
 
   const bulkSetStatus = async (status: ContactStatus) => {
     setBulkBusy(true)
-    let ok = 0
-    for (const id of selectedIds) {
+    // These PATCHes are independent (no rate-limit constraint) — fire them
+    // concurrently instead of one serial round-trip per contact.
+    const results = await Promise.all([...selectedIds].map(async id => {
       try {
-        const updated = await contactsApi.setStatus(id, status)
-        upsertContact(updated)
-        ok++
-      } catch { /* skip */ }
-    }
+        upsertContact(await contactsApi.setStatus(id, status))
+        return true
+      } catch { return false }
+    }))
+    const ok = results.filter(Boolean).length
     qc.invalidateQueries({ queryKey: ['contacts'] })
     toast.success(`Updated ${ok} contact${ok !== 1 ? 's' : ''} to ${STATUS_META[status].label}`)
     exitSelectMode()
@@ -277,15 +278,15 @@ export default function Hunt() {
 
   const bulkDelete = async () => {
     setBulkBusy(true)
-    let ok = 0
-    for (const id of selectedIds) {
+    const results = await Promise.all([...selectedIds].map(async id => {
       try {
         await contactsApi.delete(id)
         removeContact(id)
         removeHuntResult(id)
-        ok++
-      } catch { /* skip */ }
-    }
+        return true
+      } catch { return false }
+    }))
+    const ok = results.filter(Boolean).length
     qc.invalidateQueries({ queryKey: ['contacts'] })
     toast.success(`Removed ${ok} contact${ok !== 1 ? 's' : ''}`)
     exitSelectMode()

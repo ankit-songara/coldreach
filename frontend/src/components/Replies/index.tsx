@@ -6,7 +6,7 @@ import { inboxApi } from '../../api/inbox'
 import type { ReplyMessage } from '../../api/inbox'
 import Logo from '../shared/Logo'
 import { STATUS_META } from '../../types'
-import type { ContactStatus } from '../../types'
+import type { Contact, ContactStatus } from '../../types'
 import { displayDesignation } from '../../lib/display'
 
 // Outcomes recordable straight from a reply row. ('replied' is where the row
@@ -62,7 +62,10 @@ export default function Replies() {
     },
     onSuccess: (updated) => {
       upsertContact(updated)
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      // Patch the contacts cache in place (no 245-row refetch); the replies
+      // list still refetches since its server-side snapshot can shift.
+      qc.setQueryData<Contact[]>(['contacts'], rows =>
+        rows?.map(c => (c.id === updated.id ? updated : c)))
       qc.invalidateQueries({ queryKey: ['replies'] })
     },
     onError: (e: Error, _vars, ctx) => {
@@ -181,6 +184,7 @@ export default function Replies() {
                   <button
                     key={s}
                     onClick={() => statusMutation.mutate({ id: r.contact_id, status: s })}
+                    disabled={statusMutation.isPending}
                     className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-all hit-target"
                     style={{
                       background: active ? meta.bg : 'transparent',

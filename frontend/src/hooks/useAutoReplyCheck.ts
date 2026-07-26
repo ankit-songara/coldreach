@@ -34,8 +34,11 @@ export function useAutoReplyCheck(hasServerGmail: boolean) {
           `${res.replies_found} new ${res.replies_found === 1 ? 'reply' : 'replies'} since you were away`,
           { duration: 6000 },
         )
-        try { setContacts(await contactsApi.list()) } catch { /* next refetch */ }
-        qc.invalidateQueries({ queryKey: ['contacts'] })
+        try {
+          const rows = await contactsApi.list()
+          setContacts(rows)
+          qc.setQueryData(['contacts'], rows)
+        } catch { /* next refetch */ }
       })
       .catch(() => { /* silent — the manual "Check Replies" button still exists */ })
   }, [hasServerGmail]) // eslint-disable-line react-hooks/exhaustive-deps

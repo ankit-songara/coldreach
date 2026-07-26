@@ -155,8 +155,13 @@ export const useStore = create<AppState>()(
               duplicateContacts: data.duplicate_contacts ?? [],
             },
           })
-          try { set({ contacts: await contactsApi.list() }) } catch { /* refetch later */ }
-          queryClient.invalidateQueries({ queryKey: ['contacts'] })
+          // One refetch after a hunt (it saved new contacts) — mirror it into
+          // both the store and the query cache instead of fetching twice.
+          try {
+            const rows = await contactsApi.list()
+            set({ contacts: rows })
+            queryClient.setQueryData(['contacts'], rows)
+          } catch { /* refetch later */ }
           // Toasts fire from here so completion is announced on ANY tab.
           if (data.total > 0) {
             toast.success(`Found ${data.total} new contact${data.total !== 1 ? 's' : ''} — see the Hunt tab`)
