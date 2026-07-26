@@ -128,29 +128,69 @@ class ContactRepository:
         duplicate, so the hunt can SHOW the user which contacts those were
         instead of a bare count.
 
-        Commits one row at a time so a unique-constraint violation from a
-        concurrent hunt only skips that row instead of failing the whole batch.
+        Batched on purpose: the old per-row SELECT+INSERT+COMMIT (plus a refresh
+        each) made persistence O(N) round-trips to the DB — which grew with the
+        user's contact count and, after the hunt's time budget, pushed broad
+        hunts past the serverless wall. Now it's: ONE existence query, ONE
+        batched insert/commit, and NO per-row reload. `expire_on_commit=False`
+        keeps the inserted rows' attributes readable after commit (the caller
+        serialises id/name/email/… but never created_at), so building the
+        response costs zero extra queries. Falls back to per-row only on a
+        concurrent-insert race, so a lost race still skips just the racing row.
         """
-        created:  list[Contact] = []
-        existing: list[Contact] = []
+        # Dedupe input by email — one hunt can surface the same address from
+        # several sources; a batch with two identical (user_id, email) rows would
+        # violate the unique constraint and fail the whole insert.
+        by_email: dict[str, ContactCreate] = {}
         for c in contacts:
-            prior = self.get_by_email(c.email)
-            if prior:
-                existing.append(prior)
-                continue
-            obj = Contact(user_id=self.user_id, **c.model_dump())
-            self.db.add(obj)
-            try:
-                self.db.commit()
-            except IntegrityError:
-                self.db.rollback()   # another request inserted it first
+            by_email.setdefault(c.email, c)
+        if not by_email:
+            return [], []
+
+        emails = list(by_email.keys())
+        # ONE query for the already-owned rows among these emails — this is also
+        # exactly the "existing/duplicate" set the hunt reports.
+        existing = (
+            self.db.query(Contact)
+            .filter(Contact.user_id == self.user_id, Contact.email.in_(emails))
+            .all()
+        )
+        owned = {c.email for c in existing}
+        to_insert = [c for em, c in by_email.items() if em not in owned]
+        if not to_insert:
+            return [], existing
+
+        objs = [Contact(user_id=self.user_id, **c.model_dump()) for c in to_insert]
+        prev_expire = self.db.expire_on_commit
+        self.db.expire_on_commit = False
+        try:
+            self.db.add_all(objs)
+            self.db.commit()          # one batched round-trip; PKs populated in place
+            return objs, existing
+        except IntegrityError:
+            # A concurrent hunt inserted one of these — fall back to per-row so
+            # only the racing row is skipped, not the whole batch.
+            self.db.rollback()
+            created: list[Contact] = []
+            existing_by_email = {c.email: c for c in existing}
+            for c in to_insert:
                 prior = self.get_by_email(c.email)
                 if prior:
-                    existing.append(prior)
-                continue
-            self.db.refresh(obj)
-            created.append(obj)
-        return created, existing
+                    existing_by_email.setdefault(c.email, prior)
+                    continue
+                obj = Contact(user_id=self.user_id, **c.model_dump())
+                self.db.add(obj)
+                try:
+                    self.db.commit()
+                    created.append(obj)
+                except IntegrityError:
+                    self.db.rollback()
+                    p = self.get_by_email(c.email)
+                    if p:
+                        existing_by_email.setdefault(c.email, p)
+            return created, list(existing_by_email.values())
+        finally:
+            self.db.expire_on_commit = prev_expire
 
     def update(self, contact_id: int, data: ContactUpdate) -> Contact | None:
         contact = self.get_by_id(contact_id)

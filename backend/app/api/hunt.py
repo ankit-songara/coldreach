@@ -62,7 +62,11 @@ router = APIRouter(prefix="/hunt", tags=["hunt"])
 # the total past the wall once the ATS scan breadth was widened.
 _SCRAPE_BUDGET_SECONDS  = 18 if os.environ.get("VERCEL") else 40
 _RESOLVE_BUDGET_SECONDS = 35 if os.environ.get("VERCEL") else 45
-_TOTAL_HUNT_BUDGET_SECONDS = 52 if os.environ.get("VERCEL") else 120
+# Vercel Hobby kills a function at 60s. The batched persist (crud.bulk_create)
+# now costs ~1 round-trip instead of O(N), so the post-budget tail is small — but
+# keep a comfortable margin (cold start + persist + duplicate hydration + cursor
+# writeback + response) well under 60s. 48s leaves ~12s of headroom.
+_TOTAL_HUNT_BUDGET_SECONDS = 48 if os.environ.get("VERCEL") else 120
 _MIN_RESOLVE_SECONDS = 8    # floor: always give resolution a real chance
 # Held back from the resolve budget for the (third) verify phase, and used as a
 # hard deadline on it, so a flood of direct-email leads with slow/flaky MX

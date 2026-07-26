@@ -108,6 +108,48 @@ class TestContacts:
         assert r.status_code == 404
 
 
+class TestBulkCreateBatching:
+    """The batched persist path (one existence query + one insert, no per-row
+    reload) that keeps broad hunts under the serverless wall as the user's
+    contact count grows."""
+
+    def _repo(self, db):
+        from app.db.crud import ContactRepository
+        return ContactRepository(db, user_id=9991)   # isolated user id
+
+    def _cc(self, email, name="Jane Doe"):
+        from app.schemas.contact import ContactCreate
+        return ContactCreate(name=name, email=email, designation="CTO", company="Acme")
+
+    def test_empty_input(self, db_session):
+        assert self._repo(db_session).bulk_create([]) == ([], [])
+
+    def test_batch_insert_all_new(self, db_session):
+        repo = self._repo(db_session)
+        created, existing = repo.bulk_create([self._cc(f"batch{i}@acme.com") for i in range(5)])
+        assert len(created) == 5 and existing == []
+        # Usable right after commit with NO reload: id populated, fields readable,
+        # client-side defaults applied.
+        assert all(c.id and c.email and c.status == "new" for c in created)
+
+    def test_intra_batch_dedupes_same_email(self, db_session):
+        repo = self._repo(db_session)
+        created, _ = repo.bulk_create([
+            self._cc("dupe@acme.com", "First"),
+            self._cc("dupe@acme.com", "Second"),
+        ])
+        assert len(created) == 1   # one address, one row — no unique-constraint blowup
+
+    def test_existing_returned_and_skipped(self, db_session):
+        repo = self._repo(db_session)
+        repo.bulk_create([self._cc("owned@acme.com")])
+        created, existing = repo.bulk_create([
+            self._cc("owned@acme.com"), self._cc("fresh@acme.com"),
+        ])
+        assert [c.email for c in created] == ["fresh@acme.com"]
+        assert [e.email for e in existing] == ["owned@acme.com"]
+
+
 class TestDemoSeed:
     def test_seed_populates_then_clears(self, auth_client):
         r = auth_client.post("/api/demo/seed")
