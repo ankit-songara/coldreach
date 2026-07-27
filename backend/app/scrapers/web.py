@@ -10,7 +10,7 @@ address the company actually publishes.
 
 import re
 import asyncio
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 import httpx
 from app.netguard import resolves_public
 
@@ -426,6 +426,63 @@ async def find_person_email(domain: str, first: str, last: str,
     for e in emails:
         local, _, mail_domain = e.partition("@")
         if mail_domain == domain and _local_matches_person(local, first, last):
+            return e
+    return None
+
+
+# ── Link-in-bio pages (Linktree & friends) ────────────────────────────────────
+# People (esp. founders/creators) often put ONE bio-aggregator link in their
+# profile that lists a direct, SELF-PUBLISHED email — an address a pattern-guess
+# can't find (it may be a personal or a vanity domain). We only ever read a page
+# whose host is on this allowlist, which also bounds the fetch to known public
+# domains (a crafted provenance URL can't point us at an internal host → no SSRF).
+_LINKBIO_HOSTS = (
+    "linktr.ee", "linktree.com", "bio.link", "beacons.ai", "beacons.page",
+    "stan.store", "carrd.co", "about.me", "lnk.bio", "linkin.bio", "solo.to",
+    "tap.bio", "campsite.bio", "msha.ke", "hoo.be", "znap.link", "biolink.info",
+)
+_LINKBIO_RE = re.compile(
+    r"https?://(?:www\.)?(?:"
+    + "|".join(h.replace(".", r"\.") for h in _LINKBIO_HOSTS)
+    + r")/[A-Za-z0-9._%\-/]+",
+    re.IGNORECASE,
+)
+
+
+def linkbio_url_in(text: str) -> str | None:
+    """The first link-in-bio (Linktree/bio.link/…) URL in a blob of text, or None.
+    Percent-decoded first, since provenance notes often wrap URLs."""
+    if not text:
+        return None
+    m = _LINKBIO_RE.search(unquote(text))
+    return m.group(0).rstrip(".,);]'\"") if m else None
+
+
+async def linkbio_email_for_person(text: str, first: str, last: str,
+                                   timeout: int = 6) -> str | None:
+    """If `text` links a person's bio-aggregator page, fetch that ONE page and
+    return the email whose local part matches THIS person — a self-published
+    address that needs no verification (like a printed one). Keyless, and only
+    ever makes a request when such a URL is actually present. Returns None
+    otherwise."""
+    if not first or not last:
+        return None
+    url = linkbio_url_in(text)
+    if not url:
+        return None
+    host = (urlsplit(url).hostname or "").lower()
+    if not host or not await asyncio.to_thread(resolves_public, host):
+        return None
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True,
+            headers={"User-Agent": _BROWSER_UA},
+        ) as client:
+            page = await _cached_get(client, url, timeout)
+    except Exception:
+        return None
+    for e in _clean(_emails_in(page)):
+        if _local_matches_person(e.partition("@")[0], first, last):
             return e
     return None
 

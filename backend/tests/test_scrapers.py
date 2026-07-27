@@ -303,6 +303,51 @@ class TestLinkedInDiscovery:
         assert asyncio.run(web.search_person_linkedin("Priya", "", "Acme")) is None  # no last name
 
 
+class TestLinkBio:
+    """Link-in-bio grounding: a person's self-published email pulled from a
+    Linktree/bio.link/… page they linked in their provenance note."""
+
+    def test_url_extraction(self):
+        from app.scrapers.web import linkbio_url_in
+        assert linkbio_url_in("reach me: https://linktr.ee/janedoe now") == "https://linktr.ee/janedoe"
+        assert linkbio_url_in("https://www.bio.link/kai-lin") == "https://www.bio.link/kai-lin"
+        assert linkbio_url_in("bio.link/kai") is None            # no scheme → not matched
+        assert linkbio_url_in("nothing to see") is None
+        # percent-encoded (provenance often wraps URLs)
+        assert linkbio_url_in("u=https%3A%2F%2Flinktr.ee%2Fjane") == "https://linktr.ee/jane"
+
+    def test_email_name_matched(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+        async def fake_get(client, url, timeout):
+            return "<p>book a call · email me at jane.doe@acme.com</p>"
+        monkeypatch.setattr(web, "_cached_get", fake_get)
+        monkeypatch.setattr(web, "resolves_public", lambda host: True)
+        got = asyncio.run(web.linkbio_email_for_person("bio: https://linktr.ee/janedoe", "Jane", "Doe"))
+        assert got == "jane.doe@acme.com"
+
+    def test_email_ignores_non_matching(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+        async def fake_get(client, url, timeout):
+            return "<p>team@acme.com and bob@acme.com</p>"   # neither is Jane
+        monkeypatch.setattr(web, "_cached_get", fake_get)
+        monkeypatch.setattr(web, "resolves_public", lambda host: True)
+        assert asyncio.run(web.linkbio_email_for_person("https://linktr.ee/janedoe", "Jane", "Doe")) is None
+
+    def test_no_bio_url_makes_no_request(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+        calls = {"n": 0}
+        async def fake_get(client, url, timeout):
+            calls["n"] += 1
+            return ""
+        monkeypatch.setattr(web, "_cached_get", fake_get)
+        # No bio URL in the note → returns None WITHOUT fetching anything.
+        assert asyncio.run(web.linkbio_email_for_person("Jane Doe, founder at Acme", "Jane", "Doe")) is None
+        assert calls["n"] == 0
+
+
 class TestHNSelfIntro:
     """A poster who names themselves ('I'm Jane Smith, co-founder') becomes a
     named lead even with no embedded email, so the resolver/page-scrape can find

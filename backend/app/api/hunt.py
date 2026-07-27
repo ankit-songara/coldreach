@@ -41,7 +41,7 @@ from app.scrapers.hackernews import HackerNewsScraper
 from app.scrapers.yc import YCStartupsScraper
 from app.scrapers.web import (
     emails_from_company_pages, find_published_role_email, find_person_email,
-    search_role_email_on_web, linkedin_for_person,
+    search_role_email_on_web, linkedin_for_person, linkbio_email_for_person,
     HIRING_PREFIXES, GENERAL_PREFIXES,
 )
 from app.scrapers import directory
@@ -386,7 +386,19 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
     ):
         parts = name.split()
         first, last = parts[0], parts[-1]
-        # A) Keyless grounding first: the person's REAL email published on the
+        # A0) If this person linked a bio-aggregator page (Linktree/bio.link/…)
+        # in their provenance, it often lists a direct, self-published email an
+        # ordinary pattern-guess can't find. Self-published → no verification
+        # needed. Only fetches when such a URL is actually present in the note.
+        bio_email = await linkbio_email_for_person(raw.get("context") or "", first, last)
+        if bio_email:
+            # Only teach the domain's pattern when it's the SAME company domain —
+            # a personal address (jane@gmail.com) must not pollute pattern memory.
+            if bio_email.rsplit("@", 1)[-1] == domain:
+                cache.observe(bio_email, name)
+            return {**raw, "email": bio_email, "confidence": 75,
+                    "email_status": "valid", "_domain": None}
+        # A) Keyless grounding next: the person's REAL email published on the
         # company's own pages. No key, no SMTP — a printed address needs no
         # verification, so this is the one path that surfaces named people on a
         # serverless host where port 25 is blocked. Only taken when the scraped
