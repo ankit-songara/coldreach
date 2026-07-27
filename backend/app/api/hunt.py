@@ -490,11 +490,19 @@ _DISCOVERABLE_ATS = {"greenhouse", "lever", "ashby", "smartrecruiters", "recruit
 
 
 def _learn_companies(db: Session, results_per_scraper: list) -> None:
-    """Persist genuinely-new company→ATS mappings found during a company-name hunt
-    so the directory self-grows. Best-effort — never breaks a hunt."""
+    """Persist genuinely-new company→ATS mappings found during ANY hunt so the
+    directory self-grows from real usage — every lead on a re-probeable ATS board
+    is a mapping worth remembering for everyone's future hunts. BOUNDED per hunt
+    (_MAX_LEARNED_PER_HUNT): each add is a SELECT+INSERT to Supabase, so a broad
+    query's flood of results must not blow the time budget. Already-known mappings
+    are filtered in-memory (directory.is_known) and cost nothing. Best-effort —
+    never breaks a hunt."""
     seen: set[tuple[str, str]] = set()
+    learned = 0
     for results in results_per_scraper:
         for r in results:
+            if learned >= _MAX_LEARNED_PER_HUNT:
+                return
             ats_name, sep, slug = (r.get("source") or "").partition("/")
             ats, slug = ats_name.strip().lower(), slug.strip()
             if not sep or ats not in _DISCOVERABLE_ATS or not slug:
@@ -509,22 +517,24 @@ def _learn_companies(db: Session, results_per_scraper: list) -> None:
             try:
                 add_known_company(db, name=r.get("company") or slug, slug=slug,
                                    ats=ats, domain=domain, source="discovered")
+                learned += 1
                 log.info(f"Hunt: learned new company {r.get('company') or slug} ({ats}/{slug})")
             except Exception:
                 db.rollback()
 
 
-# Cap on directory rows learned per hunt: each add is a SELECT+INSERT round
-# trip to Supabase inside the 52s budget. The first post-deploy hunt sees the
-# whole backlog (~50 mappings); the monthly trickle after that is ~40-70.
+# Cap on directory rows learned per hunt, applied SEPARATELY by _learn_companies
+# and _learn_from_hn: each add is a SELECT+INSERT round trip to Supabase inside
+# the hunt's time budget. Most results are already-known (filtered in-memory for
+# free), so the real per-hunt trickle is small; the cap only bounds the worst
+# case (a broad query surfacing many brand-new boards at once).
 _MAX_LEARNED_PER_HUNT = 25
 
 
 def _learn_from_hn(db: Session) -> None:
     """Persist company→ATS mappings harvested from the HN thread's apply links
-    (the thread is already fetched — zero extra HTTP). Runs on EVERY hunt,
-    unlike _learn_companies which only fires on company-name queries.
-    Best-effort: never breaks a hunt."""
+    (the thread is already fetched — zero extra HTTP). Best-effort: never breaks
+    a hunt."""
     from app.scrapers.hackernews import harvested_mappings
     learned = 0
     for m in harvested_mappings():
@@ -840,13 +850,14 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # on a cache hit the writer already learned from it, so skip both (they also
     # add network/DB work the cache hit exists to avoid).
     if not cache_hit:
-        # Self-grow the directory: a company-name query that resolved on a real ATS
-        # board teaches us a new company→board mapping for everyone's future hunts.
-        if looks_like_company(req.query):
-            try:
-                _learn_companies(db, results_per_scraper)
-            except Exception as e:
-                log.debug(f"Hunt: company-learning skipped: {e}")
+        # Self-grow the directory from EVERY hunt (not just company-name queries):
+        # any lead on a re-probeable ATS board is a company→board mapping worth
+        # remembering for everyone's future hunts. Bounded per hunt (see
+        # _learn_companies) so a broad query's flood of results can't blow the budget.
+        try:
+            _learn_companies(db, results_per_scraper)
+        except Exception as e:
+            log.debug(f"Hunt: company-learning skipped: {e}")
         # HN apply-link harvest runs on every fresh hunt — the thread was just fetched.
         try:
             _learn_from_hn(db)

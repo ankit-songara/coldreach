@@ -256,6 +256,56 @@ class TestRecordDomainPatternsBatch:
         assert self._patterns(db_session, ["rdpb-f.com"]) == {}
 
 
+class TestLearnCompaniesEveryHunt:
+    """The known_companies directory self-grows from EVERY hunt's results (not
+    only company-name queries), bounded per hunt so a broad query's flood of
+    results can't flood the DB."""
+
+    def _leads(self, n, ats="greenhouse", prefix="lcgrow"):
+        # One scraper's worth of leads, each a re-probeable ATS board mapping.
+        return [[{
+            "source": f"{ats}/{prefix}-{i}", "company": f"Co {i}",
+            "_domain": f"{prefix}{i}.com", "email": "",
+        } for i in range(n)]]
+
+    def _cleanup(self, db, prefix):
+        from app.scrapers import directory
+        from app.db.models import KnownCompany
+        for kc in db.query(KnownCompany).filter(KnownCompany.slug.like(f"{prefix}-%")).all():
+            directory.unregister(kc.ats, kc.slug)
+            db.delete(kc)
+        db.commit()
+
+    def test_learns_from_arbitrary_results(self, db_session):
+        from app.api.hunt import _learn_companies
+        from app.scrapers import directory
+        try:
+            assert not directory.is_known("greenhouse", "lcgrow-0")
+            _learn_companies(db_session, self._leads(3))
+            # Learned regardless of the query — the function has no company-name gate.
+            for i in range(3):
+                assert directory.is_known("greenhouse", f"lcgrow-{i}")
+        finally:
+            self._cleanup(db_session, "lcgrow")
+
+    def test_caps_per_hunt(self, db_session):
+        from app.api.hunt import _learn_companies, _MAX_LEARNED_PER_HUNT
+        from app.db.models import KnownCompany
+        try:
+            _learn_companies(db_session, self._leads(_MAX_LEARNED_PER_HUNT + 10, prefix="lccap"))
+            learned = db_session.query(KnownCompany).filter(KnownCompany.slug.like("lccap-%")).count()
+            assert learned == _MAX_LEARNED_PER_HUNT   # bounded, not all 35
+        finally:
+            self._cleanup(db_session, "lccap")
+
+    def test_skips_non_discoverable_ats(self, db_session):
+        from app.api.hunt import _learn_companies
+        from app.db.models import KnownCompany
+        # Workday can't be re-probed by slug, so it must never be learned.
+        _learn_companies(db_session, [[{"source": "workday/lcskip-1", "company": "W", "_domain": "w.com"}]])
+        assert db_session.query(KnownCompany).filter(KnownCompany.slug == "lcskip-1").count() == 0
+
+
 class TestDemoSeed:
     def test_seed_populates_then_clears(self, auth_client):
         r = auth_client.post("/api/demo/seed")
