@@ -321,12 +321,15 @@ export default function App() {
     // MODAL over it (Auth portals itself to <body>), so the nav + page stay
     // visible behind a dimmed backdrop instead of a full-page navigation.
     return (
-      <Suspense fallback={<TabLoading />}>
-        <Landing onLogin={() => setAuthView('login')} onSignup={() => setAuthView('register')} />
-        {authView !== 'landing' && (
-          <Auth initialMode={authView} onClose={() => setAuthView('landing')} />
-        )}
-      </Suspense>
+      <>
+        <Suspense fallback={<TabLoading />}>
+          <Landing onLogin={() => setAuthView('login')} onSignup={() => setAuthView('register')} />
+          {authView !== 'landing' && (
+            <Auth initialMode={authView} onClose={() => setAuthView('landing')} />
+          )}
+        </Suspense>
+        <Analytics />
+      </>
     )
   }
 
