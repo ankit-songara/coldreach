@@ -451,6 +451,76 @@ class TestAtsDomainGuessGate:
         assert not any(l.get("_domain") for l in leads3)
 
 
+class TestSmartRecruitersSearch:
+    """The keyless global SmartRecruiters search: one call → many companies,
+    domain guessed from the company name, sibling variants tagged."""
+
+    def test_emits_company_domain_leads(self, monkeypatch):
+        import asyncio, httpx
+        from app.scrapers.jobboards import SmartRecruitersSearchScraper
+
+        page1 = {"content": [
+            {"name": "Backend Engineer",   "company": {"name": "Eurofins", "identifier": "Eurofins"}},
+            {"name": "Golang Engineer",     "company": {"name": "AcmeCo",   "identifier": "AcmeCo"}},
+            {"name": "Account Executive",   "company": {"name": "NoMatchCo","identifier": "x"}},
+        ]}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            # Page 1 (offset=0) has data; the next page is empty → loop stops.
+            if request.url.params.get("offset") in ("0", None):
+                return httpx.Response(200, json=page1)
+            return httpx.Response(200, json={"content": []})
+
+        real = httpx.AsyncClient
+        monkeypatch.setattr(httpx, "AsyncClient",
+                            lambda *a, **kw: real(transport=httpx.MockTransport(handler)))
+        leads = asyncio.run(SmartRecruitersSearchScraper().search(
+            "backend engineer hiring", query_variants=("golang", "python")))
+        by = {l["company"]: l for l in leads}
+        assert by["Eurofins"]["_domain"] == "eurofins.com" and not by["Eurofins"].get("_sibling")
+        assert by["AcmeCo"].get("_sibling") is True          # matched the golang variant
+        assert "NoMatchCo" not in by                         # no role match → dropped
+        assert all(l["source"] == "SmartRecruitersSearch" and l["name"] == "" for l in leads)
+
+
+class TestTeamtailor:
+    """Teamtailor's public JSON Feed: derives the employer's ROOT domain from
+    hiringOrganization.sameAs; the default *.teamtailor.com yields no domain."""
+
+    def test_root_domain_derivation(self):
+        from app.scrapers.ats import _teamtailor_domain
+        assert _teamtailor_domain("https://careers.oatly.com") == "oatly.com"
+        assert _teamtailor_domain("https://jobs.acme.co.uk") == "acme.co.uk"
+        assert _teamtailor_domain("https://acme.com") == "acme.com"
+        assert _teamtailor_domain("https://oatly.teamtailor.com") == ""   # default host, not real mail domain
+        assert _teamtailor_domain("") == ""
+
+    def test_fetch_returns_company_domain_jobs(self, monkeypatch):
+        import asyncio, httpx
+        from app.scrapers.ats import TeamtailorScraper
+
+        feed = {"title": "Oatly AB", "items": [{
+            "title": "Nutrition Specialist",
+            "content_html": "<p>Own our nutrition science.</p>",
+            "_jobposting": {
+                "hiringOrganization": {"name": "Oatly AB", "sameAs": "https://careers.oatly.com"},
+                "jobLocation": [{"address": {"addressLocality": "London", "addressCountry": "GB"}}],
+            },
+        }]}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=feed, headers={"content-type": "application/feed+json"})
+
+        real = httpx.AsyncClient
+        monkeypatch.setattr(httpx, "AsyncClient",
+                            lambda *a, **kw: real(transport=httpx.MockTransport(handler)))
+        company, domain, jobs = asyncio.run(TeamtailorScraper()._fetch(None, "oatly"))
+        assert company == "Oatly AB"
+        assert domain == "oatly.com"                    # careers.oatly.com → root
+        assert jobs and jobs[0]["title"] == "Nutrition Specialist"
+        assert jobs[0]["location"] == "London, GB"
+
+
 class TestBoardTechTags:
     def test_tags_learned_word_bounded(self):
         from app.scrapers.ats import _board_tech_tags

@@ -533,3 +533,79 @@ class BreezyScraper(BaseATSScraper):
             "text":     _strip_html(p.get("description", "")),
         } for p in data[:15] if isinstance(p, dict)]
         return company, "", jobs
+
+
+# ── Teamtailor ──────────────────────────────────────────────────────────────────
+
+def _teamtailor_domain(same_as: str) -> str:
+    """Corporate ROOT domain from a Teamtailor `hiringOrganization.sameAs`, e.g.
+    'https://careers.oatly.com' → 'oatly.com'. Returns '' for the default
+    '{slug}.teamtailor.com' (never a real mail domain) so the base falls back to
+    its slug-guess gate."""
+    host = _domain_from_url(same_as)
+    if not host or host.endswith("teamtailor.com"):
+        return ""
+    labels = host.split(".")
+    if len(labels) >= 3 and labels[0] in {
+        "careers", "career", "jobs", "job", "apply", "work", "hire", "hiring",
+    }:
+        return ".".join(labels[1:])
+    return host
+
+
+def _teamtailor_location(loc) -> str:
+    """'City, Country' from a schema.org jobLocation (a list or a single dict)."""
+    if isinstance(loc, list):
+        loc = loc[0] if loc else {}
+    addr = ((loc or {}).get("address") or {}) if isinstance(loc, dict) else {}
+    return ", ".join(p for p in (addr.get("addressLocality"), addr.get("addressCountry")) if p)
+
+
+class TeamtailorScraper(BaseATSScraper):
+    """Teamtailor's public JSON Feed ({slug}.teamtailor.com/jobs.json) — big in
+    Europe/Nordics, and the ONLY ATS feed that hands us the employer's own domain
+    (hiringOrganization.sameAs), so its leads get a real domain, no guessing.
+    Seed-based like the other ATS: role queries scan learned Teamtailor
+    companies, company-name queries probe derived slugs directly. Uses a browser
+    UA (own client) since it's a real site, not a bare API host."""
+
+    name = "Teamtailor"
+    ats_key = "teamtailor"
+    _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+           "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+    async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
+        url = f"https://{slug}.teamtailor.com/jobs.json"
+        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": self._UA},
+                                     follow_redirects=True) as own:
+            resp = await own.get(url)
+            if not resp.is_success or "json" not in resp.headers.get("content-type", ""):
+                return "", "", []
+            try:
+                data = resp.json()
+            except Exception:
+                return "", "", []
+
+        items = data.get("items") or []
+        if not items:
+            return "", "", []
+        company = (data.get("title") or "").strip() or slug.replace("-", " ").title()
+        api_domain = ""
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            same = ((it.get("_jobposting") or {}).get("hiringOrganization") or {}).get("sameAs") or ""
+            api_domain = _teamtailor_domain(same)
+            if api_domain:
+                break
+        jobs = []
+        for it in items[:20]:
+            if not isinstance(it, dict):
+                continue
+            jp = it.get("_jobposting") or {}
+            jobs.append({
+                "title":    (it.get("title") or jp.get("title") or "").strip(),
+                "location": _teamtailor_location(jp.get("jobLocation")),
+                "text":     _strip_html(it.get("content_html") or jp.get("description") or ""),
+            })
+        return company, api_domain, jobs

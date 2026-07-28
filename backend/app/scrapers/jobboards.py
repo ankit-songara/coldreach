@@ -345,6 +345,71 @@ class WorkableSearchScraper(BaseScraper):
         return leads
 
 
+class SmartRecruitersSearchScraper(BaseScraper):
+    """SmartRecruiters' global public job search (jobs.smartrecruiters.com/
+    sr-jobs/search): 340k+ live postings across EVERY SmartRecruiters customer in
+    ONE keyless call — a whole population of large/established employers the
+    startup-heavy Greenhouse/Lever/Ashby/YC sources miss, no per-company slug
+    needed. Server-side search, so it can't reuse _JsonBoard's fetch-everything
+    model.
+
+    The search carries no company website, so the domain is guessed from the
+    company name (_guess_domain) exactly like the other job-board scrapers — the
+    guess is only kept if it has real MX + a published address downstream, so
+    nothing ungrounded is persisted."""
+
+    name = "SmartRecruitersSearch"
+    _URL = "https://jobs.smartrecruiters.com/sr-jobs/search"
+    PAGES = 2   # ~98 postings/page; 2 pages ≈ 200, deduped to companies
+
+    async def search(self, query: str, *, query_variants: tuple = (), **_) -> list[dict]:
+        company_mode = looks_like_company(query)
+        leads: list[dict] = []
+        seen_domains: set[str] = set()
+        offset = 0
+        try:
+            async with httpx.AsyncClient(
+                timeout=15, headers={"User-Agent": UA}, follow_redirects=True,
+            ) as client:
+                for _page in range(self.PAGES):
+                    r = await client.get(self._URL, params={"q": query, "limit": 100, "offset": offset})
+                    if not r.is_success:
+                        break
+                    content = r.json().get("content") or []
+                    if not content:
+                        break
+                    for p in content:
+                        if not isinstance(p, dict):
+                            continue
+                        comp = ((p.get("company") or {}).get("name") or "").strip()
+                        title = (p.get("name") or "").strip()
+                        if not comp or not title:
+                            continue
+                        match = _matches(query, company_mode, title, [], comp, query_variants)
+                        if not match:
+                            continue
+                        domain = _guess_domain(comp)
+                        if not domain or domain in seen_domains:
+                            continue
+                        seen_domains.add(domain)
+                        lead = {
+                            "name":        "",
+                            "email":       "",
+                            "company":     comp,
+                            "designation": "Recruiter",
+                            "source":      self.name,
+                            "context":     f"Actively hiring for '{title}' at {comp} (via SmartRecruiters)",
+                            "_domain":     domain,
+                        }
+                        if match == "sibling":
+                            lead["_sibling"] = True
+                        leads.append(lead)
+                    offset += len(content)
+        except Exception:
+            return leads
+        return leads
+
+
 class TheMuseScraper(_JsonBoard):
     name = "TheMuse"
 

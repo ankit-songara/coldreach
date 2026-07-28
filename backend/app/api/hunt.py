@@ -29,13 +29,13 @@ from app.scrapers.enricher import HunterEnricher
 from app.scrapers.ats import (
     GreenhouseScraper, LeverScraper, AshbyScraper,
     SmartRecruitersScraper, RecruiteeScraper,
-    WorkableScraper, BreezyScraper,
+    WorkableScraper, BreezyScraper, TeamtailorScraper,
 )
 from app.scrapers.workday import WorkdayScraper
 from app.scrapers.jobboards import (
     RemoteOKScraper, RemotiveScraper, ArbeitnowScraper,
     JobicyScraper, HimalayasScraper, TheMuseScraper, WeWorkRemotelyScraper,
-    WorkingNomadsScraper, WorkableSearchScraper,
+    WorkingNomadsScraper, WorkableSearchScraper, SmartRecruitersSearchScraper,
 )
 from app.scrapers.hackernews import HackerNewsScraper
 from app.scrapers.yc import YCStartupsScraper
@@ -290,6 +290,7 @@ def _build_scrapers(hunter_key: str) -> list:
         RecruiteeScraper(),
         WorkableScraper(),
         BreezyScraper(),
+        TeamtailorScraper(),
         WorkdayScraper(),
         RemoteOKScraper(),
         RemotiveScraper(),
@@ -300,6 +301,7 @@ def _build_scrapers(hunter_key: str) -> list:
         WeWorkRemotelyScraper(),
         WorkingNomadsScraper(),
         WorkableSearchScraper(),
+        SmartRecruitersSearchScraper(),
         HackerNewsScraper(),
         # Registered last: YC pool leads are tagged _pool and only fill the
         # funnel slots left over after organically-discovered leads.
@@ -498,7 +500,7 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
 
 # ATS sources whose results encode a verified company→board mapping worth keeping.
 _DISCOVERABLE_ATS = {"greenhouse", "lever", "ashby", "smartrecruiters", "recruitee",
-                     "workable", "breezy"}
+                     "workable", "breezy", "teamtailor"}
 
 
 def _learn_companies(db: Session, results_per_scraper: list) -> None:
