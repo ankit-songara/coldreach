@@ -14,6 +14,16 @@ from urllib.parse import unquote, urlsplit
 import httpx
 from app.netguard import resolves_public
 
+# curl_cffi impersonates a real Chrome at the TLS layer (JA3 fingerprint +
+# headers), getting past anti-bot/Cloudflare walls that fingerprint the HANDSHAKE
+# (not just the User-Agent) and 403 plain httpx despite a browser UA — observed
+# live on e.g. coinbase. It's ~4MB with NO browser, so it fits the serverless
+# function. Optional: if it isn't installed, page fetches fall back to httpx.
+try:
+    from curl_cffi.requests import AsyncSession as _CffiAsyncSession
+except Exception:
+    _CffiAsyncSession = None
+
 EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
 # Pages a real person's email is most likely printed on. Ordered by yield:
 # contact/team/about first, then leadership/founder pages, then the well-known
@@ -101,6 +111,27 @@ _page_cache: dict[str, tuple[float, str, float]] = {}   # url -> (stamp, text, t
 _page_inflight: dict[str, tuple["asyncio.Future[str]", float]] = {}
 
 
+async def _fetch_text(client: httpx.AsyncClient, url: str, timeout: float) -> str:
+    """GET a page as a real Chrome (curl_cffi TLS impersonation) to defeat
+    anti-bot/Cloudflare walls, falling back to the passed httpx client if
+    curl_cffi is unavailable or errors. Returns "" on non-2xx or failure.
+    CancelledError propagates (mid-fetch cancel) — it's a BaseException, not
+    caught here, so the caller's finally still runs."""
+    if _CffiAsyncSession is not None:
+        try:
+            async with _CffiAsyncSession() as s:
+                r = await s.get(url, impersonate="chrome", timeout=timeout,
+                                allow_redirects=True)
+            return r.text if 200 <= r.status_code < 300 else ""
+        except Exception:
+            pass   # transient/connection issue → try the httpx fallback
+    try:
+        r2 = await client.get(url)
+        return r2.text if r2.is_success else ""
+    except Exception:
+        return ""
+
+
 async def _cached_get(client: httpx.AsyncClient, url: str, timeout: float) -> str:
     import time
     hit = _page_cache.get(url)
@@ -131,11 +162,7 @@ async def _cached_get(client: httpx.AsyncClient, url: str, timeout: float) -> st
     fut: "asyncio.Future[str]" = loop.create_future()
     _page_inflight[url] = (fut, timeout)
     try:
-        try:
-            resp = await client.get(url)
-            text = resp.text if resp.is_success else ""
-        except Exception:   # CancelledError is BaseException — deliberately not caught
-            text = ""
+        text = await _fetch_text(client, url, timeout)
         if len(_page_cache) > 4096:
             _page_cache.clear()
         if len(text) <= _PAGE_MAX_BODY:

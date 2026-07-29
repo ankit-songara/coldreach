@@ -112,9 +112,14 @@ def _clear_grounding_cache():
     web._ground_cache.clear()
     web._page_cache.clear()
     web._page_inflight.clear()
+    # Disable curl_cffi TLS-impersonation in tests so page fetches use the
+    # (mocked) httpx path; a test that wants to exercise impersonation
+    # monkeypatches web._CffiAsyncSession to a fake in its own body.
+    web._CffiAsyncSession = None
     hackernews._cache.update(at=0.0, posts=[])
     yield
     web._ground_cache.clear()
     web._page_cache.clear()
     web._page_inflight.clear()
+    web._CffiAsyncSession = None
     hackernews._cache.update(at=0.0, posts=[])

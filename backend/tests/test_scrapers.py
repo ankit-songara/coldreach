@@ -348,6 +348,58 @@ class TestLinkBio:
         assert calls["n"] == 0
 
 
+class TestStealthFetch:
+    """web._fetch_text: curl_cffi TLS impersonation first (beats anti-bot 403s),
+    httpx as the fallback. (conftest disables the real _CffiAsyncSession; each
+    test installs its own fake.)"""
+
+    def _session(self, status, body):
+        class Resp:
+            status_code = status
+            text = body
+        class Session:
+            def __init__(self, *a, **k): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def get(self, *a, **k): return Resp()
+        return Session
+
+    def _boom_session(self):
+        class Session:
+            def __init__(self, *a, **k): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def get(self, *a, **k): raise RuntimeError("connection reset")
+        return Session
+
+    def test_impersonation_is_primary(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+        monkeypatch.setattr(web, "_CffiAsyncSession", self._session(200, "<p>chrome</p>"))
+        class BadHttpx:   # must never be touched when impersonation succeeds
+            async def get(self, *a, **k): raise AssertionError("httpx should not be called")
+        assert asyncio.run(web._fetch_text(BadHttpx(), "https://x.com", 5)) == "<p>chrome</p>"
+
+    def test_non_2xx_yields_empty_without_httpx(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+        monkeypatch.setattr(web, "_CffiAsyncSession", self._session(403, "blocked"))
+        class BadHttpx:   # a real 403 → don't bother retrying via the weaker client
+            async def get(self, *a, **k): raise AssertionError("no httpx fallback on cffi non-2xx")
+        assert asyncio.run(web._fetch_text(BadHttpx(), "https://x.com", 5)) == ""
+
+    def test_falls_back_to_httpx_on_cffi_error(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+        monkeypatch.setattr(web, "_CffiAsyncSession", self._boom_session())
+        class HttpxResp:
+            is_success = True
+            text = "<p>httpx</p>"
+        class HttpxClient:
+            async def get(self, *a, **k): return HttpxResp()
+        assert asyncio.run(web._fetch_text(HttpxClient(), "https://x.com", 5)) == "<p>httpx</p>"
+
+
 class TestHNSelfIntro:
     """A poster who names themselves ('I'm Jane Smith, co-founder') becomes a
     named lead even with no embedded email, so the resolver/page-scrape can find
