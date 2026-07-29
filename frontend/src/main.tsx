@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { Toaster } from 'react-hot-toast'
+import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 import App from './App'
 import ErrorBoundary from './components/shared/ErrorBoundary'
@@ -36,6 +37,7 @@ const app = (
         boxShadow: 'var(--shadow-md)',
       },
     }} />
+    <Analytics />
     <SpeedInsights />
   </QueryClientProvider>
 )
