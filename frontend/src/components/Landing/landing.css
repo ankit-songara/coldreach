@@ -216,7 +216,7 @@
   background: var(--surface-2);
   overflow: hidden;
 }
-.crl-bar-fill { height: 100%; border-radius: 99px; transition: width 1s cubic-bezier(0.16, 1, 0.3, 1); }
+.crl-bar-fill { height: 100%; width: 100%; border-radius: 99px; transform: scaleX(0); transform-origin: left center; transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1); }
 .crl-bar-fill--sent      { background: var(--accent); }
 .crl-bar-fill--replied   { background: var(--status-replied); transition-delay: 0.15s; }
 .crl-bar-fill--interview { background: var(--success); transition-delay: 0.3s; }

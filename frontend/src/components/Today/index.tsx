@@ -157,7 +157,7 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
                 cursor: step.done ? 'default' : 'pointer',
                 opacity: step.done ? 0.55 : 1,
                 boxShadow: isActive ? `0 0 0 2px color-mix(in srgb, ${step.color} 9%, transparent), var(--shadow-sm)` : 'var(--shadow-xs)',
-                transition: 'all 160ms',
+                transition: 'border-color 160ms, box-shadow 160ms, opacity 160ms',
               }}
             >
               {/* Step indicator */}
@@ -251,9 +251,14 @@ function OnboardingFlow({ resume, gmailConnected, contacts, onTab, onSeedDemo, s
 function FunnelRow({ label, count, total, color, delay, onClick }: {
   label: string; count: number; total: number; color: string; delay: number; onClick?: () => void
 }) {
-  const [width, setWidth] = useState(0)
+  // Animate a GPU transform (scaleX) instead of `width`: width changes force a
+  // layout + paint every frame; scaleX runs on the compositor. transform-origin
+  // is the track's left edge so it grows from the start. count>0 keeps a small
+  // visible sliver (the old minWidth:10px) even when the ratio rounds to ~0.
+  const [scale, setScale] = useState(0)
   useEffect(() => {
-    const t = setTimeout(() => setWidth(total > 0 ? (count / total) * 100 : 0), delay)
+    const frac = total > 0 ? count / total : 0
+    const t = setTimeout(() => setScale(count > 0 ? Math.max(frac, 0.03) : frac), delay)
     return () => clearTimeout(t)
   }, [count, total, delay])
   const pct = total > 0 ? Math.round((count / total) * 100) : 0
@@ -269,7 +274,7 @@ function FunnelRow({ label, count, total, color, delay, onClick }: {
         <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{label}</span>
       </div>
       <div className="flex-1" style={{ height: 10, borderRadius: 99, background: 'var(--surface-2)', overflow: 'hidden' }}>
-        <div style={{ height: '100%', borderRadius: 99, background: color, width: `${width}%`, transition: 'width 0.7s var(--ease-out)', minWidth: count > 0 ? 10 : 0 }} />
+        <div style={{ height: '100%', width: '100%', borderRadius: 99, background: color, transform: `scaleX(${scale})`, transformOrigin: 'left center', transition: 'transform 0.7s var(--ease-out)' }} />
       </div>
       <div className="flex items-center gap-2 flex-shrink-0 justify-end" style={{ minWidth: 76 }}>
         <span className="font-bold tnum" style={{ fontSize: 18, color }}>{count}</span>
@@ -295,7 +300,7 @@ function AlertCard({ icon: Icon, color, textColor, bg, title, body, action, onAc
         background: 'var(--surface-1)', border: `1px solid ${hover ? `color-mix(in srgb, ${color} 31%, transparent)` : 'var(--border)'}`,
         borderRadius: 14, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
         boxShadow: hover ? 'var(--shadow-md)' : 'var(--shadow-sm)',
-        transform: hover ? 'translateY(-1px)' : 'none', transition: 'all 180ms',
+        transform: hover ? 'translateY(-1px)' : 'none', transition: 'border-color 180ms, box-shadow 180ms, transform 180ms',
       }}
     >
       <div className="flex items-center justify-center flex-shrink-0" style={{ width: 36, height: 36, borderRadius: 10, background: bg }}>

@@ -164,7 +164,7 @@ export default function Landing({ onLogin, onSignup }: { onLogin: () => void; on
                   <div className="crl-bar-track">
                     <div
                       className={`crl-bar-fill crl-bar-fill--${b.key}`}
-                      style={{ width: barsIn ? b.width : '0%' }}
+                      style={{ transform: barsIn ? `scaleX(${parseInt(b.width) / 100})` : 'scaleX(0)' }}
                     />
                   </div>
                   <span className={`crl-bar-num crl-bar-num--${b.key}`}>{b.count}</span>

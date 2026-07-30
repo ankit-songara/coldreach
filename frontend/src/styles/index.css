@@ -237,6 +237,14 @@ body {
 .hit-target { position: relative; }
 .hit-target::before { content: ''; position: absolute; inset: -10px; }
 
+/* Long card grids (the Hunt list can hold 200+ contacts) opt into
+   content-visibility so the browser skips layout + paint for cards scrolled
+   out of view — big win for scroll smoothness and first render. `auto` in
+   contain-intrinsic-size makes it remember each card's real height after it's
+   been rendered once; 190px is only the not-yet-seen estimate. Progressive
+   enhancement: browsers without support just render everything as before. */
+.cv-card { content-visibility: auto; contain-intrinsic-size: auto 190px; }
+
 /* Respect the OS-level motion preference everywhere. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -259,7 +267,15 @@ body {
   .btn {
     @apply rounded-[10px] text-sm font-semibold cursor-pointer border inline-flex items-center;
     padding: 9px 16px;
-    transition: all 130ms var(--ease-standard);
+    /* Explicit property list, not `all`: buttons only change paint/composite
+       properties on hover/active (background, border, shadow, transform), so
+       animating `all` just made the browser watch layout props it never
+       animates — extra style-recalc on every interaction. */
+    transition: background-color 130ms var(--ease-standard),
+                border-color 130ms var(--ease-standard),
+                color 130ms var(--ease-standard),
+                box-shadow 130ms var(--ease-standard),
+                transform 130ms var(--ease-standard);
   }
 
   /* Primary — solid coral with lift */

@@ -247,11 +247,14 @@ export default function Analytics() {
               <div
                 style={{
                   height: '100%',
+                  width: '100%',
                   borderRadius: 99,
                   background: 'var(--status-replied)',
-                  width: maxRoleRate > 0 ? `${Math.round((r.rate / maxRoleRate) * 100)}%` : 0,
-                  minWidth: r.replied > 0 ? 8 : 0,
-                  transition: 'width 0.7s var(--ease-out)',
+                  // scaleX (compositor) instead of width (layout+paint). r.replied>0
+                  // keeps a visible sliver even when the ratio rounds toward 0.
+                  transform: `scaleX(${maxRoleRate > 0 ? Math.max(r.rate / maxRoleRate, r.replied > 0 ? 0.03 : 0) : 0})`,
+                  transformOrigin: 'left center',
+                  transition: 'transform 0.7s var(--ease-out)',
                 }}
               />
             </div>

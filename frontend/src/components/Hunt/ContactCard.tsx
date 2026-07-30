@@ -92,7 +92,7 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
 
   return (
     <div
-      className="card relative group"
+      className="card relative group cv-card"
       style={{
         transition: 'border-color .15s',
         cursor: selectable || onOpenDetails ? 'pointer' : undefined,
@@ -213,7 +213,7 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
             key={key}
             onClick={() => statusMutation.mutate(key)}
             disabled={statusMutation.isPending}
-            className="relative text-xs px-2 py-0.5 rounded-full font-bold font-mono transition-all before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
+            className="relative text-xs px-2 py-0.5 rounded-full font-bold font-mono transition-colors before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
             style={{
               background: c.status === key ? meta.bg    : 'transparent',
               color:      c.status === key ? meta.color : 'var(--text-muted)',
