@@ -19,6 +19,9 @@ import httpx
 
 from app.scrapers.base import BaseScraper, person_name_from_email
 from app.scrapers.directory import looks_like_company, role_match, company_matches, _norm
+# Shared upstream-date normalizer (ats.py has no imports from this module, so
+# no cycle). Used by SmartRecruitersSearch to stamp _posted_at on its leads.
+from app.scrapers.ats import _posted_iso as _sr_posted
 
 EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
 UA = "ColdReach/1.0 (job-board reader)"
@@ -400,6 +403,9 @@ class SmartRecruitersSearchScraper(BaseScraper):
                             "source":      self.name,
                             "context":     f"Actively hiring for '{title}' at {comp} (via SmartRecruiters)",
                             "_domain":     domain,
+                            # Same transient freshness key the ATS scrapers
+                            # emit — releasedDate is ISO (live-verified).
+                            "_posted_at":  _sr_posted(p.get("releasedDate")),
                         }
                         if match == "sibling":
                             lead["_sibling"] = True

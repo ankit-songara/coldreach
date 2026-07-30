@@ -611,3 +611,123 @@ class TestBoardTechTags:
             assert order[2] == "offtopic"     # known-off-topic last
         finally:
             directory._TAGS_OVERLAY.clear()
+
+
+class TestPostingRecency:
+    """Upstream posting dates → normalized 'YYYY-MM-DD' on each job, and the
+    freshest MATCHING posting stamped on emitted leads as transient _posted_at
+    (underscore key — ranked on in hunt.py, never persisted)."""
+
+    def test_posted_iso_live_verified_formats(self):
+        from app.scrapers.ats import _posted_iso
+        # Greenhouse first_published / Ashby publishedAt / SR releasedDate
+        assert _posted_iso("2026-07-22T12:50:03-04:00") == "2026-07-22"
+        assert _posted_iso("2026-07-30T20:18:55.841Z") == "2026-07-30"
+        # Lever createdAt (epoch milliseconds)
+        assert _posted_iso(1711403416463) == "2024-03-25"
+        # Recruitee created_at ("YYYY-MM-DD HH:MM:SS UTC")
+        assert _posted_iso("2026-04-21 15:49:10 UTC") == "2026-04-21"
+        # Absent / garbage → "" (never raises)
+        assert _posted_iso("") == ""
+        assert _posted_iso(None) == ""
+        assert _posted_iso("not a date") == ""
+        assert _posted_iso(0) == ""
+
+    def test_greenhouse_fetch_parses_first_published(self, monkeypatch):
+        import asyncio, httpx
+        from app.scrapers.ats import GreenhouseScraper
+
+        payload = {"jobs": [{
+            "title": "Backend Engineer", "location": {"name": "Remote"},
+            "content": "Build things.",
+            "first_published": "2026-07-25T09:00:00-04:00",
+            "updated_at": "2026-07-29T09:00:00-04:00",
+        }]}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=payload)
+
+        async def run():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await GreenhouseScraper()._fetch(client, "acme")
+
+        _, _, jobs = asyncio.run(run())
+        assert jobs[0]["posted"] == "2026-07-25"   # first_published wins over updated_at
+
+    def test_emit_stamps_freshest_matching_posting(self):
+        from app.scrapers.ats import GreenhouseScraper
+        jobs = [
+            {"title": "Backend Engineer", "location": "", "text": "", "posted": "2026-06-01"},
+            {"title": "Platform Engineer", "location": "", "text": "", "posted": "2026-07-28"},
+            {"title": "SRE", "location": "", "text": "", "posted": ""},
+        ]
+        leads = GreenhouseScraper()._emit("Acme", "acme.com", jobs, "acme")
+        assert leads[0]["_posted_at"] == "2026-07-28"   # freshest of the matches
+
+    def test_emit_without_dates_stamps_empty(self):
+        from app.scrapers.ats import GreenhouseScraper
+        jobs = [{"title": "Backend Engineer", "location": "", "text": ""}]
+        leads = GreenhouseScraper()._emit("Acme", "acme.com", jobs, "acme")
+        assert leads[0]["_posted_at"] == ""
+
+
+class TestNotableProbePriority:
+    """Well-known (notable) companies are probed ahead of the long tail within
+    each hunt's target cap, while the exploration cursor still rotates them
+    out once covered."""
+
+    def _cos(self):
+        from app.scrapers.directory import Company
+        cos = [Company(f"Longtail {i}", f"longtail{i}", "greenhouse", "") for i in range(30)]
+        cos += [
+            Company("Stripe", "stripe", "greenhouse", "stripe.com", True),
+            Company("OpenAI", "openai", "greenhouse", "openai.com", True),
+        ]
+        return cos
+
+    def test_notable_lead_the_pool(self, monkeypatch):
+        from app.scrapers import ats as ats_mod
+        monkeypatch.setattr(ats_mod, "companies_for_ats", lambda k: self._cos())
+        targets = ats_mod.GreenhouseScraper()._targets(
+            "software engineer hiring", company_mode=False)
+        assert {targets[0][0], targets[1][0]} == {"stripe", "openai"}
+
+    def test_cursor_rotates_explored_notables_out(self, monkeypatch):
+        from app.scrapers import ats as ats_mod
+        monkeypatch.setattr(ats_mod, "companies_for_ats", lambda k: self._cos())
+        targets = ats_mod.GreenhouseScraper()._targets(
+            "software engineer hiring", company_mode=False,
+            explored_slugs=frozenset({"greenhouse:stripe"}))
+        slugs = [s for s, _ in targets]
+        assert targets[0][0] == "openai"     # remaining notable still leads
+        assert "stripe" not in slugs         # explored → excluded this hunt
+
+    def test_notable_bias_keeps_tag_tiers_primary(self, monkeypatch):
+        from app.scrapers import ats as ats_mod
+        from app.scrapers import directory
+        from app.scrapers.directory import Company
+        cos = [
+            Company("Tagged Match", "match", "greenhouse", ""),
+            Company("Stripe", "stripe", "greenhouse", "stripe.com", True),
+        ]
+        monkeypatch.setattr(ats_mod, "companies_for_ats", lambda k: cos)
+        directory.set_company_tags("greenhouse", "match", {"golang"})
+        try:
+            targets = ats_mod.GreenhouseScraper()._targets(
+                "golang hiring", company_mode=False,
+                query_tokens=frozenset({"golang", "go"}))
+            # Query-relevant tags outrank brand fame; notable wins within a tier.
+            assert targets[0][0] == "match"
+            assert targets[1][0] == "stripe"
+        finally:
+            directory._TAGS_OVERLAY.clear()
+
+
+class TestNotableSeedPack:
+    def test_notable_brands_loaded_from_csv(self):
+        from app.scrapers.directory import notable_companies
+        names = {c.name for c in notable_companies()}
+        # Live-verified brand pack (75 boards probed with real HTTP) + famous
+        # names already seeded — the exact count may drift as the CSV grows.
+        assert len(names) >= 80
+        assert {"Stripe", "OpenAI", "Anthropic", "Databricks"} <= names

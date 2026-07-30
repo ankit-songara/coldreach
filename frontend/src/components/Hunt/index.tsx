@@ -71,12 +71,15 @@ function buildChips(resume: string, hiringNow: Array<{ name: string; role: strin
     if (!chips.some(c => c.query === query) && chips.length < 7) chips.push({ label, query })
   }
   // Resume-personalised role queries LEAD — they're the suggestions users
-  // recognise as theirs. Live hiring companies follow, and only with the
-  // role they're hiring for: a bare unknown startup name reads as junk.
-  for (const q of matched.slice(0, 4)) push(q, q)
-  for (const c of shuffle(hiringNow).slice(0, 2)) {
+  // recognise as theirs. But LIVE companies get most slots (4 of 7): the
+  // backend now blends well-known brands + hot-from-recent-hunts companies
+  // with the feeds, and those beat another hard-coded query string. Each
+  // carries the role it's hiring for — a bare name reads as junk.
+  for (const q of matched.slice(0, 2)) push(q, q)
+  for (const c of shuffle(hiringNow).slice(0, 4)) {
     if (c.name) push(c.role ? `${c.name} — ${c.role}` : c.name, c.name)
   }
+  for (const q of matched.slice(2)) push(q, q)
   for (const q of extras) push(q, q)
   return chips
 }
@@ -178,7 +181,7 @@ export default function Hunt() {
   // backend samples a fresh set from its cached pool on every request, so a
   // short staleTime keeps chips rotating per visit without hammering the API
   // (the server pays one feed fetch per 15-min TTL regardless).
-  const { data: suggestions } = useQuery({
+  const { data: suggestions, dataUpdatedAt: suggestionsUpdatedAt } = useQuery({
     queryKey: ['hunt-suggestions'],
     queryFn: huntApi.suggestions,
     staleTime: 60_000,
@@ -194,8 +197,11 @@ export default function Hunt() {
   )
   const chips = useMemo(
     () => buildChips(resume, hiringNow),
+    // suggestionsUpdatedAt: every fresh server sample reshuffles the row —
+    // without it the memo pinned ONE chip order for the whole session, which
+    // is exactly what made the suggestions read as static.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resume, hiringNow.map(c => c.name).join('|')],
+    [resume, hiringNow.map(c => c.name).join('|'), suggestionsUpdatedAt],
   )
 
   // Delete everything server-side FIRST, then clear the local store. (Clearing

@@ -2996,3 +2996,77 @@ class TestHunterInboxLabeling:
     def test_hunter_hiring_inbox_is_talent_recruiting(self, monkeypatch):
         r = self._run(monkeypatch, "careers@acme.com")
         assert r["designation"] == "Talent/Recruiting (role inbox)"
+
+
+class TestFreshnessBucket:
+    """Coarse recency rank from the transient _posted_at — fresh postings win
+    scarce resolve/careers slots; unknown ties the middle; stale sinks."""
+
+    def test_bucket_boundaries(self):
+        from datetime import date, timedelta
+        from app.api.hunt import _freshness_bucket
+        f = lambda days: {"_posted_at": (date.today() - timedelta(days=days)).isoformat()}
+        assert _freshness_bucket(f(0)) == 0
+        assert _freshness_bucket(f(7)) == 0
+        assert _freshness_bucket(f(8)) == 1
+        assert _freshness_bucket(f(30)) == 1
+        assert _freshness_bucket(f(31)) == 2
+        assert _freshness_bucket(f(90)) == 2
+        assert _freshness_bucket(f(91)) == 3
+
+    def test_unknown_and_garbage_tie_the_middle(self):
+        from app.api.hunt import _freshness_bucket
+        assert _freshness_bucket({}) == 2
+        assert _freshness_bucket({"_posted_at": ""}) == 2
+        assert _freshness_bucket({"_posted_at": "garbage"}) == 2
+
+
+class TestSuggestionsBlend:
+    """Suggestion chips blend curated notable brands (+ hot companies from the
+    shared scrape cache) with the remote-job feeds — and keep serving brands
+    even when every feed is down."""
+
+    def _fail_feeds(self, monkeypatch):
+        import httpx
+
+        class FailingClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def get(self, *a, **kw): raise RuntimeError("feeds down")
+
+        monkeypatch.setattr(httpx, "AsyncClient", FailingClient)
+
+    def test_brands_serve_when_feeds_fail(self, auth_client, monkeypatch):
+        from app.api import hunt as hunt_mod
+        from app.scrapers.directory import notable_companies
+        hunt_mod._suggest_cache.update(at=float("-inf"), pool=[])
+        self._fail_feeds(monkeypatch)
+        try:
+            r = auth_client.get("/api/hunt/suggestions")
+            assert r.status_code == 200, r.text
+            data = r.json()
+            served = data["hiring_now"]
+            assert served, "notable brands must serve when the feeds are down"
+            notable_names = {c.name for c in notable_companies()}
+            assert all(c["name"] in notable_names for c in served)
+            assert all(c.get("role") for c in served)     # never a bare name
+            assert data["hiring_companies"] == [c["name"] for c in served]
+        finally:
+            hunt_mod._suggest_cache.update(at=float("-inf"), pool=[])
+
+    def test_brand_sample_rotates_per_request(self, auth_client, monkeypatch):
+        from app.api import hunt as hunt_mod
+        hunt_mod._suggest_cache.update(at=float("-inf"), pool=[])
+        self._fail_feeds(monkeypatch)
+        try:
+            # 114 notable brands choose 4 — two draws agreeing 5x in a row is
+            # (1/C(114,4))^4-level unlikely; a couple of retries kills flake risk.
+            draws = set()
+            for _ in range(5):
+                names = tuple(sorted(
+                    c["name"] for c in auth_client.get("/api/hunt/suggestions").json()["hiring_now"]))
+                draws.add(names)
+            assert len(draws) > 1, "brand sample must rotate between requests"
+        finally:
+            hunt_mod._suggest_cache.update(at=float("-inf"), pool=[])

@@ -20,6 +20,7 @@ import logging
 import random
 import re
 from abc import abstractmethod
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -43,6 +44,27 @@ UA = "ColdReach/1.0 (job-board reader)"
 def _extract_emails(text: str) -> list[str]:
     return [e for e in _EMAIL_RE.findall(text)
             if e.split("@")[1].lower() not in _SKIP_DOMAINS]
+
+
+def _posted_iso(val) -> str:
+    """Normalize an upstream posted/created date to 'YYYY-MM-DD', or '' when
+    absent/unparseable. Handles the formats the ATS APIs actually return
+    (live-verified): ISO 8601 with offset (Greenhouse/Ashby/SmartRecruiters),
+    epoch milliseconds (Lever createdAt), and Recruitee's
+    'YYYY-MM-DD HH:MM:SS UTC'."""
+    try:
+        if isinstance(val, (int, float)) and val:
+            ts = val / 1000.0 if val > 1e12 else float(val)
+            return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+        s = str(val or "").strip()
+        if not s:
+            return ""
+        s = s.replace(" UTC", "").replace("Z", "+00:00")
+        if " " in s and "T" not in s:
+            s = s.replace(" ", "T", 1)
+        return datetime.fromisoformat(s).date().isoformat()
+    except Exception:
+        return ""
 
 
 # Suffixes that appear in ATS board slugs but not in company domains.
@@ -132,7 +154,9 @@ class BaseATSScraper(BaseScraper):
     async def _fetch(self, client: httpx.AsyncClient, slug: str) -> tuple[str, str, list[dict]]:
         """
         Fetch a board. Returns (company_name, api_domain, jobs) where each job is
-        {"title": str, "location": str, "text": str}. api_domain may be "".
+        {"title": str, "location": str, "text": str, "posted": "YYYY-MM-DD"|""}.
+        api_domain may be "". "posted" is the upstream posting date via
+        _posted_iso ("" when the API omits it).
         """
         ...
 
@@ -196,11 +220,21 @@ class BaseATSScraper(BaseScraper):
             # are smaller than MAX_TARGETS and exhaust on the first hunt — when
             # everything is explored, fall back to the full pool rather than
             # returning nothing.
-            all_cos = [(c.slug, c.domain) for c in companies_for_ats(self.ats_key)]
+            cos = companies_for_ats(self.ats_key)
+            all_cos = [(c.slug, c.domain) for c in cos]
+            # getattr: tests fake directory entries with SimpleNamespace, which
+            # predates the notable field — treat anything without it as long-tail.
+            notable = {c.slug.lower() for c in cos if getattr(c, "notable", False)}
             fresh = [t for t in all_cos
                      if f"{self.ats_key}:{t[0].lower()}" not in explored_slugs]
             pool = fresh or all_cos
             random.shuffle(pool)
+            # Well-known brands first: a hunt should surface Stripe/OpenAI-tier
+            # employers before the long tail. Stable sort on top of the shuffle,
+            # so rotation stays fair within each group, and the cursor still
+            # rotates brands out once a user's repeat hunts have covered them.
+            if notable:
+                pool.sort(key=lambda t: 0 if t[0].lower() in notable else 1)
             if query_tokens:
                 # Rank by learned board tags: query-matching companies first,
                 # unknown (never probed) next, known-but-off-topic last. The
@@ -210,7 +244,7 @@ class BaseATSScraper(BaseScraper):
                     if not tags:
                         return 1
                     return 0 if tags & query_tokens else 2
-                pool.sort(key=tier)   # stable sort preserves the shuffle per tier
+                pool.sort(key=tier)   # stable sort: notable-first kept per tier
             return pool
 
         known = lookup(query)
@@ -282,6 +316,13 @@ class BaseATSScraper(BaseScraper):
         embedded: set[str] = set()
         all_titles = [j["title"] for j in jobs if j.get("title")]
 
+        # Freshest matching posting ("YYYY-MM-DD" — lexicographic max IS the
+        # latest). jobs is already filtered to the query, so this dates the
+        # company's newest RELEVANT opening. Transient (underscore key): used
+        # by hunt.py to rank fresh hirers into the scarce resolve/careers
+        # slots, never persisted.
+        posted_at = max((j.get("posted") or "" for j in jobs), default="")
+
         # Build context from the first (most relevant) job with the richest description
         best_job = max(jobs[:5], key=lambda j: len(j.get("text", "")), default=jobs[0] if jobs else {})
         top_ctx = _job_context(
@@ -307,6 +348,7 @@ class BaseATSScraper(BaseScraper):
                 "designation": "Recruiter",
                 "source":      source,
                 "context":     top_ctx,
+                "_posted_at":  posted_at,
             })
 
         if not leads:
@@ -318,6 +360,7 @@ class BaseATSScraper(BaseScraper):
                 "source":      source,
                 "context":     top_ctx,
                 "_domain":     domain,
+                "_posted_at":  posted_at,
             })
         return leads
 
@@ -347,6 +390,8 @@ class GreenhouseScraper(BaseATSScraper):
             "title":    j.get("title", ""),
             "location": (j.get("location") or {}).get("name", ""),
             "text":     _strip_html(j.get("content", "")),
+            # first_published = when the role opened; updated_at churns on edits.
+            "posted":   _posted_iso(j.get("first_published") or j.get("updated_at")),
         } for j in jobs_raw[:200]]
         return company, "", jobs
 
@@ -375,6 +420,7 @@ class LeverScraper(BaseATSScraper):
                             (b.get("content") or "")
                             for b in (j.get("description") or {}).get("body", [])
                         ) or j.get("descriptionPlain", "")),
+            "posted":   _posted_iso(j.get("createdAt")),   # epoch ms
         } for j in raw[:50]]
         return company, "", jobs
 
@@ -403,6 +449,7 @@ class AshbyScraper(BaseATSScraper):
             "title":    j.get("title") or j.get("name", ""),
             "location": (j.get("location") or {}).get("city", "") if isinstance(j.get("location"), dict) else (j.get("locationName") or ""),
             "text":     _strip_html(j.get("descriptionHtml") or j.get("description") or ""),
+            "posted":   _posted_iso(j.get("publishedAt")),
         } for j in jobs_raw[:40]]
         return company, api_domain, jobs
 
@@ -438,6 +485,7 @@ class SmartRecruitersScraper(BaseATSScraper):
             "title":    p.get("name", ""),
             "location": _sr_location(p.get("location") or {}),
             "text":     "",
+            "posted":   _posted_iso(p.get("releasedDate")),
         } for p in postings[:15]]
         return company, "", jobs
 
@@ -464,6 +512,7 @@ class RecruiteeScraper(BaseATSScraper):
             "title":    o.get("title", ""),
             "location": o.get("location") or o.get("city", ""),
             "text":     _strip_html(f"{o.get('description','')} {o.get('requirements','')}"),
+            "posted":   _posted_iso(o.get("created_at")),   # "YYYY-MM-DD HH:MM:SS UTC"
         } for o in offers[:15]]
         return company, "", jobs
 
@@ -493,6 +542,7 @@ class WorkableScraper(BaseATSScraper):
             "location": ", ".join(p for p in (j.get("city"), j.get("country")) if p)
                         or ("Remote" if j.get("remote") else ""),
             "text":     _strip_html(j.get("description", "")),
+            "posted":   _posted_iso(j.get("published_on") or j.get("created_at")),
         } for j in jobs_raw[:15]]
         return company, "", jobs
 
@@ -531,6 +581,7 @@ class BreezyScraper(BaseATSScraper):
             "location": ((p.get("location") or {}).get("name", "")
                          if isinstance(p.get("location"), dict) else ""),
             "text":     _strip_html(p.get("description", "")),
+            "posted":   _posted_iso(p.get("published_date")),
         } for p in data[:15] if isinstance(p, dict)]
         return company, "", jobs
 
@@ -607,5 +658,6 @@ class TeamtailorScraper(BaseATSScraper):
                 "title":    (it.get("title") or jp.get("title") or "").strip(),
                 "location": _teamtailor_location(jp.get("jobLocation")),
                 "text":     _strip_html(it.get("content_html") or jp.get("description") or ""),
+                "posted":   _posted_iso(it.get("date_published") or jp.get("datePosted")),
             })
         return company, api_domain, jobs

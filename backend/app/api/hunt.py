@@ -17,7 +17,7 @@ from app.db.crud import (
     get_all_company_tags, upsert_company_tags,
     get_scrape_cache, put_scrape_cache,
 )
-from app.db.models import Contact, User
+from app.db.models import Contact, ScrapeCache, User
 from app.deps import get_current_user
 from app.schemas.contact import ContactCreate
 from app.schemas.email import HuntRequest, HuntResult
@@ -152,6 +152,30 @@ def _desig_priority(designation: str) -> int:
     if any(k in d for k in ("hr", "human resource", "talent", "recruiter", "recruiting", "people ops", "people partner")):
         return 1
     if any(k in d for k in ("engineer", "developer", "swe", "software", "backend", "frontend", "fullstack", "devops", "data")):
+        return 2
+    return 3
+
+
+def _freshness_bucket(r: dict) -> int:
+    """Coarse posting-recency rank from the transient _posted_at ("YYYY-MM-DD",
+    stamped by the ATS scrapers; "" when the source has no dates).
+    0 = posted ≤7 days ago (hot), 1 = ≤30d, 2 = ≤90d or unknown, 3 = older.
+    Buckets (not raw age) so freshness breaks ties without letting a 2-day
+    difference outrank designation/confidence; unknown ties the middle so
+    date-less sources (HN, Workday, YC) are neither rewarded nor buried."""
+    posted = r.get("_posted_at") or ""
+    if not posted:
+        return 2
+    try:
+        from datetime import date
+        age = (date.today() - date.fromisoformat(posted)).days
+    except (ValueError, TypeError):
+        return 2
+    if age <= 7:
+        return 0
+    if age <= 30:
+        return 1
+    if age <= 90:
         return 2
     return 3
 
@@ -578,6 +602,13 @@ def _learn_from_hn(db: Session) -> None:
 _SUGGEST_TTL_SECONDS = 900
 _SUGGEST_POOL_MAX    = 80   # companies kept in the pool
 _SUGGEST_SERVE       = 12   # companies returned per request
+_SUGGEST_BRANDS      = 4    # well-known directory brands blended per request
+_SUGGEST_HOT         = 3    # companies from recent hunts' scrape cache
+
+# Pulls the job title out of a lead's context prose — both the ATS context
+# builder ("Acme is actively hiring for 'X'") and SmartRecruitersSearch
+# ("Actively hiring for 'X' at Acme") use this exact quoting.
+_CTX_ROLE_RE = re.compile(r"hiring for '([^']{3,60})'")
 # "at" starts at -inf, NOT 0.0: time.monotonic() is time-since-boot, so on a
 # freshly booted host (or a cold-started serverless microVM) 0.0 would read as
 # "fetched < TTL ago" and the first request would serve [] without fetching.
@@ -708,14 +739,70 @@ async def hunt_suggestions(db: Session = Depends(get_db), user: User = Depends(g
     # A power user may own contacts at every pooled company — live chips still
     # beat an empty row, so fall back to the unfiltered pool.
     base = fresh or pool
-    k = min(_SUGGEST_SERVE, len(base))
-    sample = random.sample(base, k) if k else []
+
+    # ── Blend in two higher-signal sources than the remote-job feeds ─────────
+    # The feeds skew to long-tail remote shops ("A.Team", "LawnStarter"), which
+    # read as junk chips. Blend per request (cheap: an in-memory sample + two
+    # small queries), so every load rotates — and both sources still serve
+    # when the feeds are down, so the chip row is never empty or static.
+    #
+    # 1) Well-known brands from the curated directory (live-verified boards),
+    #    role-hinted by each board's learned tech tags when we have them.
+    brand_entries: list[dict] = []
+    try:
+        brands = [c for c in directory.notable_companies()
+                  if c.name.lower() not in owned]
+        random.shuffle(brands)
+        tag_map = get_all_company_tags(db)
+        for c in brands[:_SUGGEST_BRANDS]:
+            tags = sorted(tag_map.get((c.ats, c.slug.lower())) or [])[:2]
+            role = " · ".join(t.title() for t in tags) + " roles" if tags else "hiring now"
+            brand_entries.append({"name": c.name, "role": role})
+    except Exception as e:
+        log.debug(f"Suggestions: brand blend skipped: {e}")
+
+    # 2) "Hot right now": companies surfaced by RECENT hunts (shared scrape
+    #    cache, 4h TTL) — hiring signals scraped from live boards minutes to
+    #    hours ago, with the actual role pulled from the lead's context.
+    hot_entries: list[dict] = []
+    try:
+        seen_hot = {b["name"].lower() for b in brand_entries} | owned
+        rows = (db.query(ScrapeCache)
+                  .order_by(ScrapeCache.updated_at.desc()).limit(4).all())
+        for row in rows:
+            if len(hot_entries) >= _SUGGEST_HOT:
+                break
+            for batch in (row.payload or {}).get("results") or []:
+                for lead in batch or []:
+                    if len(hot_entries) >= _SUGGEST_HOT:
+                        break
+                    if not isinstance(lead, dict):
+                        continue
+                    comp = _display_company(lead.get("company") or "")
+                    m = _CTX_ROLE_RE.search(lead.get("context") or "")
+                    if (not comp or not (2 < len(comp) <= 30)
+                            or comp.lower() in seen_hot or not m):
+                        continue
+                    seen_hot.add(comp.lower())
+                    hot_entries.append({"name": comp,
+                                        "role": _short_role(m.group(1)) or "hiring now"})
+    except Exception as e:
+        log.debug(f"Suggestions: hot blend skipped: {e}")
+
+    k = min(_SUGGEST_SERVE - len(brand_entries) - len(hot_entries), len(base))
+    feed_sample = random.sample(base, k) if k > 0 else []
+    merged, seen_names = [], set()
+    for c in brand_entries + hot_entries + feed_sample:
+        if c["name"].lower() not in seen_names:
+            seen_names.add(c["name"].lower())
+            merged.append(c)
+    random.shuffle(merged)
     return {
         # Names alone kept for older cached bundles; hiring_now carries the
         # role hint so a chip can say WHY the company appears ("Dosed" alone
         # reads as junk — "Dosed — Backend Engineer" is a reason to click).
-        "hiring_companies": [c["name"] for c in sample],
-        "hiring_now": sample,
+        "hiring_companies": [c["name"] for c in merged],
+        "hiring_now": merged,
     }
 
 
@@ -943,14 +1030,22 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     # domain can yield BOTH its careers@ inbox (P0) and a named person (P1).
     # Primary-match leads first so sibling-only domains can't consume the
     # careers-lead cap ahead of them; directory-pool leads (YC) fill only
-    # LEFTOVER slots (stable sort keeps feed order otherwise).
-    needs_resolve.sort(key=lambda r: 2 if r.get("_pool") else (1 if r.get("_sibling") else 0))
+    # LEFTOVER slots. Within a band, companies whose matching role was posted
+    # most recently come first — they set domain_company's insertion order, so
+    # the careers cap keeps the freshest hirers.
+    needs_resolve.sort(key=lambda r: (
+        2 if r.get("_pool") else (1 if r.get("_sibling") else 0),
+        _freshness_bucket(r),
+    ))
 
     # Domains where the user already OWNS the role inbox are skipped — the
     # careers@ probe would only prove a duplicate. Owning a mere person at a
     # domain does NOT suppress its careers@ probe (that lead is new).
     skipped_careers_domains: set[str] = set()
     domain_company: dict[str, str] = {}
+    # Freshest matching-role posting date seen per domain — carried onto the
+    # careers lead so the final ranking can prefer actively-posting companies.
+    domain_posted: dict[str, str] = {}
     for r in needs_resolve:
         d = (r.get("_domain") or "").lower().strip()
         if d in owned_roleinbox_domains:
@@ -958,6 +1053,8 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             continue
         if d and d not in _FREEMAIL and d not in domain_company:
             domain_company[d] = (r.get("company") or "").strip()
+        if d and r.get("_posted_at"):
+            domain_posted[d] = max(domain_posted.get(d, ""), r["_posted_at"])
     for r in with_email:
         d = r["email"].rsplit("@", 1)[-1]
         if d in owned_roleinbox_domains:
@@ -978,7 +1075,8 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
 
     careers_leads = [
         {"name": "", "company": comp or _company_from_email(f"x@{dom}"),
-         "designation": "", "source": "careers-inbox", "_domain": dom}
+         "designation": "", "source": "careers-inbox", "_domain": dom,
+         "_posted_at": domain_posted.get(dom, "")}
         for dom, comp in list(domain_company.items())[:_MAX_CAREERS_LEADS]
     ]
     if careers_leads:
@@ -1007,6 +1105,11 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     for r in needs_resolve:
         d = (r.get("_domain") or "").lower()
         cur = by_domain.get(d)
+        # Whichever entry wins below, the domain keeps its FRESHEST matching-
+        # role date — several boards can list the same company. Applied after
+        # the branches so the replace-with-merged path can't drop it.
+        freshest = max(cur.get("_posted_at") or "" if cur else "",
+                       r.get("_posted_at") or "")
         if cur is None:
             by_domain[d] = r
         else:
@@ -1035,14 +1138,18 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                 if extra_ctx and extra_ctx not in existing_ctx:
                     merged_ctx = (existing_ctx + "\n" + extra_ctx).strip()[:2000]
                     by_domain[d] = {**cur, "context": merged_ctx}
-    # Primaries before siblings before pool leads, then named before nameless:
-    # lower-relevance bands must never displace a primary from the resolve
-    # slice or the careers cap.
+        if freshest:
+            by_domain[d]["_posted_at"] = freshest
+    # Primaries before siblings before pool leads, named before nameless, then
+    # fresher postings first: lower-relevance bands must never displace a
+    # primary from the resolve slice, and within a band the resolve slots go
+    # to companies whose matching role went up most recently.
     needs_resolve = sorted(
         by_domain.values(),
         key=lambda r: (
             2 if r.get("_pool") else (1 if r.get("_sibling") else 0),
             0 if " " in (r.get("name") or "").strip() else 1,
+            _freshness_bucket(r),
         ),
     )
 
@@ -1216,6 +1323,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             1 if "role inbox" in (pr[1].get("designation") or "").lower() else 0,
             _status_rank.get(pr[1].get("email_status") or "unknown", 1),
             -(pr[1].get("confidence") or 0),
+            _freshness_bucket(pr[1]),          # freshest posting breaks ties
         ))
         with_email = [r for _, r in ranked]
     else:
@@ -1226,6 +1334,7 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             _desig_priority(r.get("designation") or ""),
             _status_rank.get(r.get("email_status") or "unknown", 1),
             -(r.get("confidence") or 0),
+            _freshness_bucket(r),              # freshest posting breaks ties
         ))
 
     # ── Persist ────────────────────────────────────────────────────────────────

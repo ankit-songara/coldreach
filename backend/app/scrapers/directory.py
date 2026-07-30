@@ -34,6 +34,11 @@ class Company:
     slug:   str
     ats:    str     # greenhouse | lever | ashby | smartrecruiters | recruitee
     domain: str
+    # Well-known/brand-name employer (CSV `notable` column). Notable boards are
+    # probed ahead of the long tail within each hunt's per-ATS target cap, and
+    # feed the Hunt page's suggestion chips. Runtime-registered companies are
+    # never notable.
+    notable: bool = False
 
 
 _CSV_PATH = Path(__file__).with_name("companies.csv")
@@ -49,8 +54,9 @@ def _load_seed() -> list[Company]:
                 slug   = (row.get("slug") or "").strip()
                 ats    = (row.get("ats") or "").strip().lower()
                 domain = (row.get("domain") or "").strip().lower()
+                notable = (row.get("notable") or "").strip() == "1"
                 if name and slug and ats:
-                    out.append(Company(name, slug, ats, domain))
+                    out.append(Company(name, slug, ats, domain, notable))
     except FileNotFoundError:
         log.warning("companies.csv not found at %s — directory seed is empty", _CSV_PATH)
     return out
@@ -104,6 +110,12 @@ def is_known(ats: str, slug: str) -> bool:
 def companies_for_ats(ats: str) -> list[Company]:
     """Directory companies hosted on a given ATS (used in role-query mode)."""
     return [c for c in all_companies() if c.ats == ats]
+
+
+def notable_companies() -> list[Company]:
+    """Well-known brand-name employers (live-verified boards). Powers the Hunt
+    page's suggestion chips and the notable-first probe bias in _targets."""
+    return [c for c in _SEED if c.notable]
 
 
 def lookup(name: str) -> Company | None:
