@@ -121,14 +121,20 @@ export default function Send() {
       // Open the window BEFORE the clipboard await: awaiting first drops the
       // click's user activation, so Safari/Firefox block the popup entirely.
       const win = window.open('', '_blank')
+      let copied = false
       try {
         await navigator.clipboard.writeText(body)
+        copied = true
         toast('Email is long, so the body was copied — paste it into the Gmail window', { icon: '📋', duration: 6000 })
       } catch {
         toast('Email is long — Gmail may cut off the end. Review before sending.', { icon: '⚠️', duration: 6000 })
       }
       if (win) {
-        win.location.href = base
+        // Body copied → open the light URL (to+subject) to paste into. Clipboard
+        // failed → put the body in the URL so it isn't lost entirely; Gmail may
+        // truncate the tail, but a partial draft beats a blank compose (and
+        // matches the "may cut off the end" toast just shown).
+        win.location.href = copied ? base : url
       } else {
         // Nothing opened, so nothing was sent — don't mark the contact.
         toast('Popup blocked — allow popups for this site, then try again', { icon: '🚫', duration: 6000 })
@@ -179,8 +185,12 @@ export default function Send() {
         deferred += res.deferred
         setResults([...all])
         setProgress({ done: Math.min(all.length + deferred, ids.length), total: ids.length })
-        if (res.deferred > 0) break   // daily cap reached — stop cleanly
+        if (res.deferred > 0) break   // daily cap reached mid-chunk — stop cleanly
       } catch (e: any) {
+        // 429 = the whole remaining batch is over today's cap. That's a clean
+        // "held for tomorrow" stop, not a failure — don't red-toast or mark the
+        // run aborted (which would suppress the normal summary + Undo path).
+        if (e?.status === 429) break
         toast.error(e.message)
         aborted = true
         break                          // bad credentials / server error — don't hammer on
@@ -193,9 +203,14 @@ export default function Send() {
     const sent = all.filter(r => r.status === 'sent').length
     const failed = all.filter(r => r.status === 'failed').length
     if (!aborted) {
-      const deferNote = deferred ? ` · ${deferred} held for tomorrow (daily limit)` : ''
-      if (failed === 0 && sent > 0) toast.success(`Sent ${sent} email${sent !== 1 ? 's' : ''}${deferNote}`)
-      else if (sent > 0 || failed > 0) toast(`${sent} sent · ${failed} failed${deferNote}`, { icon: '⚠️' })
+      // Everything queued but neither sent nor failed was held back by the daily
+      // cap — whether via a 200 with `deferred`, a 429 on a later chunk, or the
+      // chunks after we broke. One count covers all three.
+      const held = Math.max(0, ids.length - all.length)
+      const heldNote = held ? ` · ${held} held for tomorrow (daily limit)` : ''
+      if (failed === 0 && sent > 0) toast.success(`Sent ${sent} email${sent !== 1 ? 's' : ''}${heldNote}`)
+      else if (sent > 0 || failed > 0) toast(`${sent} sent · ${failed} failed${heldNote}`, { icon: '⚠️' })
+      else if (held > 0) toast(`${held} held for tomorrow (daily limit)`, { icon: '⏳' })
     } else if (sent > 0) {
       toast(`${sent} email${sent !== 1 ? 's' : ''} were sent before the error`, { icon: 'ℹ️' })
     }

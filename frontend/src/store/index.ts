@@ -91,6 +91,13 @@ export const useStore = create<AppState>()(
         const token = getToken()
         if (token) void authApi.logout(token)
         setToken(null)
+        // Per-browser onboarding/throttle flags live in localStorage, not the
+        // store — clear them too, or the NEXT user to log in on this shared
+        // device inherits the previous user's "Gmail step skipped" onboarding
+        // state and reply-sync throttle (same cross-user leak class as the
+        // `resume` reset below).
+        localStorage.removeItem('coldreach-gmail-skipped')
+        localStorage.removeItem('coldreach-last-inbox-sync')
         // Reset EVERY per-user field, not just auth/contacts. `resume` is
         // persisted (see partialize below) — leaving it out meant the next
         // person to log in on this browser inherited the previous user's
