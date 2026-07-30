@@ -98,6 +98,24 @@ class ContactRepository:
     def get_by_id(self, contact_id: int) -> Contact | None:
         return self._scoped().filter(Contact.id == contact_id).first()
 
+    def get_by_ids(self, contact_ids: list[int]) -> list[Contact]:
+        """Several contacts in ONE query — bulk send resolves a whole chunk at
+        once instead of a SELECT (and a Supabase round trip) per id."""
+        if not contact_ids:
+            return []
+        return self._scoped().filter(Contact.id.in_(contact_ids)).all()
+
+    def mark_emailed(self, contact_ids: list[int], when: datetime) -> None:
+        """Bulk 'these just went out' update — one UPDATE + one commit for the
+        whole batch instead of update()+commit()+refresh() per contact."""
+        if not contact_ids:
+            return
+        (self._scoped()
+             .filter(Contact.id.in_(contact_ids))
+             .update({Contact.status: "emailed", Contact.last_emailed_at: when},
+                     synchronize_session=False))
+        self.db.commit()
+
     def get_by_email(self, email: str) -> Contact | None:
         return self._scoped().filter(Contact.email == email).first()
 
@@ -242,6 +260,25 @@ class DraftRepository:
             .order_by(EmailDraft.created_at.desc())
             .all()
         )
+
+    def first_touch_for_contacts(self, contact_ids: list[int]) -> dict[int, EmailDraft]:
+        """Newest first-touch (non-followup) draft per contact, in ONE query.
+        Bulk send used to run get_for_contact() per contact — a Supabase round
+        trip each, before any mail moved. Newest-first ordering means the first
+        row seen per contact is the one to keep."""
+        if not contact_ids:
+            return {}
+        rows = (
+            self._scoped()
+            .filter(EmailDraft.contact_id.in_(contact_ids),
+                    EmailDraft.is_followup.is_(False))
+            .order_by(EmailDraft.created_at.desc())
+            .all()
+        )
+        out: dict[int, EmailDraft] = {}
+        for d in rows:
+            out.setdefault(d.contact_id, d)
+        return out
 
     def get_all(self) -> list[EmailDraft]:
         """Every draft for this user, newest first — lets the frontend hydrate

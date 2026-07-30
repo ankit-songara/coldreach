@@ -14,6 +14,7 @@ import ConfirmDialog from '../shared/ConfirmDialog'
 import type { Contact, ContactStatus } from '../../types'
 import { contactDisplayName, isGenericName } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
+import { useContacts } from '../../hooks/useContacts'
 
 // Outcomes a user records by hand as a conversation progresses.
 const OUTCOME_STEPS: ContactStatus[] = ['replied', 'interview', 'offer', 'rejected']
@@ -57,6 +58,10 @@ export default function Send() {
 
   // Drafts come from a shared query so Compose and Send don't each refetch them.
   const { draftsLoaded } = useAllDrafts()
+  // Shared query (already in flight from App) — we only need its settled flag
+  // so a direct reload into this tab shows a skeleton instead of flashing
+  // "No contacts yet" at a user who has hundreds.
+  const { contactsLoaded } = useContacts()
 
   // Creds saved server-side (encrypted) mean sending works with no local input.
   // Shared config query — same cache as Today and Setup.
@@ -107,6 +112,10 @@ export default function Send() {
       const rows = await contactsApi.list()
       setContacts(rows)
       qc.setQueryData(['contacts'], rows)
+      // Sends and outcome changes move every funnel number. Analytics is a
+      // keep-alive tab whose query never refetches on its own (no remount, no
+      // focus refetch), so without this it showed first-visit numbers all session.
+      qc.invalidateQueries({ queryKey: ['analytics'] })
     } catch { /* next tab visit will refetch */ }
   }
 
@@ -244,6 +253,13 @@ export default function Send() {
     try {
       const res = await inboxApi.sync(gmailAddress, gmailAppPassword)
       await refreshContacts()
+      // The sync WRITES new ReplyMessage rows, so the Replies tab's cache is
+      // now stale. Without this it never refetches (keep-alive tabs never
+      // remount + refetchOnWindowFocus is off), so the replies this scan just
+      // found stayed invisible there for the whole session.
+      qc.invalidateQueries({ queryKey: ['replies'] })
+      // Reply/bounce outcomes move the funnel — let Analytics repaint too.
+      qc.invalidateQueries({ queryKey: ['analytics'] })
       const bounceNote = res.bounces_found ? ` · ${res.bounces_found} bounced` : ''
       if (res.replies_found === 0 && res.bounces_found === 0) {
         toast(`No new replies yet (checked ${res.scanned} contact${res.scanned !== 1 ? 's' : ''})`, { icon: '📭' })
@@ -269,13 +285,14 @@ export default function Send() {
     [c.name, c.company, c.email, c.designation].some(v => (v || '').toLowerCase().includes(q))
   )
 
-  if (contacts.length === 0) return (
+  // Only claim "no contacts" once the fetch has actually settled.
+  if (contacts.length === 0 && contactsLoaded) return (
     <div className="text-center py-20">
       <p className="text-sm font-mono" style={{ color: 'var(--text-muted)' }}>No contacts yet</p>
     </div>
   )
 
-  if (!draftsLoaded) return (
+  if (!draftsLoaded || !contactsLoaded) return (
     <div className="space-y-4 animate-pulse" aria-hidden>
       <div className="flex items-start justify-between">
         <div>

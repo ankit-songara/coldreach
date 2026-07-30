@@ -43,7 +43,16 @@ def _rate(replied: int, sent: int) -> float:
 
 
 @router.get("/summary")
-def analytics_summary(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def analytics_summary(
+    tz_offset_minutes: int = 0,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """tz_offset_minutes: the viewer's offset from UTC (e.g. +330 for IST), sent
+    by the frontend. Timestamps are stored naive-UTC, so bucketing them by raw
+    UTC hour told an IST user their 9am sends happened "at night". Clamped to
+    the real-world range (±14h) so a bad value can't shift results wildly."""
+    tz_shift = timedelta(minutes=max(-840, min(840, tz_offset_minutes)))
     contacts = ContactRepository(db, user.id).get_all()
 
     # ── Weekly send/reply trend: last 6 ISO weeks (oldest → current) ──────────
@@ -67,7 +76,8 @@ def analytics_summary(db: Session = Depends(get_db), user: User = Depends(get_cu
     for c in contacts:
         if not c.last_emailed_at:
             continue
-        cell = cells[(c.last_emailed_at.weekday(), _part(c.last_emailed_at.hour))]
+        local_sent = c.last_emailed_at + tz_shift      # UTC → the user's clock
+        cell = cells[(local_sent.weekday(), _part(local_sent.hour))]
         cell["sent"] += 1
         if c.replied_at:
             cell["replied"] += 1

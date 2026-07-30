@@ -30,6 +30,11 @@ export function useAutoReplyCheck(hasServerGmail: boolean) {
     inboxApi.sync('', '')   // empty creds → the server-stored (encrypted) ones
       .then(async res => {
         if (res.replies_found === 0) return
+        // The scan wrote new reply rows — drop the Replies/Analytics caches so
+        // those tabs show them (keep-alive tabs never remount, and focus
+        // refetch is off, so nothing else would ever refresh them).
+        qc.invalidateQueries({ queryKey: ['replies'] })
+        qc.invalidateQueries({ queryKey: ['analytics'] })
         toast.success(
           `${res.replies_found} new ${res.replies_found === 1 ? 'reply' : 'replies'} since you were away`,
           { duration: 6000 },

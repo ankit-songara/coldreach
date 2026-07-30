@@ -249,7 +249,11 @@ export default function Setup() {
           <button
             type="button"
             onClick={() => setShowPassword(p => !p)}
-            className="absolute right-3 top-1/2 -translate-y-1/2"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            // 14px icon alone is a ~14x14 tap target — the ::before pad grows it
+            // to ~34x34 without moving the icon (can't use .hit-target: its
+            // position:relative would fight this button's absolute placement).
+            className="absolute right-3 top-1/2 -translate-y-1/2 before:absolute before:-inset-2.5 before:content-['']"
             style={{ color: 'var(--text-dim)' }}
           >
             {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -390,7 +394,7 @@ export default function Setup() {
           {!editingSig && (
             <button
               onClick={() => setEditingSig(true)}
-              className="flex items-center gap-1 text-xs font-semibold"
+              className="hit-target flex items-center gap-1 text-xs font-semibold"
               style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
             >
               <Pencil size={11} /> Edit

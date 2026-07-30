@@ -11,6 +11,7 @@ import type { Contact, ComposeRequest } from '../../types'
 import { ResumeReadyCtx } from '../../App'
 import { contactDisplayName, isGenericName, displayDesignation } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
+import { useContacts } from '../../hooks/useContacts'
 
 const COMPOSE_PAGE_SIZE = 50
 
@@ -33,6 +34,9 @@ export default function Compose() {
 
   // Drafts come from a shared query so Compose and Send don't each refetch them.
   const { draftsLoaded } = useAllDrafts()
+  // Settled flag from the shared contacts query — a direct reload into this
+  // tab must not flash "No contacts yet" before the fetch resolves.
+  const { contactsLoaded } = useContacts()
 
   const composeMutation = useMutation({
     // `silent` is UI-only (bulk runs toast one summary instead of one per
@@ -144,7 +148,8 @@ export default function Compose() {
     )
   }
 
-  if (contacts.length === 0) return (
+  // Only claim "no contacts" once the fetch has actually settled.
+  if (contacts.length === 0 && contactsLoaded) return (
     <div className="text-center py-20 space-y-3">
       <div className="text-3xl">🎯</div>
       <p className="text-sm font-semibold">No contacts yet</p>
@@ -154,7 +159,7 @@ export default function Compose() {
     </div>
   )
 
-  if (!draftsLoaded) return (
+  if (!draftsLoaded || !contactsLoaded) return (
     <div className="space-y-4 animate-pulse" aria-hidden>
       <div className="flex items-start justify-between">
         <div>
@@ -385,14 +390,19 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
   return (
     <div className="card" style={{ opacity: dimmed ? 0.65 : 1 }}>
       {/* ── Header ── */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
+      <div className="flex items-start justify-between mb-4 gap-3">
+        {/* min-w-0 + truncate: a long role-inbox address
+            ("talent-acquisition@some-long-company.com") pushed this header
+            past the card edge — same guard Send's row already uses. */}
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm">{contactDisplayName(c)}</span>
             {isGenericName(c.name) && (
-              <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
+              <span className="text-xs font-mono truncate max-w-full" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
             )}
-            <span className="badge" style={{ background: st.bg, color: st.color, fontSize: '9px' }}>
+            {/* No fontSize override — the .badge class's 11px is what every
+                other surface (Send, Replies, Hunt) shows. */}
+            <span className="badge flex-shrink-0" style={{ background: st.bg, color: st.color }}>
               {st.label}
             </span>
           </div>

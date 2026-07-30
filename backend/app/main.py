@@ -8,6 +8,7 @@ Startup sequence:
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,11 +29,21 @@ log = logging.getLogger("coldreach")
 async def lifespan(_: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
     log.info(f"Starting {settings.app_name} v{settings.app_version}")
-    create_tables()
-    log.info("✓ Database ready")
+
+    # On serverless EVERY cold start pays this lifespan before the first
+    # request is served, and each block below opens its own fresh Supabase
+    # connection (NullPool + TLS handshake ≈ 100-200ms each). The schema work
+    # is one-time by nature — prod DDL goes through the explicit migration
+    # flow, and the guessed-contact purge has already run — so skip both on
+    # Vercel and keep only the directory load, which every hunt needs.
+    _serverless = bool(os.environ.get("VERCEL"))
+
+    from app.db.database import SessionLocal
+    if not _serverless:
+        create_tables()
+        log.info("✓ Database ready")
 
     # Load runtime-extensible company directory entries (user-added + discovered).
-    from app.db.database import SessionLocal
     from app.db.crud import load_known_companies_into_directory
     _db = SessionLocal()
     try:
@@ -50,16 +61,19 @@ async def lifespan(_: FastAPI):
     # were never emailed; anything already actioned keeps its history.
     # Idempotent: post-fix leads are either "valid" (grounded) or labeled
     # "(unverified guess)", so this matcher can never touch them.
-    from app.db.migrations import purge_unverified_role_inbox_guesses
-    _db = SessionLocal()
-    try:
-        purged = purge_unverified_role_inbox_guesses(_db)
-        if purged:
-            log.info(f"✓ Cleanup: removed {purged} pre-fix guessed role-inbox contacts")
-    except Exception as e:
-        log.warning(f"Guessed-contact cleanup skipped: {e}")
-    finally:
-        _db.close()
+    # Already applied in prod — skipped on serverless (it now matches 0 rows
+    # but still costs a connection + full-table scan on every cold start).
+    if not _serverless:
+        from app.db.migrations import purge_unverified_role_inbox_guesses
+        _db = SessionLocal()
+        try:
+            purged = purge_unverified_role_inbox_guesses(_db)
+            if purged:
+                log.info(f"✓ Cleanup: removed {purged} pre-fix guessed role-inbox contacts")
+        except Exception as e:
+            log.warning(f"Guessed-contact cleanup skipped: {e}")
+        finally:
+            _db.close()
 
     try:
         provider, model = await detect_provider()

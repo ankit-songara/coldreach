@@ -238,7 +238,12 @@ export default function Analytics() {
             style={{ padding: '9px 0', borderBottom: i < by_role.length - 1 ? '1px solid var(--border)' : 'none' }}
           >
             <div style={{ width: 104, flexShrink: 0 }}>
-              <div className="text-[13px] font-semibold capitalize truncate">{r.family}</div>
+              {/* The API returns raw family keys, so "founder_exec" rendered
+                  as "Founder_exec" — underscores are not word separators for
+                  CSS capitalize. */}
+              <div className="text-[13px] font-semibold capitalize truncate">
+                {r.family.replace(/_/g, ' ')}
+              </div>
               <div className="text-[10.5px] font-mono tnum" style={{ color: 'var(--text-dim)' }}>
                 {r.replied} of {r.sent} sent
               </div>

@@ -57,6 +57,12 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
     onSuccess: (updated) => {
       upsertContact(updated)
       updateHuntResult(updated)
+      // Patch the shared query cache too (deleteMutation below already does).
+      // Without it the cached list still holds the OLD status, so the next
+      // refetch/mirror into the store silently reverted the change on screen.
+      qc.setQueryData<Contact[]>(['contacts'], rows =>
+        rows?.map(x => (x.id === updated.id ? updated : x)))
+      qc.invalidateQueries({ queryKey: ['analytics'] })
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -211,8 +217,13 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
         {STATUS_ENTRIES.map(([key, meta]) => (
           <button
             key={key}
-            onClick={() => statusMutation.mutate(key)}
-            disabled={statusMutation.isPending}
+            // In select mode the whole card is a selection target, so a tap
+            // landing on a pill must ONLY toggle selection — it used to also
+            // fire a silent status PATCH (e.g. marking someone "Offer") that
+            // then polluted the funnel.
+            onClick={selectable ? undefined : () => statusMutation.mutate(key)}
+            disabled={statusMutation.isPending || selectable}
+            tabIndex={selectable ? -1 : undefined}
             className="relative text-xs px-2 py-0.5 rounded-full font-bold font-mono transition-colors before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
             style={{
               background: c.status === key ? meta.bg    : 'transparent',

@@ -2998,6 +2998,158 @@ class TestHunterInboxLabeling:
         assert r["designation"] == "Talent/Recruiting (role inbox)"
 
 
+class TestAuditFixes:
+    """Regressions for the full-stack audit fixes."""
+
+    def test_imap_headers_fetched_in_one_batched_call(self):
+        """The per-message FETCH was O(N) IMAP round trips — a busy inbox blew
+        the 60s wall. Headers must now come back in ONE call per chunk."""
+        from app.api.inbox import _fetch_headers_batched
+        calls = []
+
+        class FakeImap:
+            def fetch(self, msg_set, spec):
+                calls.append(msg_set)
+                out = []
+                for seq in msg_set.split(b","):
+                    out.append((seq + b" (BODY[HEADER.FIELDS (FROM)] {20}",
+                                b"From: a@b.com\r\n\r\n"))
+                    out.append(b")")
+                return "OK", out
+
+        seqs = [str(i).encode() for i in range(1, 51)]
+        got = list(_fetch_headers_batched(FakeImap(), seqs))
+        assert len(calls) == 1                     # ONE round trip, not 50
+        assert len(got) == 50
+        assert got[0][0] == b"1" and b"From:" in got[0][1]
+
+    def test_imap_header_batches_are_chunked(self):
+        from app.api.inbox import _fetch_headers_batched, _HEADER_CHUNK
+        calls = []
+
+        class FakeImap:
+            def fetch(self, msg_set, spec):
+                calls.append(len(msg_set.split(b",")))
+                return "OK", []
+
+        n = _HEADER_CHUNK * 2 + 5
+        list(_fetch_headers_batched(FakeImap(), [str(i).encode() for i in range(n)]))
+        assert calls == [_HEADER_CHUNK, _HEADER_CHUNK, 5]
+
+    def test_imap_batch_survives_a_failing_chunk(self):
+        from app.api.inbox import _fetch_headers_batched, _HEADER_CHUNK
+
+        class FlakyImap:
+            def __init__(self): self.n = 0
+            def fetch(self, msg_set, spec):
+                self.n += 1
+                if self.n == 1:
+                    raise RuntimeError("transient")
+                return "OK", [(b"9 (BODY[HEADER.FIELDS (FROM)] {5}", b"From: x@y.z\r\n")]
+
+        got = list(_fetch_headers_batched(FlakyImap(), [b"1"] * (_HEADER_CHUNK + 1)))
+        assert len(got) == 1        # first chunk skipped, scan continued
+
+    def test_non_ascii_attachment_filename_is_rfc2231_encoded(self):
+        """A résumé named with non-ASCII chars used to emit raw bytes in a
+        quoted Content-Disposition, mangling the attachment name."""
+        from app.mailer import build_message
+        msg = build_message("me@gmail.com", "them@acme.com", "Hi", "Body",
+                            attachment=("CV_Ankit_Söngara.pdf", b"%PDF-1.4 fake"))
+        part = msg.get_payload()[1]
+        assert part.get_filename() == "CV_Ankit_Söngara.pdf"
+        raw = part["Content-Disposition"]
+        assert "attachment" in raw
+        assert "Söngara" not in raw          # encoded, not raw UTF-8 in the header
+
+    def test_ascii_attachment_filename_unchanged(self):
+        from app.mailer import build_message
+        msg = build_message("me@gmail.com", "them@acme.com", "Hi", "Body",
+                            attachment=("resume.pdf", b"%PDF-1.4 fake"))
+        assert msg.get_payload()[1].get_filename() == "resume.pdf"
+
+    def test_send_time_histogram_uses_viewer_timezone(self, auth_client):
+        """Monday 20:00 UTC is Tuesday 01:30 IST — for a +330 viewer the send
+        must land on Tuesday morning, not Monday evening."""
+        from datetime import datetime
+        r = auth_client.post("/api/contacts", json={
+            "name": "Tz Tester", "email": "tz@acme.com",
+            "company": "Acme", "designation": "Engineer",
+        })
+        assert r.status_code == 201, r.text
+        cid = r.json()["id"]
+        auth_client.patch(f"/api/contacts/{cid}", json={
+            "status": "emailed",
+            "last_emailed_at": datetime(2026, 7, 27, 20, 0).isoformat(),   # Mon 20:00 UTC
+        })
+
+        def cell_for(offset):
+            cells = auth_client.get(
+                "/api/analytics/summary", params={"tz_offset_minutes": offset}
+            ).json()["send_time"]
+            return next((c["weekday"], c["part"]) for c in cells if c["sent"] > 0)
+
+        assert cell_for(0) == (0, "evening")     # raw UTC: Monday evening
+        assert cell_for(330) == (1, "morning")   # IST: Tuesday 01:30 — their clock
+
+    def test_tz_offset_is_clamped(self, auth_client):
+        # A junk offset must not shift results off the map.
+        r = auth_client.get("/api/analytics/summary", params={"tz_offset_minutes": 99999})
+        assert r.status_code == 200
+
+
+class TestBatchedSendQueries:
+    """Bulk send resolved contacts and drafts one-by-one (a Supabase round trip
+    each). Both are single queries now."""
+
+    def test_get_by_ids_returns_all_in_one_query(self, auth_client, test_engine):
+        from sqlalchemy.orm import sessionmaker
+        from app.db.crud import ContactRepository
+        from app.db.models import User
+        ids = []
+        for i in range(4):
+            r = auth_client.post("/api/contacts", json={
+                "name": f"P{i}", "email": f"p{i}@acme.com",
+                "company": "Acme", "designation": "Engineer",
+            })
+            ids.append(r.json()["id"])
+        db = sessionmaker(bind=test_engine)()
+        try:
+            uid = db.query(User).filter(User.email == "tester@example.com").first().id
+            repo = ContactRepository(db, uid)
+            got = repo.get_by_ids(ids)
+            assert {c.id for c in got} == set(ids)
+            assert repo.get_by_ids([]) == []
+        finally:
+            db.close()
+
+    def test_first_touch_drafts_batched_and_skip_followups(self, auth_client, test_engine):
+        from sqlalchemy.orm import sessionmaker
+        from app.db.crud import DraftRepository
+        from app.db.models import EmailDraft, User
+        r = auth_client.post("/api/contacts", json={
+            "name": "Draftee", "email": "d@acme.com",
+            "company": "Acme", "designation": "Engineer",
+        })
+        cid = r.json()["id"]
+        db = sessionmaker(bind=test_engine)()
+        try:
+            uid = db.query(User).filter(User.email == "tester@example.com").first().id
+            db.add_all([
+                EmailDraft(user_id=uid, contact_id=cid, subject="first",
+                           body="b", is_followup=False),
+                EmailDraft(user_id=uid, contact_id=cid, subject="nudge",
+                           body="b", is_followup=True),
+            ])
+            db.commit()
+            got = DraftRepository(db, uid).first_touch_for_contacts([cid])
+            assert set(got) == {cid}
+            assert got[cid].subject == "first"      # never the follow-up
+            assert DraftRepository(db, uid).first_touch_for_contacts([]) == {}
+        finally:
+            db.close()
+
+
 class TestFreshnessBucket:
     """Coarse recency rank from the transient _posted_at — fresh postings win
     scarce resolve/careers slots; unknown ties the middle; stale sinks."""

@@ -31,6 +31,7 @@ from app.db.models import User
 from app.deps import get_current_user
 from app.schemas.contact import ContactUpdate
 from app.timeutil import utcnow, to_naive_utc
+from app.mailer import normalize_app_password
 from app import gmail_oauth
 from app.api.send import RECONNECT_MSG
 
@@ -39,6 +40,44 @@ router = APIRouter(prefix="/inbox", tags=["inbox"])
 
 IMAP_HOST = "imap.gmail.com"
 AWAITING_STATUSES = {"emailed", "followed_up"}
+
+# Header scan batching. One FETCH per message meant a busy inbox cost hundreds
+# of sequential IMAP round trips (~30-80ms each over TLS) — 600 messages ≈ 30s+,
+# straight into the 60s serverless wall. A comma-separated message set pulls a
+# whole chunk in ONE round trip, so the same scan costs a couple of trips.
+_HEADER_CHUNK = 250
+# Safety valve: an inbox with tens of thousands of messages since the oldest
+# send must not run unbounded. Newest-first, since a reply to recent outreach
+# is near the top; older messages are picked up by the next sync's window.
+_MAX_SCAN_MESSAGES = 3000
+# imaplib returns each fetched message as (b'<seq> (BODY[...] {size}', b'<raw>')
+_FETCH_SEQ_RE = re.compile(rb"^(\d+)\s+\(")
+
+
+def _fetch_headers_batched(imap, seqs: list[bytes]):
+    """Yield (seq, raw_header_bytes) for every message, batching the FETCHes.
+
+    imaplib accepts a message SET ("1,2,3"), so N messages cost ceil(N/chunk)
+    round trips instead of N. A chunk that errors is skipped rather than
+    aborting the scan.
+    """
+    for i in range(0, len(seqs), _HEADER_CHUNK):
+        chunk = seqs[i:i + _HEADER_CHUNK]
+        try:
+            typ, msg_data = imap.fetch(
+                b",".join(chunk), "(BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT)])")
+        except Exception as e:
+            log.debug(f"Inbox: header chunk fetch failed: {e}")
+            continue
+        if typ != "OK" or not msg_data:
+            continue
+        for item in msg_data:
+            # Non-tuple entries are the closing b')' separators between messages.
+            if not isinstance(item, tuple) or len(item) < 2 or not item[1]:
+                continue
+            m = _FETCH_SEQ_RE.match(item[0] or b"")
+            if m:
+                yield m.group(1), item[1]
 
 
 class InboxSyncRequest(BaseModel):
@@ -177,7 +216,11 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
 
     # Connection precedence: explicit request creds (IMAP) → stored OAuth
     # grant (Gmail API, preferred) → stored App Password (IMAP).
-    address, password = req.gmail_address.strip(), req.gmail_app_password
+    # normalize_app_password: Gmail shows App Passwords in 4-char groups, so a
+    # pasted value carries spaces. The send path normalized it but this one
+    # didn't — the same paste worked for Send and failed for Check Replies.
+    address = req.gmail_address.strip()
+    password = normalize_app_password(req.gmail_app_password)
     if not (address and password):
         cfg = ConfigRepository(db, user.id)
         oauth_address, oauth_refresh = cfg.get_gmail_oauth()
@@ -213,14 +256,14 @@ def sync_inbox(req: InboxSyncRequest, db: Session = Depends(get_db), user: User 
         typ, data = imap.search(None, f'(SINCE {since_str})')
         if typ == "OK" and data and data[0]:
             uids = data[0].split()
-            for uid in uids:
-                # Cheap first pass: just the From + Date + Subject headers
-                typ, msg_data = imap.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT)])")
-                if typ != "OK" or not msg_data or not msg_data[0]:
-                    continue
-                raw = msg_data[0][1]
-                if not raw:
-                    continue
+            if len(uids) > _MAX_SCAN_MESSAGES:
+                # Newest first — a reply to recent outreach is at the top.
+                log.info(f"Inbox: capping scan at {_MAX_SCAN_MESSAGES} of {len(uids)} messages")
+                uids = uids[-_MAX_SCAN_MESSAGES:]
+            # Headers for the WHOLE window in a handful of round trips; the
+            # expensive full-body fetches below still run per kept message,
+            # but those are only the daemon/reply hits (typically a few).
+            for uid, raw in _fetch_headers_batched(imap, uids):
                 hdr = email.message_from_bytes(raw)
                 _, addr = parseaddr(hdr.get("From", ""))
                 if not addr:

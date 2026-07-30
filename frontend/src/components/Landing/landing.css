@@ -484,8 +484,20 @@
   .crl-about { grid-template-columns: 1fr; }
   .crl-toast-reply { right: 0; }
 }
+/* Phones: the nav row is all unshrinkable items (logo + theme + Log in +
+   Sign up), which together need ~432px — so on a 375px screen the primary
+   "Sign up free" CTA was clipped by .crl-root's overflow-x:hidden. Drop the
+   Log in button (it's repeated in the footer, and Sign up leads to the same
+   modal where you can switch to Log in) and tighten the rest so the CTA
+   always fits. wrap is the safety net for very narrow/large-font cases. */
+@media (max-width: 520px) {
+  .crl-nav { gap: 10px; flex-wrap: wrap; padding-left: 14px; padding-right: 14px; }
+  .crl-btn-login { display: none; }
+  .crl-btn-signup { padding: 8px 13px; font-size: 13px; }
+  .crl-theme-btn { width: 30px; height: 30px; }
+}
 @media (max-width: 420px) {
-  .crl-nav { gap: 12px; }
+  .crl-nav { gap: 8px; }
 }
 
 /* Reduced motion: entrances land instantly; infinite floats/pulse don't run.

@@ -69,7 +69,11 @@ def build_message(
         msg.attach(MIMEText(body, "plain"))
         filename, data = attachment
         part = MIMEApplication(data, Name=filename)
-        part["Content-Disposition"] = f'attachment; filename="{filename}"'
+        # add_header (not a raw f-string): it applies RFC 2231 encoding for
+        # non-ASCII filenames. The manual header emitted raw UTF-8 bytes in a
+        # quoted string, so a résumé named e.g. "CV_Ankit_Söngara.pdf" arrived
+        # with a mangled/rejected attachment name.
+        part.add_header("Content-Disposition", "attachment", filename=filename)
         msg.attach(part)
     msg["From"]    = address
     msg["To"]      = to

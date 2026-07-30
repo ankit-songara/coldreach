@@ -154,6 +154,9 @@ export default function Hunt() {
   const [statusFilter, setStatusFilter] = useState<ContactStatus | 'all'>('all')
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  // Bulk delete is permanent and had no confirm — one mis-tap could wipe a
+  // whole selection ("Clear all" already gates the same destructive action).
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -294,6 +297,7 @@ export default function Hunt() {
   }
 
   const bulkDelete = async () => {
+    setShowBulkDeleteConfirm(false)
     setBulkBusy(true)
     const results = await Promise.all([...selectedIds].map(async id => {
       try {
@@ -535,7 +539,7 @@ export default function Hunt() {
             ))}
           </div>
           <button
-            onClick={bulkDelete}
+            onClick={() => setShowBulkDeleteConfirm(true)}
             disabled={bulkBusy}
             className="btn text-xs flex items-center gap-1"
             style={{
@@ -547,6 +551,23 @@ export default function Hunt() {
             <Trash2 size={11} /> Delete
           </button>
         </div>
+      )}
+
+      {/* ── Bulk-delete confirmation ─────────────────────────────────── */}
+      {showBulkDeleteConfirm && (
+        <ConfirmDialog
+          title={`Delete ${selectedIds.size} selected contact${selectedIds.size !== 1 ? 's' : ''}?`}
+          confirmLabel="Delete"
+          danger
+          busy={bulkBusy}
+          onConfirm={bulkDelete}
+          onCancel={() => setShowBulkDeleteConfirm(false)}
+        >
+          <p>
+            This permanently removes {selectedIds.size === 1 ? 'this contact' : 'these contacts'} and
+            their drafts from your account. It can't be undone.
+          </p>
+        </ConfirmDialog>
       )}
 
       {/* ── Clear-all confirmation ───────────────────────────────────── */}
@@ -599,7 +620,7 @@ export default function Hunt() {
                   key={dc.id}
                   onClick={() => setDrawerId(dc.id)}
                   className="text-xs px-2 py-1 rounded-full"
-                  style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)',
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)',
                            color: 'var(--text)', cursor: 'pointer' }}
                   title={dc.email}
                 >
@@ -629,7 +650,7 @@ export default function Hunt() {
                 key={chip.query}
                 onClick={() => { setQuery(chip.query); doHunt(chip.query) }}
                 className="text-xs px-2 py-1 rounded-full"
-                style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)',
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)',
                          color: 'var(--accent-text)', cursor: 'pointer' }}
               >
                 {chip.label}

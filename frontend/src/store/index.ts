@@ -90,6 +90,10 @@ export const useStore = create<AppState>()(
         // interceptor would read it (see authApi.logout).
         const token = getToken()
         if (token) void authApi.logout(token)
+        // Abort any in-flight hunt FIRST: its .then() writes results into the
+        // store, so a hunt still running at logout could drop the previous
+        // account's leads into the next user's session on a shared device.
+        huntAbort?.abort()
         setToken(null)
         // Per-browser onboarding/throttle flags live in localStorage, not the
         // store — clear them too, or the NEXT user to log in on this shared

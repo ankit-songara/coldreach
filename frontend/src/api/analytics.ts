@@ -39,5 +39,11 @@ export interface AnalyticsSummary {
 }
 
 export const analyticsApi = {
-  summary: () => api.get<AnalyticsSummary>('/analytics/summary').then(r => r.data),
+  // Send the viewer's UTC offset so the "replies by send time" heatmap buckets
+  // by THEIR clock. getTimezoneOffset() is minutes behind UTC (IST = -330), so
+  // negate it to get the conventional +330.
+  summary: () =>
+    api.get<AnalyticsSummary>('/analytics/summary', {
+      params: { tz_offset_minutes: -new Date().getTimezoneOffset() },
+    }).then(r => r.data),
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { LogIn, UserPlus, X } from 'lucide-react'
@@ -34,9 +34,42 @@ export default function Auth({ initialMode = 'login', onClose }: {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  // Modal behaviour: Esc closes; lock the page behind it from scrolling while open.
+  const cardRef  = useRef<HTMLFormElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
+
+  // Focus management, mirroring ConfirmDialog/ContactDrawer: without it, focus
+  // stayed on the (now-scrimmed) landing button, so Tab walked the hidden
+  // landing nav behind the modal before ever reaching the email field.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    emailRef.current?.focus()
+    return () => opener?.focus()
+  }, [])
+
+  // Modal behaviour: Esc closes; Tab is trapped inside the card; lock the page
+  // behind it from scrolling while open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose?.(); return }
+      if (e.key !== 'Tab') return
+      const root = cardRef.current
+      if (!root) return
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter(el => !el.hasAttribute('disabled'))
+      if (focusables.length === 0) { e.preventDefault(); return }
+      const first = focusables[0]
+      const last  = focusables[focusables.length - 1]
+      const active = document.activeElement
+      const inside = active instanceof HTMLElement && root.contains(active)
+      if (e.shiftKey) {
+        if (!inside || active === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (!inside || active === last) { e.preventDefault(); first.focus() }
+      }
+    }
     document.addEventListener('keydown', onKey)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -116,7 +149,7 @@ export default function Auth({ initialMode = 'login', onClose }: {
         >
           {/* One self-contained card: brand header, close, and form all inside —
               no elements floating on the scrim behind it. */}
-          <form onSubmit={submit} className="card space-y-4" style={{ position: 'relative' }}>
+          <form ref={cardRef} onSubmit={submit} className="card space-y-4" style={{ position: 'relative' }}>
             {onClose && (
               <button
                 type="button"
@@ -202,6 +235,7 @@ export default function Auth({ initialMode = 'login', onClose }: {
             <div>
               <label className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Email</label>
               <input
+                ref={emailRef}
                 type="email"
                 value={email}
                 onChange={e => { setEmail(e.target.value); setGoogleHint(false) }}

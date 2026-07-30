@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '../../store'
 import { useShallow } from 'zustand/react/shallow'
 import api from '../../api/client'
@@ -270,15 +270,20 @@ function FunnelRow({ label, count, total, color, delay, onClick }: {
       className="flex items-center gap-3.5 w-full"
       style={{ padding: '11px 0', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', textAlign: 'left', cursor: onClick ? 'pointer' : 'default' }}
     >
-      <div style={{ width: 120, flexShrink: 0 }}>
+      {/* Fixed 120px label + 76px counts left only ~66px of track at 375px
+          (and ~12px at 320px) — the bars read as slivers. Fluid label keeps a
+          usable track on phones and the original width on desktop. */}
+      <div style={{ width: 'clamp(74px, 22vw, 120px)', flexShrink: 0 }}>
         <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{label}</span>
       </div>
       <div className="flex-1" style={{ height: 10, borderRadius: 99, background: 'var(--surface-2)', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: '100%', borderRadius: 99, background: color, transform: `scaleX(${scale})`, transformOrigin: 'left center', transition: 'transform 0.7s var(--ease-out)' }} />
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0 justify-end" style={{ minWidth: 76 }}>
+      <div className="flex items-center gap-2 flex-shrink-0 justify-end" style={{ minWidth: 'clamp(46px, 14vw, 76px)' }}>
         <span className="font-bold tnum" style={{ fontSize: 18, color }}>{count}</span>
-        <span className="tnum" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>{pct}%</span>
+        {/* The bar already shows the proportion — drop the % on phones so the
+            track keeps its width. */}
+        <span className="tnum hidden min-[420px]:inline" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>{pct}%</span>
       </div>
     </button>
   )
@@ -354,6 +359,7 @@ export default function Today() {
       gmailAddress: s.gmailAddress, setActiveTab: s.setActiveTab, setContacts: s.setContacts, setResume: s.setResume,
     })),
   )
+  const qc = useQueryClient()
   const [seeding, setSeeding] = useState(false)
   const [gmailSkipped, setGmailSkipped] = useState(
     () => localStorage.getItem('coldreach-gmail-skipped') === '1'
@@ -382,7 +388,16 @@ export default function Today() {
   const llmLabel = healthUnreachable ? 'unreachable' : (health?.llm ?? '')
 
   const refreshAll = async () => {
-    try { setContacts(await contactsApi.list()) } catch { /* ignore */ }
+    try {
+      const rows = await contactsApi.list()
+      setContacts(rows)
+      // Mirror into the shared cache too: writing only the Zustand store left
+      // ['contacts'] holding the PRE-seed (or pre-clear) list, so the next
+      // mount/refetch overwrote the store and the seeded data vanished —
+      // or cleared demo data came back.
+      qc.setQueryData(['contacts'], rows)
+      qc.invalidateQueries({ queryKey: ['analytics'] })
+    } catch { /* ignore */ }
     try { const r = await resumeApi.getLatest(); setResume(r.text || '') } catch { /* ignore */ }
   }
 
@@ -550,7 +565,7 @@ export default function Today() {
           <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
             👀 You're viewing <strong style={{ color: 'var(--text)' }}>sample data</strong> — explore freely, then clear it before your real search.
           </span>
-          <button onClick={clearDemo} className="text-xs font-semibold ml-auto flex-shrink-0" style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <button onClick={clearDemo} className="hit-target text-xs font-semibold ml-auto flex-shrink-0" style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
             Clear sample data
           </button>
         </div>

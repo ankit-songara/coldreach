@@ -30,7 +30,6 @@ from app.db.crud import (
 from app.llm.prompts import get_designation_key, FORMAL_KEYS
 from app.db.models import User
 from app.deps import get_current_user
-from app.schemas.contact import ContactUpdate
 from app.mailer import normalize_app_password, build_message
 from app import gmail_oauth
 
@@ -91,18 +90,20 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     contact_repo = ContactRepository(db, user.id)
     draft_repo   = DraftRepository(db, user.id)
 
-    # Resolve contacts to send
+    # Resolve contacts to send. ONE query for the whole set — the per-id loop
+    # was a SELECT per contact (a 5-contact chunk = 5 sequential Supabase round
+    # trips before a single email went out).
     if req.contact_ids:
         unique_ids = list(dict.fromkeys(req.contact_ids))
-        contacts = [contact_repo.get_by_id(cid) for cid in unique_ids]
-        contacts = [c for c in contacts if c]
+        by_id = {c.id: c for c in contact_repo.get_by_ids(unique_ids)}
+        contacts = [by_id[cid] for cid in unique_ids if cid in by_id]
     else:
         contacts = contact_repo.get_all()
 
     # Build send queue: contacts with a draft that haven't been emailed yet.
     # Skip addresses already known to be invalid or bounced — protects the
     # sending account's reputation.
-    queue = []
+    eligible = []
     skipped_bad = 0
     for contact in contacts:
         # Never re-send a first-touch to anyone already emailed (in any later
@@ -112,10 +113,12 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         if contact.bounced or contact.email_status == "invalid":
             skipped_bad += 1
             continue
-        drafts = draft_repo.get_for_contact(contact.id)
-        draft  = next((d for d in drafts if not d.is_followup), None)
-        if draft:
-            queue.append((contact, draft))
+        eligible.append(contact)
+
+    # First-touch drafts for every eligible contact in ONE query (was one
+    # SELECT per contact); ix_drafts_user_contact covers the predicate.
+    first_drafts = draft_repo.first_touch_for_contacts([c.id for c in eligible])
+    queue = [(c, first_drafts[c.id]) for c in eligible if c.id in first_drafts]
 
     if skipped_bad:
         log.info(f"Skipped {skipped_bad} invalid/bounced addresses")
@@ -172,6 +175,9 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
             # Fall back to the server-stored (encrypted) creds saved in Setup.
             gmail_address, gmail_app_password = cfg.get_gmail_creds()
 
+    # The pre-verified SMTP session, reused by the FIRST batch (see below).
+    verified_smtp = None
+
     if not use_oauth:
         if not (gmail_address and gmail_app_password):
             raise HTTPException(400,
@@ -180,11 +186,14 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         # Verify credentials once before sending anything.
         # 400 (not 401) on failure: 401 means "session expired" to the frontend and
         # would log the user out over a bad Gmail password.
+        # NOTE the connection is HANDED TO the first batch rather than closed —
+        # every send-all chunk was paying a full extra TLS+AUTH handshake
+        # (~0.5-1s) purely to check the password it was about to use anyway.
         try:
             test_smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
             test_smtp.starttls()
             test_smtp.login(gmail_address, gmail_app_password)
-            test_smtp.quit()
+            verified_smtp = test_smtp
         except smtplib.SMTPAuthenticationError:
             raise HTTPException(400,
                 "Gmail authentication failed. Check your address and App Password. "
@@ -200,14 +209,18 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     # Résumé attachment: loaded once per request, attached only when the
     # recipient is a hiring inbox or recruiter — the recipients whose formal
     # templates may say "resume attached", so the email never lies.
-    resume_file = ResumeRepository(db, user.id).get_file()
+    # Lazily loaded: the row carries the whole file (up to 15MB) and only
+    # formal/recruiter recipients ever attach it, so a queue of founders paid
+    # a large blob read for nothing on every chunk.
+    _resume_file: list = []      # [] = not looked up yet, [None] = none stored
 
     def _attachment_for(contact) -> tuple[str, bytes] | None:
-        if resume_file is None:
+        if get_designation_key(contact.designation or "") not in FORMAL_KEYS:
             return None
-        if get_designation_key(contact.designation or "") in FORMAL_KEYS:
-            return (resume_file.filename, resume_file.data)
-        return None
+        if not _resume_file:
+            _resume_file.append(ResumeRepository(db, user.id).get_file())
+        rf = _resume_file[0]
+        return (rf.filename, rf.data) if rf is not None else None
 
     def send_batch(batch) -> list[SendResult]:
         """Open ONE authenticated SMTP connection and reuse it for the batch.
@@ -215,12 +228,18 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         Re-logging in per message is slow and is itself a pattern Gmail flags;
         one login per small batch keeps concurrency low and traffic human-like.
         """
+        nonlocal verified_smtp
         out: list[SendResult] = []
         smtp = None
         try:
-            smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=20)
-            smtp.starttls()
-            smtp.login(gmail_address, gmail_app_password)
+            if verified_smtp is not None:
+                # Reuse the session the credential check just authenticated —
+                # it's live and logged in; opening a second one is pure latency.
+                smtp, verified_smtp = verified_smtp, None
+            else:
+                smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=20)
+                smtp.starttls()
+                smtp.login(gmail_address, gmail_app_password)
         except Exception as e:
             # Whole batch fails if we can't establish the session
             log.error(f"SMTP session failed for batch: {e}")
@@ -312,11 +331,14 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
             time.sleep(random.uniform(0.5, 1.0) if _SERVERLESS else random.uniform(1.5, 4.0))
 
         batch_results = send_batch_oauth(batch) if use_oauth else send_batch(batch)
-        for result in batch_results:
-            results.append(result)
-            if result.status == "sent":
-                contact_repo.update(result.contact_id, ContactUpdate(
-                    status="emailed", last_emailed_at=datetime.now(timezone.utc).replace(tzinfo=None)))
+        results.extend(batch_results)
+        # ONE update+commit for the batch instead of update/commit/refresh per
+        # message. Still per batch (not deferred to the end) so a crash mid-run
+        # can never leave a sent email unrecorded and re-sendable.
+        sent_ids = [r.contact_id for r in batch_results if r.status == "sent"]
+        if sent_ids:
+            contact_repo.mark_emailed(
+                sent_ids, datetime.now(timezone.utc).replace(tzinfo=None))
 
         log.info(f"Batch {batch_idx+1}/{len(batches)} done — {len(results)} total so far")
 
