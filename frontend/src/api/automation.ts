@@ -32,6 +32,13 @@ export const automationApi = {
   gmailOauthStart: () =>
     api.get<{ url: string }>('/config/gmail/oauth/start').then(r => r.data),
 
+  // Authenticated completion: Google redirects to the SPA root with
+  // ?code&state; posting them with our Bearer token binds the grant to THIS
+  // session (the server also checks state.uid == us).
+  gmailOauthComplete: (code: string, state: string) =>
+    api.post<ConfigStatus>('/config/gmail/oauth/complete', { code, state })
+      .then(r => r.data),
+
   gmailOauthDisconnect: () =>
     api.delete<ConfigStatus>('/config/gmail/oauth').then(r => r.data),
 }

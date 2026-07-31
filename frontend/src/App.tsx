@@ -4,6 +4,9 @@ import type { LucideIcon } from 'lucide-react'
 import { Analytics } from '@vercel/analytics/react'
 import { useStore } from './store'
 import { authApi } from './api/auth'
+import { automationApi } from './api/automation'
+import { queryClient } from './lib/queryClient'
+import toast from 'react-hot-toast'
 import { useContacts } from './hooks/useContacts'
 import { useResume } from './hooks/useResume'
 import { useAutomationConfig } from './hooks/useAutomationConfig'
@@ -228,6 +231,41 @@ export default function App() {
     if (!token || userEmail) return
     authApi.me().then(u => setAuth(token, u.email)).catch(() => {})
   }, [token, userEmail]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Gmail OAuth return leg. Google redirects to the SPA ROOT (?code&state —
+  // fragments aren't allowed in redirect URIs, so this can't land on #setup
+  // directly), and Setup may not even be mounted yet, so the always-mounted
+  // shell completes the exchange: POSTing code+state with our Bearer token is
+  // what binds the grant to THIS session. Gated on token so a login that
+  // expired mid-consent finishes the flow right after signing back in
+  // (the params survive; the state has a 10-minute TTL server-side).
+  useEffect(() => {
+    if (!token) return
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const state = params.get('state')
+    const gerror = params.get('error')          // user hit Cancel on consent
+    if (!code && !state && !gerror) return
+    const cleanUrl = () => {
+      for (const k of ['code', 'state', 'error', 'scope', 'authuser', 'prompt']) params.delete(k)
+      const rest = params.toString()
+      history.replaceState(null, '',
+        window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash)
+    }
+    if (gerror || !code || !state) {
+      toast('Gmail connection cancelled — nothing was changed', { icon: '↩️' })
+      cleanUrl()
+      return
+    }
+    setActiveTab('setup')                       // land where the result shows
+    automationApi.gmailOauthComplete(code, state)
+      .then(fresh => {
+        queryClient.setQueryData(['config'], fresh)
+        toast.success('Gmail connected — you can send right away')
+      })
+      .catch((e: Error) => toast.error(e.message || 'Google connection failed — please try again'))
+      .finally(cleanUrl)
+  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // React to a global 401 (token expired) fired by the axios interceptor
   useEffect(() => {

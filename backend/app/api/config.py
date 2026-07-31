@@ -7,8 +7,8 @@ Profile / signature / Gmail-connection configuration.
   DELETE /api/config/gmail    forget stored Gmail creds
 
   GET    /api/config/gmail/oauth/start     one-click connect: consent URL
-  GET    /api/config/gmail/oauth/callback  Google redirect target (no auth —
-                                           the signed `state` carries the user)
+  POST   /api/config/gmail/oauth/complete  authenticated completion (SPA posts
+                                           Google's ?code&state with its token)
   DELETE /api/config/gmail/oauth           disconnect + best-effort revoke
 
 Secrets (App Password, OAuth refresh token) are Fernet-encrypted with
@@ -19,11 +19,9 @@ endpoint. Send/inbox prefer the OAuth grant when both are present.
 import logging
 import smtplib
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from app.config import settings
 from app.db.database import get_db
 from app.db.crud import (
     ConfigRepository, ResumeRepository, resolve_sender_name, resolve_signature_links,
@@ -123,34 +121,43 @@ def gmail_oauth_start(user: User = Depends(get_current_user)):
     return {"url": gmail_oauth.auth_url(gmail_oauth.make_state(user.id))}
 
 
-@router.get("/config/gmail/oauth/callback")
-def gmail_oauth_callback(
-    state: str = "", code: str = "", error: str = "",
+class OAuthCompleteRequest(BaseModel):
+    code:  str
+    state: str
+
+
+@router.post("/config/gmail/oauth/complete", response_model=ConfigStatus)
+def gmail_oauth_complete(
+    req: OAuthCompleteRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    """Google's redirect target. Unauthenticated by design — the browser
-    arrives without our Authorization header, so the signed short-lived
-    `state` token is what attributes (and CSRF-protects) the grant."""
-    def back(result: str) -> RedirectResponse:
-        # Land on Setup so the user sees the connection state immediately.
-        return RedirectResponse(f"{settings.frontend_url.rstrip('/')}/?gmail={result}#setup")
-
-    uid = gmail_oauth.verify_state(state)
+    """Authenticated completion of the consent flow. Google redirects the
+    browser to the SPA root with ?code&state; the logged-in frontend POSTs
+    them here. Requiring BOTH a valid session and state.uid == that session's
+    user means a grant can only land on the account that initiated the flow
+    AND performed the consent — the old unauthenticated callback trusted the
+    state's uid alone, so a crafted consent link could plant/harvest a grant
+    across accounts."""
+    uid = gmail_oauth.verify_state(req.state)
     if uid is None:
-        return back("error")
-    if error or not code:
-        # User hit "Cancel" on the consent screen (or Google errored).
-        return back("cancelled")
+        raise HTTPException(400, "This connection link expired — try Connect Gmail again.")
+    if uid != user.id:
+        log.warning(f"[user {user.id}] OAuth complete with state for user {uid} — rejected")
+        raise HTTPException(400, "This connection attempt belongs to a different session — try again.")
+    if not req.code:
+        raise HTTPException(400, "Google didn't return a code — try Connect Gmail again.")
     try:
-        refresh_token, email = gmail_oauth.exchange_code(code)
-    except Exception:
-        return back("error")
+        refresh_token, email = gmail_oauth.exchange_code(req.code)
+    except Exception as e:
+        log.warning(f"[user {user.id}] Gmail OAuth completion failed: {e}")
+        raise HTTPException(502, "Couldn't finish connecting to Google. Please try again.")
 
-    cfg = ConfigRepository(db, uid)
+    cfg = ConfigRepository(db, user.id)
     cfg.set("gmail_oauth_refresh_token", refresh_token)
     cfg.set("gmail_oauth_address", email)
-    log.info(f"[user {uid}] Gmail connected via OAuth ({email})")
-    return back("connected")
+    log.info(f"[user {user.id}] Gmail connected via OAuth ({email})")
+    return _status(db, user)
 
 
 @router.delete("/config/gmail/oauth", response_model=ConfigStatus)

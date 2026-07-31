@@ -2646,7 +2646,10 @@ class TestGmailOAuthInboxSync:
 
 
 class TestGmailOAuthEndpoints:
-    """GET /api/config/gmail/oauth/start + the unauthenticated callback."""
+    """GET /oauth/start + the AUTHENTICATED completion endpoint. The old
+    unauthenticated backend callback is gone: completion now requires a
+    Bearer token AND state.uid == the caller, so a grant can only land on
+    the session that both initiated the flow and performed the consent."""
 
     def test_start_returns_consent_url(self, auth_client, monkeypatch):
         from app.config import settings
@@ -2665,20 +2668,28 @@ class TestGmailOAuthEndpoints:
         monkeypatch.setattr(settings, "google_client_secret", "")
         assert auth_client.get("/api/config/gmail/oauth/start").status_code == 503
 
-    def test_callback_forged_state_redirects_error(self, client, monkeypatch):
+    def test_old_unauthenticated_callback_is_gone(self, client):
+        r = client.get("/api/config/gmail/oauth/callback",
+                       params={"state": "x", "code": "y"})
+        assert r.status_code == 404
+
+    def test_complete_requires_auth(self, client):
+        r = client.post("/api/config/gmail/oauth/complete",
+                        json={"code": "abc", "state": "whatever"})
+        assert r.status_code == 401
+
+    def test_complete_forged_state_rejected(self, auth_client, monkeypatch):
         from app import gmail_oauth
 
         def _never(code):
             raise AssertionError("exchange_code called with a forged state")
         monkeypatch.setattr(gmail_oauth, "exchange_code", _never)
 
-        r = client.get("/api/config/gmail/oauth/callback",
-                       params={"state": "forged-garbage", "code": "abc"},
-                       follow_redirects=False)
-        assert r.status_code in (302, 307)
-        assert "gmail=error" in r.headers["location"]
+        r = auth_client.post("/api/config/gmail/oauth/complete",
+                             json={"code": "abc", "state": "forged-garbage"})
+        assert r.status_code == 400
 
-    def test_callback_expired_state_redirects_error(self, client, monkeypatch):
+    def test_complete_expired_state_rejected(self, auth_client, monkeypatch):
         import json
         from datetime import datetime, timezone, timedelta
         from app import security, gmail_oauth
@@ -2687,17 +2698,44 @@ class TestGmailOAuthEndpoints:
             raise AssertionError("exchange_code called with an expired state")
         monkeypatch.setattr(gmail_oauth, "exchange_code", _never)
 
-        # Genuine (decryptable) state whose TTL has passed.
         payload = {"purpose": "gmail-oauth", "uid": 1,
                    "exp": (datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp()}
         state = security._fernet.encrypt(json.dumps(payload).encode()).decode()
+        r = auth_client.post("/api/config/gmail/oauth/complete",
+                             json={"code": "abc", "state": state})
+        assert r.status_code == 400
 
-        r = client.get("/api/config/gmail/oauth/callback",
-                       params={"state": state, "code": "abc"},
-                       follow_redirects=False)
-        assert "gmail=error" in r.headers["location"]
+    def test_complete_rejects_state_for_a_different_user(self, auth_client, db_session, monkeypatch):
+        """THE harvest/planting guard: a state minted for another account must
+        never let this session's consent store a grant across accounts."""
+        from app import gmail_oauth
+        from app.db.models import User
 
-    def test_callback_happy_path_stores_encrypted_refresh_token(self, auth_client, db_session, monkeypatch):
+        def _never(code):
+            raise AssertionError("exchange_code called despite a cross-user state")
+        monkeypatch.setattr(gmail_oauth, "exchange_code", _never)
+
+        me = db_session.query(User).first()
+        other_state = gmail_oauth.make_state(me.id + 999)   # someone else's flow
+        r = auth_client.post("/api/config/gmail/oauth/complete",
+                             json={"code": "abc", "state": other_state})
+        assert r.status_code == 400
+
+    def test_complete_exchange_failure_is_502(self, auth_client, db_session, monkeypatch):
+        from app import gmail_oauth
+        from app.db.models import User
+
+        def _boom(code):
+            raise RuntimeError("code exchange failed")
+        monkeypatch.setattr(gmail_oauth, "exchange_code", _boom)
+
+        user = db_session.query(User).first()
+        state = gmail_oauth.make_state(user.id)
+        r = auth_client.post("/api/config/gmail/oauth/complete",
+                             json={"code": "bad-code", "state": state})
+        assert r.status_code == 502
+
+    def test_complete_happy_path_stores_encrypted_refresh_token(self, auth_client, db_session, monkeypatch):
         from app import gmail_oauth
         from app.db.models import User, AppConfig
         from app.db.crud import ConfigRepository
@@ -2707,11 +2745,14 @@ class TestGmailOAuthEndpoints:
         monkeypatch.setattr(gmail_oauth, "exchange_code",
                             lambda code: ("refresh-xyz", "me@gmail.com"))
 
-        r = auth_client.get("/api/config/gmail/oauth/callback",
-                            params={"state": state, "code": "good-code"},
-                            follow_redirects=False)
-        assert r.status_code in (302, 307)
-        assert "gmail=connected" in r.headers["location"]
+        r = auth_client.post("/api/config/gmail/oauth/complete",
+                             json={"code": "good-code", "state": state})
+        assert r.status_code == 200, r.text
+        # The endpoint returns the fresh status directly (frontend caches it).
+        body = r.json()
+        assert body["has_gmail"] is True
+        assert body["gmail_method"] == "oauth"
+        assert body["gmail_address"] == "me@gmail.com"
 
         db_session.commit()   # end the read transaction so the write is visible
         addr, token = ConfigRepository(db_session, user.id).get_gmail_oauth()
@@ -2721,11 +2762,33 @@ class TestGmailOAuthEndpoints:
             user_id=user.id, key="gmail_oauth_refresh_token").first()
         assert raw.value and raw.value != "refresh-xyz"
 
-        # The connection now reports as OAuth-connected.
-        status = auth_client.get("/api/config").json()
-        assert status["has_gmail"] is True
-        assert status["gmail_method"] == "oauth"
-        assert status["gmail_address"] == "me@gmail.com"
+    def test_redirect_uri_is_the_spa_root(self, monkeypatch):
+        from app.config import settings
+        from app import gmail_oauth
+        monkeypatch.setattr(settings, "frontend_url", "https://app.example.com")
+        assert gmail_oauth.redirect_uri() == "https://app.example.com/"
+
+    def test_exchange_code_raises_on_profile_failure(self, monkeypatch):
+        """An addressless grant half-connects (redirect said 'connected',
+        Setup said not connected) — the profile fetch failing must raise."""
+        import httpx as _httpx
+        import pytest
+        from app.config import settings
+        from app import gmail_oauth
+        monkeypatch.setattr(settings, "google_client_id", "cid")
+        monkeypatch.setattr(settings, "google_client_secret", "cs")
+
+        def handler(request: _httpx.Request) -> _httpx.Response:
+            if "oauth2.googleapis.com" in str(request.url):
+                return _httpx.Response(200, json={
+                    "refresh_token": "r", "access_token": "a"})
+            return _httpx.Response(500)          # profile endpoint down
+
+        real_client = _httpx.Client
+        monkeypatch.setattr(_httpx, "Client",
+                            lambda *a, **kw: real_client(transport=_httpx.MockTransport(handler)))
+        with pytest.raises(RuntimeError):
+            gmail_oauth.exchange_code("code-1")
 
 
 class TestHackerNewsScraper:

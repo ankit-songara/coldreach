@@ -1,15 +1,20 @@
 """
 Gmail OAuth 2.0 + Gmail REST API plumbing — the one-click "Connect Gmail" path.
 
-Flow (authorization-code):
+Flow (authorization-code, completed by the AUTHENTICATED frontend):
   1. /config/gmail/oauth/start builds the consent URL (state = short-lived
-     purpose-tagged token so the unauthenticated callback can attribute the
-     grant to a user without trusting the query string).
-  2. Google redirects to /config/gmail/oauth/callback?code=…&state=…
-  3. exchange_code() swaps the code for a refresh token (stored Fernet-
+     purpose-tagged token binding the flow to the initiating user).
+  2. Google redirects to the FRONTEND root: {frontend_url}/?code=…&state=…
+  3. The logged-in SPA POSTs {code, state} to /config/gmail/oauth/complete
+     with its Bearer token. The server checks state.uid == the caller — so a
+     grant can only ever land on the session that BOTH initiated the flow and
+     completed it. (The old unauthenticated backend callback trusted state's
+     uid alone: a crafted consent link could harvest the consenting victim's
+     Gmail grant onto the attacker's account.)
+  4. exchange_code() swaps the code for a refresh token (stored Fernet-
      encrypted in app_config) and reads the connected address from the
      Gmail profile endpoint.
-  4. Sending uses access_token_for() + send_raw() — plain HTTPS to the Gmail
+  5. Sending uses access_token_for() + send_raw() — plain HTTPS to the Gmail
      API, which is both allowed and more reliable on serverless than SMTP.
 
 Scopes: gmail.send (send only) + gmail.readonly (reply detection). While the
@@ -52,7 +57,10 @@ def enabled() -> bool:
 
 
 def redirect_uri() -> str:
-    return f"{settings.backend_public_url.rstrip('/')}/api/config/gmail/oauth/callback"
+    # The SPA root (registered verbatim in the Google console). Fragments
+    # aren't allowed in redirect URIs, so App.tsx handles ?code&state on boot
+    # regardless of which tab the app opens on.
+    return f"{settings.frontend_url.rstrip('/')}/"
 
 
 # ── State token (CSRF + user attribution for the unauthenticated callback) ────
@@ -125,6 +133,12 @@ def exchange_code(code: str) -> tuple[str, str]:
             headers={"Authorization": f"Bearer {access}"},
         )
         email = profile.json().get("emailAddress", "") if profile.is_success else ""
+        if not email:
+            # An addressless grant half-connects: the flow reports success but
+            # Setup shows "not connected" and sends have no From identity.
+            # Raise so the caller surfaces a clean retryable error instead.
+            log.warning(f"Gmail OAuth profile fetch failed: {profile.status_code}")
+            raise RuntimeError("could not read the connected Gmail address")
     return refresh, email
 
 

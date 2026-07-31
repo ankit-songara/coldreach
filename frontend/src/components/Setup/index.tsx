@@ -58,26 +58,10 @@ export default function Setup() {
   const gmailMethod    = cfg?.gmail_method ?? ''
   const oauthAvailable = cfg?.oauth_available ?? false
 
-  // The OAuth callback lands the browser back here as /?gmail=<result>#setup
-  // (hash routing — the param precedes the #). Toast once, then strip the
-  // param so a refresh doesn't re-toast.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const result = params.get('gmail')
-    if (!result) return
-    if (result === 'connected') {
-      toast.success('Gmail connected — you can send right away')
-      qc.invalidateQueries({ queryKey: ['config'] })
-    } else if (result === 'cancelled') {
-      toast('Gmail connection cancelled — nothing was changed', { icon: '↩️' })
-    } else if (result === 'error') {
-      toast.error('Google connection failed — please try again')
-    }
-    params.delete('gmail')
-    const rest = params.toString()
-    history.replaceState(null, '',
-      window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: the OAuth return leg (?code&state on the SPA root) is handled by the
+  // always-mounted App shell, not here — Google can't land on #setup directly
+  // and this tab may not be mounted when the browser comes back. App completes
+  // the authenticated exchange, toasts, and switches to this tab.
 
   // Populate the local form state from the resolved signature (explicit
   // override → auto-detected from résumé). Guarded by !editingSig so a
