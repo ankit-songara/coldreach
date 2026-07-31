@@ -8,6 +8,7 @@ so callers physically cannot read or write another user's rows.
 
 import re
 from datetime import datetime, timedelta
+from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.db.models import (
@@ -113,6 +114,40 @@ class ContactRepository:
         (self._scoped()
              .filter(Contact.id.in_(contact_ids))
              .update({Contact.status: "emailed", Contact.last_emailed_at: when},
+                     synchronize_session=False))
+        self.db.commit()
+
+    def claim_for_send(self, contact_ids: list[int], when: datetime) -> set[int]:
+        """Atomically claim contacts for a first-touch send. The WHERE re-checks
+        the not-yet-touched state INSIDE the UPDATE, so of two overlapping
+        bulk-send requests only one can claim each row — the other request's
+        claim matches nothing and it skips those contacts instead of
+        double-sending the same cold email. Returns the ids actually claimed."""
+        if not contact_ids:
+            return set()
+        res = self.db.execute(
+            sa_update(Contact)
+            .where(Contact.user_id == self.user_id,
+                   Contact.id.in_(contact_ids),
+                   Contact.last_emailed_at.is_(None),
+                   Contact.status.notin_(ALREADY_CONTACTED_STATUSES))
+            .values(status="emailed", last_emailed_at=when)
+            .returning(Contact.id)
+            .execution_options(synchronize_session=False))
+        claimed = {row[0] for row in res}
+        self.db.commit()
+        return claimed
+
+    def release_send_claim(self, contact_ids: list[int], claim_ts: datetime) -> None:
+        """Give back claims whose send FAILED, restoring first-touch
+        eligibility. Guarded on the claim timestamp so it can only undo THIS
+        request's claim, never a genuine send recorded by someone else."""
+        if not contact_ids:
+            return
+        (self._scoped()
+             .filter(Contact.id.in_(contact_ids),
+                     Contact.last_emailed_at == claim_ts)
+             .update({Contact.status: "new", Contact.last_emailed_at: None},
                      synchronize_session=False))
         self.db.commit()
 

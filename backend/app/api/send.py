@@ -317,6 +317,24 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
                                       error="Couldn't send this one. Try again in a moment."))
         return out
 
+    # ── Idempotency claim ─────────────────────────────────────────────────────
+    # Two overlapping bulk sends (double-click, a second tab, a retried
+    # request) would each read the same not-yet-emailed queue and DOUBLE-SEND
+    # the same cold email. Claim the queue in one atomic conditional UPDATE
+    # before any mail moves: the WHERE re-checks first-touch state, so a
+    # concurrent request's claim matches nothing and it skips these contacts.
+    # Failed sends release their claim below, restoring eligibility.
+    # Placed AFTER credential verification so a bad password never churns
+    # claim/release.
+    claim_ts = datetime.now(timezone.utc).replace(tzinfo=None)
+    claimed = contact_repo.claim_for_send([c.id for c, _ in queue], claim_ts)
+    if len(claimed) < len(queue):
+        log.info(f"Send: {len(queue) - len(claimed)} contacts already claimed by a concurrent request")
+        queue = [(c, d) for c, d in queue if c.id in claimed]
+    if not queue:
+        raise HTTPException(409,
+            "These emails are already being sent by another request — check the results in a moment.")
+
     # Send in small batches with a randomized pause between them. Jitter makes
     # the traffic look less machine-like (constant intervals are a spam signal)
     # and keeps concurrency low so Gmail doesn't throttle.
@@ -334,13 +352,18 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         results.extend(batch_results)
         # ONE update+commit for the batch instead of update/commit/refresh per
         # message. Still per batch (not deferred to the end) so a crash mid-run
-        # can never leave a sent email unrecorded and re-sendable.
+        # can never leave a sent email unrecorded and re-sendable. This also
+        # refreshes the claim timestamp to the actual send time.
         sent_ids = [r.contact_id for r in batch_results if r.status == "sent"]
         if sent_ids:
             contact_repo.mark_emailed(
                 sent_ids, datetime.now(timezone.utc).replace(tzinfo=None))
 
         log.info(f"Batch {batch_idx+1}/{len(batches)} done — {len(results)} total so far")
+
+    # Failed sends give their claim back so a retry can reach them again.
+    failed_ids = [r.contact_id for r in results if r.status == "failed"]
+    contact_repo.release_send_claim(failed_ids, claim_ts)
 
     sent   = sum(1 for r in results if r.status == "sent")
     failed = sum(1 for r in results if r.status == "failed")

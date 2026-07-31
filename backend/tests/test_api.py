@@ -3150,6 +3150,69 @@ class TestBatchedSendQueries:
             db.close()
 
 
+class TestSendIdempotencyClaim:
+    """Overlapping bulk sends must not double-send: the first request's atomic
+    claim wins each contact; the loser's claim matches nothing."""
+
+    def _repo_and_ids(self, auth_client, test_engine, n=3):
+        from sqlalchemy.orm import sessionmaker
+        from app.db.crud import ContactRepository
+        from app.db.models import User
+        ids = []
+        for i in range(n):
+            r = auth_client.post("/api/contacts", json={
+                "name": f"Claim{i}", "email": f"claim{i}@acme.com",
+                "company": "Acme", "designation": "Engineer",
+            })
+            assert r.status_code == 201, r.text
+            ids.append(r.json()["id"])
+        db = sessionmaker(bind=test_engine)()
+        uid = db.query(User).filter(User.email == "tester@example.com").first().id
+        return db, ContactRepository(db, uid), ids
+
+    def test_second_claim_gets_nothing(self, auth_client, test_engine):
+        from datetime import datetime
+        db, repo, ids = self._repo_and_ids(auth_client, test_engine)
+        try:
+            ts = datetime(2026, 7, 31, 12, 0)
+            assert repo.claim_for_send(ids, ts) == set(ids)      # request A wins all
+            assert repo.claim_for_send(ids, ts) == set()         # request B gets none
+        finally:
+            db.close()
+
+    def test_release_restores_only_this_claim(self, auth_client, test_engine):
+        from datetime import datetime
+        db, repo, ids = self._repo_and_ids(auth_client, test_engine)
+        try:
+            ts = datetime(2026, 7, 31, 12, 0)
+            repo.claim_for_send(ids, ts)
+            # One send succeeded and was re-stamped with the real send time —
+            # releasing the claim must NOT undo that genuine send.
+            real_send = datetime(2026, 7, 31, 12, 5)
+            repo.mark_emailed(ids[:1], real_send)
+            repo.release_send_claim(ids, ts)
+            back = {c.id: c for c in repo.get_by_ids(ids)}
+            assert back[ids[0]].status == "emailed"              # kept (real send)
+            assert back[ids[0]].last_emailed_at == real_send
+            for cid in ids[1:]:                                  # released (failed)
+                assert back[cid].status == "new"
+                assert back[cid].last_emailed_at is None
+            # Released contacts are claimable again on retry.
+            assert repo.claim_for_send(ids, datetime(2026, 7, 31, 13, 0)) == set(ids[1:])
+        finally:
+            db.close()
+
+    def test_claim_skips_already_touched(self, auth_client, test_engine):
+        from datetime import datetime
+        db, repo, ids = self._repo_and_ids(auth_client, test_engine)
+        try:
+            repo.mark_emailed(ids[:1], datetime(2026, 7, 30, 9, 0))   # touched earlier
+            got = repo.claim_for_send(ids, datetime(2026, 7, 31, 12, 0))
+            assert got == set(ids[1:])
+        finally:
+            db.close()
+
+
 class TestFreshnessBucket:
     """Coarse recency rank from the transient _posted_at — fresh postings win
     scarce resolve/careers slots; unknown ties the middle; stale sinks."""
