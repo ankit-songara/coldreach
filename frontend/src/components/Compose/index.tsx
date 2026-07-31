@@ -1,5 +1,5 @@
 import { useState, useContext, useRef } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Wand2, RotateCcw, RefreshCw, ChevronDown, ChevronRight, Pencil, Check, X, Search, StopCircle } from 'lucide-react'
 import { useStore } from '../../store'
@@ -7,7 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { composeApi } from '../../api/compose'
 import api from '../../api/client'
 import { STATUS_META, SENT_STATUSES } from '../../types'
-import type { Contact, ComposeRequest } from '../../types'
+import type { Contact, ComposeRequest, Draft } from '../../types'
 import { ResumeReadyCtx } from '../../App'
 import { contactDisplayName, isGenericName, displayDesignation } from '../../lib/display'
 import { useAllDrafts } from '../../hooks/useAllDrafts'
@@ -38,6 +38,13 @@ export default function Compose() {
   // tab must not flash "No contacts yet" before the fetch resolves.
   const { contactsLoaded } = useContacts()
 
+  const qc = useQueryClient()
+  // Draft writes must also patch the ['drafts','all'] cache — it feeds Send's
+  // first mount, and a store-only write left the cache stale, so a later
+  // mirror could replay OLD drafts over the ones just generated/edited.
+  const patchDraftsCache = (fn: (rows: Draft[]) => Draft[]) =>
+    qc.setQueryData<Draft[]>(['drafts', 'all'], rows => (rows ? fn(rows) : rows))
+
   const composeMutation = useMutation({
     // `silent` is UI-only (bulk runs toast one summary instead of one per
     // email) — strip it so it never reaches the API.
@@ -49,6 +56,8 @@ export default function Compose() {
       // (Was inverted — it kept old primaries and deleted the follow-up, so a
       // regen lost the follow-up and stacked duplicate primaries.)
       setDrafts(draft.contact_id, [draft, ...existing.filter(d => d.is_followup)])
+      patchDraftsCache(rows => [draft, ...rows.filter(
+        d => !(d.contact_id === draft.contact_id && !d.is_followup))])
       if (!vars.silent) toast.success('Email generated')
     },
     onError: (e: Error) => toast.error(e.message),
@@ -59,6 +68,7 @@ export default function Compose() {
     onSuccess: (draft) => {
       const existing = drafts[draft.contact_id] ?? []
       setDrafts(draft.contact_id, [draft, ...existing])
+      patchDraftsCache(rows => [draft, ...rows])
       toast.success('Follow-up ready')
     },
     onError: (e: Error) => toast.error(e.message),
@@ -325,6 +335,12 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
   dimmed?: boolean
 }) {
   const { drafts: allDrafts, setDrafts } = useStore()
+  const qc = useQueryClient()
+  // Same cache patch as the parent's mutations — edits must not leave the
+  // ['drafts','all'] snapshot holding the pre-edit text.
+  const patchDraftsCache = (updated: Draft) =>
+    qc.setQueryData<Draft[]>(['drafts', 'all'], rows =>
+      rows?.map(d => (d.id === updated.id ? updated : d)))
   const contactDrafts = drafts[c.id] ?? []
   const latest   = contactDrafts.find((d: any) => !d.is_followup)
   const followup = contactDrafts.find((d: any) => d.is_followup)
@@ -352,6 +368,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
       const updated = await composeApi.editDraft(latest.id, editSubject, editBody)
       const existing = allDrafts[c.id] ?? []
       setDrafts(c.id, existing.map((d: any) => d.id === updated.id ? updated : d))
+      patchDraftsCache(updated)
       setEditing(false)
       toast.success('Draft updated')
     } catch (e: any) {
@@ -374,6 +391,7 @@ function ContactCard({ contact: c, drafts, composeMutation, followupMutation, re
       const updated = await composeApi.editDraft(followup.id, editFollowupSubject, editFollowupBody)
       const existing = allDrafts[c.id] ?? []
       setDrafts(c.id, existing.map((d: any) => d.id === updated.id ? updated : d))
+      patchDraftsCache(updated)
       setEditingFollowup(false)
       toast.success('Follow-up updated')
     } catch (e: any) {

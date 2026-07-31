@@ -5,6 +5,7 @@ import { contactsApi } from '../../api/contacts'
 import { inboxApi } from '../../api/inbox'
 import type { ReplyMessage } from '../../api/inbox'
 import Logo from '../shared/Logo'
+import { useAutomationConfig } from '../../hooks/useAutomationConfig'
 import { STATUS_META } from '../../types'
 import type { Contact, ContactStatus } from '../../types'
 import { displayDesignation } from '../../lib/display'
@@ -38,7 +39,13 @@ function timeAgo(iso: string | null): string {
 
 export default function Replies() {
   const upsertContact = useStore(s => s.upsertContact)   // stable action ref — never re-renders on data
+  const setActiveTab  = useStore(s => s.setActiveTab)
   const qc = useQueryClient()
+
+  // Shared config cache (same query Setup/Send/Today read) — powers the
+  // honest empty state below without an extra fetch.
+  const { data: cfg } = useAutomationConfig()
+  const gmailConnected = cfg?.has_gmail ?? true   // assume connected until known — avoids CTA flash
 
   const { data: replies, isLoading, isError, refetch } = useQuery({
     queryKey: ['replies'],
@@ -125,9 +132,26 @@ export default function Replies() {
           {/* Animated brand mark: "empty inbox" is a sanctioned waiting
               surface in the logo kit — the typing dots ARE the message. */}
           <div style={{ marginBottom: 14 }}><Logo size={34} animated /></div>
-          <p className="text-sm font-mono" style={{ color: 'var(--text-muted)' }}>
-            No replies yet — they land here automatically after you send
-          </p>
+          {/* Honest copy: "they land here automatically" is only true once
+              Gmail is connected — without it the promise was a dead end. */}
+          {gmailConnected ? (
+            <p className="text-sm font-mono" style={{ color: 'var(--text-muted)' }}>
+              No replies yet — they land here automatically after you send
+            </p>
+          ) : (
+            <>
+              <p className="text-sm font-mono mb-4" style={{ color: 'var(--text-muted)' }}>
+                No replies yet. Connect Gmail so ColdReach can spot them for you
+              </p>
+              <button
+                onClick={() => setActiveTab('setup')}
+                className="px-5 py-2 rounded-full text-sm font-bold"
+                style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer' }}
+              >
+                Connect Gmail in Setup →
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -152,7 +176,10 @@ export default function Replies() {
                     <span className="font-medium text-[12.5px]" style={{ color: 'var(--text-muted)' }}> · {displayDesignation(r.designation)}</span>
                   )}
                 </div>
-                <div className="text-[10.5px] font-mono truncate" style={{ color: 'var(--text-dim)' }}>
+                {/* --text-muted, not --text-dim: this line carries CONTENT
+                    (company, time, subject) and --text-dim measures ~2.7:1 at
+                    10.5px — below WCAG for meaningful text. */}
+                <div className="text-[10.5px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
                   {r.company}
                   {when && <> · {when}</>}
                   {' · '}{r.subject ? <>replied to "{r.subject}"</> : 'replied to your email'}

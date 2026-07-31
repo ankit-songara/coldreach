@@ -25,7 +25,9 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.db.database import get_db
-from app.db.crud import ConfigRepository, resolve_sender_name, resolve_signature_links
+from app.db.crud import (
+    ConfigRepository, ResumeRepository, resolve_sender_name, resolve_signature_links,
+)
 from app.db.models import User
 from app.deps import get_current_user
 from app import mailer
@@ -167,9 +169,17 @@ def gmail_oauth_disconnect(db: Session = Depends(get_db), user: User = Depends(g
 def _status(db: Session, user: User) -> ConfigStatus:
     # Signature values are RESOLVED (explicit override → résumé auto-detection),
     # so the frontend can render the preview without its own fallbacks.
+    # Batched: ONE config SELECT for all six keys and (only when a signature
+    # field needs résumé fallback) ONE résumé read — this endpoint fires on
+    # every app load and used to make ~8 serial round trips.
     cfg = ConfigRepository(db, user.id)
-    addr, pw = cfg.get_gmail_creds()
-    oauth_addr, oauth_token = cfg.get_gmail_oauth()
+    vals = cfg.get_many([
+        "gmail_address", "gmail_app_password",
+        "gmail_oauth_address", "gmail_oauth_refresh_token",
+        "sender_name", "signature_links",
+    ])
+    addr, pw = vals["gmail_address"], vals["gmail_app_password"]
+    oauth_addr, oauth_token = vals["gmail_oauth_address"], vals["gmail_oauth_refresh_token"]
     # OAuth wins when both are present — it's the connection send/inbox prefer.
     if oauth_addr and oauth_token:
         method, shown = "oauth", oauth_addr
@@ -177,9 +187,17 @@ def _status(db: Session, user: User) -> ConfigStatus:
         method, shown = "app_password", addr
     else:
         method, shown = "", addr
+
+    resume_text = ""
+    if not vals["sender_name"].strip() or not vals["signature_links"].strip():
+        latest = ResumeRepository(db, user.id).get_latest()
+        resume_text = latest.text if latest else ""
+
     return ConfigStatus(
-        sender_name=resolve_sender_name(db, user.id, user.email),
-        signature_links=resolve_signature_links(db, user.id),
+        sender_name=resolve_sender_name(db, user.id, user.email,
+                                        cfg_values=vals, resume_text=resume_text),
+        signature_links=resolve_signature_links(db, user.id,
+                                                cfg_values=vals, resume_text=resume_text),
         gmail_address=shown,
         has_gmail=bool(method),
         gmail_method=method,

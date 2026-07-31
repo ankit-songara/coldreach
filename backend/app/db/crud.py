@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from app.db.models import (
     Contact, EmailDraft, Resume, ResumeFile, AppConfig, User, KnownCompany, EmailPattern,
     ReplyMessage, HuntCursor, CompanyTag, ScrapeCache,
@@ -85,7 +85,19 @@ class ContactRepository:
         return self.db.query(Contact).filter(Contact.user_id == self.user_id)
 
     def get_all(self) -> list[Contact]:
-        return self._scoped().order_by(Contact.created_at.desc()).all()
+        # context (up to 4KB of scraped posting text per row) is deferred: no
+        # get_all() consumer reads it — ContactOut doesn't serialize it, and
+        # send/inbox/analytics/hunt only touch identity/status columns — yet
+        # every list call was dragging ~KBs × N rows out of Supabase. Compose,
+        # the one context reader, fetches per-contact via get_by_id (eager).
+        # If a future caller DOES touch .context it still works (lazy loads,
+        # one query per row) — just move that caller off get_all() then.
+        return (
+            self._scoped()
+            .options(defer(Contact.context))
+            .order_by(Contact.created_at.desc())
+            .all()
+        )
 
     def count_emailed_since(self, since: datetime) -> int:
         """SQL-side count of contacts emailed after `since` — used for the daily
@@ -412,6 +424,23 @@ class ConfigRepository:
             return security.decrypt(row.value)
         return row.value
 
+    def get_many(self, keys: list[str]) -> dict[str, str]:
+        """Every requested value in ONE SELECT ("" for missing keys), secret
+        keys decrypted exactly like get(). GET /config fired on every app load
+        used to make ~6 serial single-key round trips to Supabase for these."""
+        rows = (
+            self.db.query(AppConfig)
+            .filter(AppConfig.user_id == self.user_id, AppConfig.key.in_(keys))
+            .all()
+        )
+        out = {k: "" for k in keys}
+        for r in rows:
+            v = r.value or ""
+            if r.key in self.SECRET_KEYS and v:
+                v = security.decrypt(v)
+            out[r.key] = v
+        return out
+
     def get_gmail_creds(self) -> tuple[str, str]:
         """(address, app_password) — empty strings if not connected.
         Password decrypts via SECRET_KEY; stored value never leaves the server."""
@@ -538,21 +567,31 @@ def _name_from_resume(text: str) -> str:
     return ""
 
 
-def resolve_sender_name(db: Session, user_id: int, user_email: str = "") -> str:
+def resolve_sender_name(db: Session, user_id: int, user_email: str = "", *,
+                        cfg_values: dict | None = None,
+                        resume_text: str | None = None) -> str:
     """
     Resolve the name to sign emails with, in priority order:
       1. an explicit `sender_name` saved in config
       2. the name on the first line of the user's latest résumé
       3. a name derived from their email local-part (last resort)
+
+    cfg_values / resume_text: optional preloaded data so a caller resolving
+    BOTH signature fields (GET /config's _status) pays one config SELECT and
+    one résumé read total, instead of re-querying per resolver.
     """
-    cfg = ConfigRepository(db, user_id)
-    explicit = cfg.get("sender_name", "").strip()
+    if cfg_values is not None:
+        explicit = (cfg_values.get("sender_name") or "").strip()
+    else:
+        explicit = ConfigRepository(db, user_id).get("sender_name", "").strip()
     if explicit:
         return explicit
 
-    latest = ResumeRepository(db, user_id).get_latest()
-    if latest:
-        from_resume = _name_from_resume(latest.text)
+    if resume_text is None:
+        latest = ResumeRepository(db, user_id).get_latest()
+        resume_text = latest.text if latest else ""
+    if resume_text:
+        from_resume = _name_from_resume(resume_text)
         if from_resume:
             return from_resume
 
@@ -603,20 +642,26 @@ def extract_links_from_resume(text: str) -> str:
     return " · ".join(links[:3])
 
 
-def resolve_signature_links(db: Session, user_id: int) -> str:
+def resolve_signature_links(db: Session, user_id: int, *,
+                            cfg_values: dict | None = None,
+                            resume_text: str | None = None) -> str:
     """
     Resolve the signature link line, in priority order:
       1. explicit `signature_links` saved in config
       2. links auto-extracted from the latest résumé
+
+    cfg_values / resume_text: optional preloads (see resolve_sender_name).
     """
-    cfg = ConfigRepository(db, user_id)
-    explicit = cfg.get("signature_links", "").strip()
+    if cfg_values is not None:
+        explicit = (cfg_values.get("signature_links") or "").strip()
+    else:
+        explicit = ConfigRepository(db, user_id).get("signature_links", "").strip()
     if explicit:
         return explicit
-    latest = ResumeRepository(db, user_id).get_latest()
-    if latest:
-        return extract_links_from_resume(latest.text)
-    return ""
+    if resume_text is None:
+        latest = ResumeRepository(db, user_id).get_latest()
+        resume_text = latest.text if latest else ""
+    return extract_links_from_resume(resume_text) if resume_text else ""
 
 
 # ── Known companies (runtime-extensible ATS directory; global, not user-scoped) ─
