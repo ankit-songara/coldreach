@@ -757,7 +757,7 @@ class TestKeylessNamedGrounding:
         import asyncio
         from app.scrapers import web
 
-        async def fake_pages(domain, timeout=8):
+        async def fake_pages(domain, timeout=8, cap=8):
             return ["hello@acme.com", "jane.doe@acme.com", "press@acme.com"]
         monkeypatch.setattr(web, "emails_from_company_pages", fake_pages)
 
@@ -768,7 +768,7 @@ class TestKeylessNamedGrounding:
         import asyncio
         from app.scrapers import web
 
-        async def fake_pages(domain, timeout=8):
+        async def fake_pages(domain, timeout=8, cap=8):
             return ["careers@acme.com", "info@acme.com"]   # no personal mailbox
         monkeypatch.setattr(web, "emails_from_company_pages", fake_pages)
 
@@ -1213,7 +1213,14 @@ class TestPatternMemory:
         cache = ResolutionCache()
         cache.seed_pattern("acme.com", "first.last")
         assert asyncio.run(cache.pattern("acme.com")) == "first.last"
-        assert cache.learned_patterns() == {"acme.com": "first.last"}
+        # Seeded patterns RESOLVE but are not re-emitted for persistence:
+        # re-recording a DB-seeded pattern every hunt inflated verified_count,
+        # so the bounce-strike counter could never overtake a wrong pattern.
+        assert cache.learned_patterns() == {}
+        # A pattern this hunt actually derived (via observation) still emits.
+        cache.observe("jane.doe@fresh.io", "Jane Doe")
+        assert asyncio.run(cache.pattern("fresh.io")) == "first.last"
+        assert cache.learned_patterns() == {"fresh.io": "first.last"}
 
 
 class TestCorsOriginRegex:
@@ -1905,7 +1912,7 @@ class TestSharedPageFetchCache:
         monkeypatch.setattr(web_mod, "resolves_public", lambda d: True)
         # Scrapling (headless) is excluded from the Vercel build, so production
         # uses the httpx path — force that path here too (and keep the test fast).
-        async def no_scrapling(domain, timeout):
+        async def no_scrapling(domain, timeout, cap=8):
             return []
         monkeypatch.setattr(web_mod, "_scrape_scrapling", no_scrapling)
         real_client = httpx.AsyncClient

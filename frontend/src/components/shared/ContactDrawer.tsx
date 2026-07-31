@@ -100,6 +100,11 @@ export default function ContactDrawer({ contact, onClose }: Props) {
   return <DrawerPanel key={contact.id} contact={contact} onClose={onClose} />
 }
 
+// Unsaved note text per contact — module scope, session-only. Escape or a
+// scrim tap used to silently DISCARD an in-progress note; now reopening the
+// drawer restores it (cleared on successful save).
+const _noteDrafts = new Map<number, string>()
+
 function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () => void }) {
   const meta = c as ContactMeta
   const { drafts, upsertContact, updateHuntResult } = useStore(
@@ -108,20 +113,45 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
   const qc = useQueryClient()
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const [notes, setNotes] = useState(c.notes ?? '')
+  const [notes, setNotes] = useState(() => _noteDrafts.get(c.id) ?? (c.notes ?? ''))
   const [savingNote, setSavingNote] = useState(false)
 
+  // Keep the unsaved draft recoverable across close/reopen.
+  const notesRef = useRef(notes)
+  notesRef.current = notes
+  useEffect(() => () => {
+    const saved = useStore.getState().contacts.find(x => x.id === c.id)?.notes ?? ''
+    if (notesRef.current !== saved) _noteDrafts.set(c.id, notesRef.current)
+    else _noteDrafts.delete(c.id)
+  }, [c.id])
+
   // Remember what was focused before the drawer opened, focus the close
-  // button on mount, and hand focus back when the drawer unmounts.
+  // button on mount, hand focus back on unmount — and lock the page behind
+  // the drawer from scrolling while it's open.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeRef.current?.focus()
-    return () => opener?.focus()
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+      opener?.focus()
+    }
   }, [])
 
   // Escape closes; Tab is trapped inside the panel (ConfirmDialog's pattern).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Yield to any dialog stacked ABOVE this drawer (command palette,
+      // confirm dialog): both listen at document level, so without this
+      // guard one Escape closed BOTH layers at once.
+      if (e.defaultPrevented) return
+      const target = e.target
+      if (target instanceof HTMLElement) {
+        const dialog = target.closest('[role="dialog"]')
+        if (dialog && panelRef.current && !dialog.contains(panelRef.current)
+            && !panelRef.current.contains(dialog)) return
+      }
       if (e.key === 'Escape') { onClose(); return }
       if (e.key !== 'Tab') return
       const root = panelRef.current
@@ -162,6 +192,10 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
       updateHuntResult(updated)
       qc.setQueryData<Contact[]>(['contacts'], rows =>
         rows?.map(x => (x.id === updated.id ? updated : x)))
+      // Status changes move the funnel and the Replies rows' snapshots; both
+      // are keep-alive views that never refetch on their own.
+      qc.invalidateQueries({ queryKey: ['analytics'] })
+      qc.invalidateQueries({ queryKey: ['replies'] })
     },
     onError: (e: Error, _status, ctx) => {
       if (ctx?.prev) { upsertContact(ctx.prev); updateHuntResult(ctx.prev) }
@@ -186,6 +220,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
       updateHuntResult(updated)
       qc.setQueryData<Contact[]>(['contacts'], rows =>
         rows?.map(x => (x.id === updated.id ? updated : x)))
+      _noteDrafts.delete(c.id)   // saved — nothing left to recover
       toast.success('Note saved')
     } catch (e: any) {
       toast.error(e.message)

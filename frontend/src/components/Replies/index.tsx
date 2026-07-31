@@ -57,7 +57,11 @@ export default function Replies() {
       contactsApi.setStatus(id, status),
     // Optimistic: the pill reflects the tap instantly instead of freezing the
     // whole row for a server round-trip; rolled back if the request fails.
-    onMutate: ({ id, status }) => {
+    onMutate: async ({ id, status }) => {
+      // Standard optimistic-update recipe: stop any in-flight refetch first,
+      // or its (pre-mutation) response could land after the patch and
+      // visually revert the pill.
+      await qc.cancelQueries({ queryKey: ['replies'] })
       const prev = useStore.getState().contacts.find(c => c.id === id)
       if (prev) upsertContact({ ...prev, status })
       // Reply rows carry their own status snapshot — flip those too, so the
@@ -74,6 +78,7 @@ export default function Replies() {
       qc.setQueryData<Contact[]>(['contacts'], rows =>
         rows?.map(c => (c.id === updated.id ? updated : c)))
       qc.invalidateQueries({ queryKey: ['replies'] })
+      qc.invalidateQueries({ queryKey: ['analytics'] })   // outcome moves the funnel
     },
     onError: (e: Error, _vars, ctx) => {
       if (ctx?.prev) upsertContact(ctx.prev)
@@ -212,7 +217,8 @@ export default function Replies() {
                     key={s}
                     onClick={() => statusMutation.mutate({ id: r.contact_id, status: s })}
                     disabled={statusMutation.isPending}
-                    className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-all hit-target"
+                    aria-pressed={active}
+                    className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-colors hit-target"
                     style={{
                       background: active ? meta.bg : 'transparent',
                       // meta.color is a var() — alpha via color-mix, never string-suffix tricks

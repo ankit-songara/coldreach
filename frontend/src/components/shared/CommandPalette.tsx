@@ -19,6 +19,8 @@ export default function CommandPalette({ open, onClose, commands }: {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const activeRef = useRef<HTMLButtonElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
 
   const hits = useMemo(() => {
@@ -41,6 +43,47 @@ export default function CommandPalette({ open, onClose, commands }: {
 
   useEffect(() => { setCursor(0) }, [query])
 
+  // Keyboard-scrolled cursor must stay visible in the scrollable list.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [cursor])
+
+  // Document-level Escape + Tab trap (ConfirmDialog's pattern) and body
+  // scroll lock. Escape previously only worked while the search input had
+  // focus; a Tab (or a click into the list) escaped the dialog entirely.
+  // stopPropagation so a drawer open UNDERNEATH doesn't also close.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return }
+      if (e.key !== 'Tab') return
+      const root = panelRef.current
+      if (!root) return
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>('button, input, [tabindex]:not([tabindex="-1"])')
+      ).filter(el => !el.hasAttribute('disabled'))
+      if (focusables.length === 0) { e.preventDefault(); return }
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      const inside = active instanceof HTMLElement && root.contains(active)
+      if (e.shiftKey) {
+        if (!inside || active === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (!inside || active === last) { e.preventDefault(); first.focus() }
+      }
+    }
+    // Capture phase so this dialog (highest layer) wins over the drawer's
+    // bubble-phase listener.
+    document.addEventListener('keydown', onKey, true)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey, true)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [open, onClose])
+
   if (!open) return null
 
   const runAt = (i: number) => {
@@ -58,6 +101,7 @@ export default function CommandPalette({ open, onClose, commands }: {
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
+        ref={panelRef}
         className="w-full overflow-hidden"
         style={{
           maxWidth: 520, background: 'var(--surface-1)', borderRadius: 16,
@@ -95,6 +139,7 @@ export default function CommandPalette({ open, onClose, commands }: {
             return (
               <button
                 key={cmd.id}
+                ref={active ? activeRef : undefined}
                 role="option" aria-selected={active}
                 onMouseEnter={() => setCursor(i)}
                 onClick={() => runAt(i)}

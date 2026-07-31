@@ -11,6 +11,10 @@ import { queryClient } from '../lib/queryClient'
 // In-flight hunt request — module scope (not state) so it never persists and
 // aborting it doesn't re-render anything.
 let huntAbort: AbortController | null = null
+// Set when logout (not the Cancel button) aborts the hunt: the aborted branch
+// must stay silent — a "Hunt cancelled" toast + refetch on the logged-out
+// screen is noise for whoever sees it next.
+let huntAbortSilent = false
 
 // Staged status while a hunt runs — generic on purpose (no source names).
 const HUNT_STAGES = [
@@ -93,6 +97,7 @@ export const useStore = create<AppState>()(
         // Abort any in-flight hunt FIRST: its .then() writes results into the
         // store, so a hunt still running at logout could drop the previous
         // account's leads into the next user's session on a shared device.
+        huntAbortSilent = true
         huntAbort?.abort()
         setToken(null)
         // Per-browser onboarding/throttle flags live in localStorage, not the
@@ -185,15 +190,20 @@ export const useStore = create<AppState>()(
           }
         } catch (e: any) {
           if (signal.aborted) {
-            // User pressed Cancel — the server may still finish and save what it
-            // found; the next contacts refetch will pick those up.
-            toast('Hunt cancelled — anything already found will appear shortly', { icon: '⏹️' })
-            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+            if (!huntAbortSilent) {
+              // User pressed Cancel — the server may still finish and save what
+              // it found; the next contacts refetch will pick those up.
+              toast('Hunt cancelled — anything already found will appear shortly', { icon: '⏹️' })
+              queryClient.invalidateQueries({ queryKey: ['contacts'] })
+            }
+            // Logout-triggered abort: stay silent (logged-out screen) and don't
+            // refetch — queryClient.clear() already wiped the caches.
           } else {
             toast.error(e.message)
           }
         } finally {
           huntAbort = null
+          huntAbortSilent = false
           timers.forEach(clearTimeout)
           set({ hunting: false, huntStage: '' })
         }

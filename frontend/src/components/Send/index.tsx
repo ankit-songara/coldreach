@@ -58,10 +58,12 @@ export default function Send() {
 
   // Drafts come from a shared query so Compose and Send don't each refetch them.
   const { draftsLoaded } = useAllDrafts()
-  // Shared query (already in flight from App) — we only need its settled flag
+  // Shared query (already in flight from App) — we only need its settled flags
   // so a direct reload into this tab shows a skeleton instead of flashing
-  // "No contacts yet" at a user who has hundreds.
-  const { contactsLoaded } = useContacts()
+  // "No contacts yet" at a user who has hundreds. contactsError: a FAILED
+  // fetch also counts as "settled", and it must render as an error + retry,
+  // never as the empty state.
+  const { contactsLoaded, contactsError, refetchContacts } = useContacts()
 
   // Creds saved server-side (encrypted) mean sending works with no local input.
   // Shared config query — same cache as Today and Setup.
@@ -96,6 +98,9 @@ export default function Send() {
       // pill tap is pure waste.
       qc.setQueryData<Contact[]>(['contacts'], rows =>
         rows?.map(c => (c.id === updated.id ? updated : c)))
+      // Keep-alive derived views never refetch on their own — nudge them.
+      qc.invalidateQueries({ queryKey: ['analytics'] })
+      qc.invalidateQueries({ queryKey: ['replies'] })
     },
     onError: (e: Error, _vars, ctx) => {
       if (ctx?.prev) upsertContact(ctx.prev)
@@ -252,14 +257,12 @@ export default function Send() {
     setCheckingReplies(true)
     try {
       const res = await inboxApi.sync(gmailAddress, gmailAppPassword)
-      await refreshContacts()
+      await refreshContacts()   // also invalidates ['analytics'] — don't repeat it here
       // The sync WRITES new ReplyMessage rows, so the Replies tab's cache is
       // now stale. Without this it never refetches (keep-alive tabs never
       // remount + refetchOnWindowFocus is off), so the replies this scan just
       // found stayed invisible there for the whole session.
       qc.invalidateQueries({ queryKey: ['replies'] })
-      // Reply/bounce outcomes move the funnel — let Analytics repaint too.
-      qc.invalidateQueries({ queryKey: ['analytics'] })
       const bounceNote = res.bounces_found ? ` · ${res.bounces_found} bounced` : ''
       if (res.replies_found === 0 && res.bounces_found === 0) {
         toast(`No new replies yet (checked ${res.scanned} contact${res.scanned !== 1 ? 's' : ''})`, { icon: '📭' })
@@ -283,6 +286,22 @@ export default function Send() {
   const q = search.trim().toLowerCase()
   const visibleContacts = !q ? contacts : contacts.filter(c =>
     [c.name, c.company, c.email, c.designation].some(v => (v || '').toLowerCase().includes(q))
+  )
+
+  // A failed fetch must not masquerade as "you have no contacts".
+  if (contactsError && contacts.length === 0) return (
+    <div className="flex flex-col items-center py-20 px-6 text-center">
+      <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+        Couldn't load your contacts — check your connection and try again.
+      </p>
+      <button
+        onClick={() => refetchContacts()}
+        className="px-5 py-2 rounded-full text-sm font-bold"
+        style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer' }}
+      >
+        Retry
+      </button>
+    </div>
   )
 
   // Only claim "no contacts" once the fetch has actually settled.
@@ -598,7 +617,8 @@ export default function Send() {
                         key={s}
                         onClick={() => statusMutation.mutate({ id: c.id, status: s })}
                         disabled={statusMutation.isPending}
-                        className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-all hit-target"
+                        aria-pressed={active}
+                        className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-colors hit-target"
                         style={{
                           background: active ? meta.bg : 'transparent',
                           // meta.color is a var() — alpha via color-mix, never string-suffix tricks

@@ -62,7 +62,10 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
       // refetch/mirror into the store silently reverted the change on screen.
       qc.setQueryData<Contact[]>(['contacts'], rows =>
         rows?.map(x => (x.id === updated.id ? updated : x)))
+      // Replies rows snapshot the contact's status — keep both derived views
+      // fresh (keep-alive tabs never refetch on their own).
       qc.invalidateQueries({ queryKey: ['analytics'] })
+      qc.invalidateQueries({ queryKey: ['replies'] })
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -220,15 +223,20 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
             // In select mode the whole card is a selection target, so a tap
             // landing on a pill must ONLY toggle selection — it used to also
             // fire a silent status PATCH (e.g. marking someone "Offer") that
-            // then polluted the funnel.
-            onClick={selectable ? undefined : () => statusMutation.mutate(key)}
-            disabled={statusMutation.isPending || selectable}
+            // polluted the funnel. pointer-events:none (NOT disabled): a
+            // disabled button swallows the click entirely, which turned the
+            // pill strip into a dead zone where selection taps did nothing;
+            // with pointer-events off the tap falls through to the card and
+            // toggles selection as expected.
+            onClick={() => statusMutation.mutate(key)}
+            disabled={statusMutation.isPending}
             tabIndex={selectable ? -1 : undefined}
             className="relative text-xs px-2 py-0.5 rounded-full font-bold font-mono transition-colors before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
             style={{
               background: c.status === key ? meta.bg    : 'transparent',
               color:      c.status === key ? meta.color : 'var(--text-muted)',
               border:     `1px solid ${c.status === key ? `color-mix(in srgb, ${meta.color} 31%, transparent)` : 'var(--border)'}`,
+              ...(selectable ? { pointerEvents: 'none' as const } : {}),
             }}
           >
             {meta.label}

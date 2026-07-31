@@ -56,16 +56,19 @@ def analytics_summary(
     contacts = ContactRepository(db, user.id).get_all()
 
     # ── Weekly send/reply trend: last 6 ISO weeks (oldest → current) ──────────
-    today = utcnow().date()
+    # Same tz_shift as the heatmap below — bucketing one chart by the viewer's
+    # clock and the other by UTC made their totals disagree around midnight
+    # sends, which reads as a data bug.
+    today = (utcnow() + tz_shift).date()
     this_monday = today - timedelta(days=today.weekday())
     weekly = []
     for i in range(_WEEKS - 1, -1, -1):
         start = this_monday - timedelta(weeks=i)
         end = start + timedelta(days=7)
         sent = sum(1 for c in contacts
-                   if c.last_emailed_at and start <= c.last_emailed_at.date() < end)
+                   if c.last_emailed_at and start <= (c.last_emailed_at + tz_shift).date() < end)
         replied = sum(1 for c in contacts
-                      if c.replied_at and start <= c.replied_at.date() < end)
+                      if c.replied_at and start <= (c.replied_at + tz_shift).date() < end)
         weekly.append({"week_start": start.isoformat(), "sent": sent,
                        "replied": replied, "rate": _rate(replied, sent)})
 

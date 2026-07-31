@@ -34,9 +34,10 @@ export default function Compose() {
 
   // Drafts come from a shared query so Compose and Send don't each refetch them.
   const { draftsLoaded } = useAllDrafts()
-  // Settled flag from the shared contacts query — a direct reload into this
-  // tab must not flash "No contacts yet" before the fetch resolves.
-  const { contactsLoaded } = useContacts()
+  // Settled flags from the shared contacts query — a direct reload into this
+  // tab must not flash "No contacts yet" before the fetch resolves, and a
+  // FAILED fetch must render as an error, not the empty state.
+  const { contactsLoaded, contactsError, refetchContacts } = useContacts()
 
   const qc = useQueryClient()
   // Draft writes must also patch the ['drafts','all'] cache — it feeds Send's
@@ -157,6 +158,22 @@ export default function Compose() {
       </div>
     )
   }
+
+  // A failed fetch must not masquerade as "you have no contacts".
+  if (contactsError && contacts.length === 0) return (
+    <div className="flex flex-col items-center py-20 px-6 text-center">
+      <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+        Couldn't load your contacts — check your connection and try again.
+      </p>
+      <button
+        onClick={() => refetchContacts()}
+        className="px-5 py-2 rounded-full text-sm font-bold"
+        style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer' }}
+      >
+        Retry
+      </button>
+    </div>
+  )
 
   // Only claim "no contacts" once the fetch has actually settled.
   if (contacts.length === 0 && contactsLoaded) return (

@@ -13,6 +13,7 @@ Force a provider:
   LLM_PROVIDER=openai   LLM_API_KEY=sk-xxx
 """
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,7 +68,10 @@ class Settings(BaseSettings):
     # ── LLM — provider-agnostic ──────────────────────────────────────────────
     llm_provider: str   = "auto"          # auto | ollama | groq | openai | openrouter
     llm_model: str      = ""              # empty → use provider default
-    llm_api_key: str    = ""              # groq / openai / openrouter key
+    # Accepts GROQ_API_KEY as an alias: the "set GROQ_API_KEY" guidance in the
+    # no-provider error (and Groq's own docs) pointed at a var the app never
+    # actually read — operators followed it and still got the error.
+    llm_api_key: str    = Field("", validation_alias=AliasChoices("LLM_API_KEY", "GROQ_API_KEY"))
     llm_temperature: float = 0.7
 
     # Provider-specific defaults

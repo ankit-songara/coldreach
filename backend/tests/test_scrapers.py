@@ -723,6 +723,61 @@ class TestNotableProbePriority:
             directory._TAGS_OVERLAY.clear()
 
 
+class TestAsciiFoldNameMatching:
+    """Accented names must match their (ASCII) mailbox local-parts."""
+
+    def test_fold(self):
+        from app.scrapers.web import _ascii_fold
+        assert _ascii_fold("José") == "jose"
+        assert _ascii_fold("Søren") == "soren"
+        assert _ascii_fold("Müller") == "muller"
+        assert _ascii_fold("Straße") == "strasse"
+        assert _ascii_fold("plain") == "plain"
+
+    def test_accented_person_matches_published_address(self):
+        from app.scrapers.web import _local_matches_person
+        assert _local_matches_person("jose.garcia", "José", "García")
+        assert _local_matches_person("soren", "Søren", "Kierkegaard")
+        assert not _local_matches_person("someone.else", "José", "García")
+
+    def test_permutations_fold_accents(self):
+        from app.scrapers.resolver import _permutations_clean
+        emails = [e for e, _ in _permutations_clean("José", "García", "acme.com")]
+        assert "jose.garcia@acme.com" in emails
+        assert all(e.isascii() for e in emails)
+
+
+class TestTransientFailureNotCached:
+    """An all-pages-failed grounding scan is transient — it must stay
+    retryable, not become a 6-hour definitive 'no published address'."""
+
+    def test_all_failed_fetches_do_not_cache_a_miss(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+
+        async def dead_fetch(client, url, timeout):
+            return ""                          # every page failed
+
+        monkeypatch.setattr(web, "_cached_get", dead_fetch)
+        monkeypatch.setattr(web, "resolves_public", lambda d: True)
+        assert asyncio.run(web.find_published_role_email("transient-x.com")) is None
+        cached, _ = web._cache_get("pages", "transient-x.com")
+        assert not cached, "transient all-failure scan must not cache a miss"
+
+    def test_real_empty_pages_do_cache_the_miss(self, monkeypatch):
+        import asyncio
+        from app.scrapers import web
+
+        async def live_but_bare(client, url, timeout):
+            return "<html><body>Welcome — nothing to see</body></html>"
+
+        monkeypatch.setattr(web, "_cached_get", live_but_bare)
+        monkeypatch.setattr(web, "resolves_public", lambda d: True)
+        assert asyncio.run(web.find_published_role_email("bare-pages-x.com")) is None
+        cached, value = web._cache_get("pages", "bare-pages-x.com")
+        assert cached and value is None       # site up, genuinely nothing published
+
+
 class TestNotableSeedPack:
     def test_notable_brands_loaded_from_csv(self):
         from app.scrapers.directory import notable_companies

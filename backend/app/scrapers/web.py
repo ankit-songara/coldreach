@@ -111,23 +111,55 @@ _page_cache: dict[str, tuple[float, str, float]] = {}   # url -> (stamp, text, t
 _page_inflight: dict[str, tuple["asyncio.Future[str]", float]] = {}
 
 
+async def _final_host_public(requested_url: str, final_url) -> bool:
+    """Redirect-chain guard: the pre-fetch resolves_public() check covers the
+    ORIGINAL host only, so a redirect could bounce the request onto a private
+    address. Re-check the LANDING host before trusting the body — but only
+    when a redirect actually crossed hosts (the common no-redirect case costs
+    nothing, and the DNS check runs off-thread). Unparseable URL → unsafe."""
+    try:
+        orig = urlsplit(requested_url).hostname or ""
+        host = urlsplit(str(final_url)).hostname or ""
+        if not host or host.lower() == orig.lower():
+            return True     # same host the caller already vetted
+        return await asyncio.to_thread(resolves_public, host)
+    except Exception:
+        return False
+
+
 async def _fetch_text(client: httpx.AsyncClient, url: str, timeout: float) -> str:
     """GET a page as a real Chrome (curl_cffi TLS impersonation) to defeat
     anti-bot/Cloudflare walls, falling back to the passed httpx client if
     curl_cffi is unavailable or errors. Returns "" on non-2xx or failure.
     CancelledError propagates (mid-fetch cancel) — it's a BaseException, not
-    caught here, so the caller's finally still runs."""
+    caught here, so the caller's finally still runs.
+
+    One SHARED deadline across both attempts: without it a hanging curl_cffi
+    try burned its full timeout and THEN the httpx fallback burned the same
+    again — every stuck page cost 2× its stated budget inside the resolve
+    phase. The httpx fallback gets only whatever remains."""
+    import time as _time
+    start = _time.monotonic()
     if _CffiAsyncSession is not None:
         try:
             async with _CffiAsyncSession() as s:
                 r = await s.get(url, impersonate="chrome", timeout=timeout,
                                 allow_redirects=True)
-            return r.text if 200 <= r.status_code < 300 else ""
+            if 200 <= r.status_code < 300:
+                return r.text if await _final_host_public(url, getattr(r, "url", url)) else ""
+            return ""
         except Exception:
             pass   # transient/connection issue → try the httpx fallback
+    remaining = timeout - (_time.monotonic() - start)
+    if remaining <= 0.5:
+        return ""   # curl_cffi consumed the budget — don't double-spend it
     try:
-        r2 = await client.get(url)
-        return r2.text if r2.is_success else ""
+        r2 = await client.get(url, timeout=remaining)
+        if r2.is_success:
+            # getattr: response fakes in tests (and any transport without a
+            # .url) count as same-host — i.e. already vetted, no re-check.
+            return r2.text if await _final_host_public(url, getattr(r2, "url", url)) else ""
+        return ""
     except Exception:
         return ""
 
@@ -160,7 +192,13 @@ async def _cached_get(client: httpx.AsyncClient, url: str, timeout: float) -> st
 
     loop = asyncio.get_running_loop()
     fut: "asyncio.Future[str]" = loop.create_future()
-    _page_inflight[url] = (fut, timeout)
+    # Compare-and-set, not blind assignment: a piggybacker that fell through
+    # (owner timed out sooner than it would) must not stomp a DIFFERENT task's
+    # fresh registration — that overwrite silently defeated de-duplication for
+    # everyone who arrived after it.
+    cur = _page_inflight.get(url)
+    if cur is None or (entry is not None and cur[0] is entry[0]):
+        _page_inflight[url] = (fut, timeout)
     try:
         text = await _fetch_text(client, url, timeout)
         if len(_page_cache) > 4096:
@@ -171,7 +209,9 @@ async def _cached_get(client: httpx.AsyncClient, url: str, timeout: float) -> st
             fut.set_result(text)
         return text
     finally:
-        _page_inflight.pop(url, None)
+        # Pop only OUR registration — another task may own the slot now.
+        if _page_inflight.get(url, (None,))[0] is fut:
+            _page_inflight.pop(url, None)
         if not fut.done():
             # Cancelled mid-fetch. NEVER fut.cancel() here: piggybackers can
             # belong to other, healthy hunts, and CancelledError sails past
@@ -234,7 +274,13 @@ async def find_published_role_email(domain: str, timeout: int = 4) -> str | None
         if general is None and local in GENERAL_PREFIXES:
             general = email
     result = result or general
-    _cache_put("pages", domain, result)
+    # Cache a MISS only when at least one page actually returned content — an
+    # all-failure scan (site briefly down, DNS blip, WAF hiccup) is a transient
+    # outcome, and caching it as a definitive None silenced grounding for this
+    # domain for the whole 6h TTL. A real "site up, nothing published" miss
+    # still caches, which is the case the cache exists for.
+    if result is not None or any(texts):
+        _cache_put("pages", domain, result)
     return result
 
 
@@ -399,7 +445,8 @@ async def search_role_email_on_web(domain: str, company: str = "",
     return result
 
 
-async def emails_from_company_pages(domain: str, timeout: int = 8) -> list[str]:
+async def emails_from_company_pages(domain: str, timeout: int = 8,
+                                    cap: int = 8) -> list[str]:
     """Scrape a company's public pages for email addresses.
 
     Primary: Scrapling StealthyFetcher + get_all_text() — extracts only visible
@@ -414,19 +461,31 @@ async def emails_from_company_pages(domain: str, timeout: int = 8) -> list[str]:
     if not await asyncio.to_thread(resolves_public, domain):
         return []
 
-    emails = await _scrape_scrapling(domain, timeout)
+    emails = await _scrape_scrapling(domain, timeout, cap)
     if emails:
         return emails
-    return await _scrape_httpx(domain, timeout)
+    return await _scrape_httpx(domain, timeout, cap)
+
+
+def _ascii_fold(s: str) -> str:
+    """'José' → 'jose', 'Søren' → 'soren'-ish: strip diacritics so a name can
+    match its email local-part (mailboxes are ASCII even when names aren't).
+    ø/æ/ß aren't decomposable combining forms — map the common ones directly."""
+    import unicodedata
+    s = (s or "").lower().strip()
+    s = s.translate(str.maketrans({"ø": "o", "æ": "ae", "ß": "ss", "đ": "d", "ł": "l"}))
+    return "".join(ch for ch in unicodedata.normalize("NFKD", s)
+                   if not unicodedata.combining(ch))
 
 
 def _local_matches_person(local: str, first: str, last: str) -> bool:
     """True if an email's local-part is a recognizable spelling of this person's
     name — the standard corporate permutations. Used to confirm that a mailbox
     scraped off a company page really belongs to the named lead (a real,
-    published address), not just any mailbox at the domain."""
-    local = local.lower()
-    f, l = first.lower().strip(), last.lower().strip()
+    published address), not just any mailbox at the domain. Accent-folded on
+    both sides: 'José García' must match jose.garcia@…."""
+    local = _ascii_fold(local)
+    f, l = _ascii_fold(first), _ascii_fold(last)
     if not f or not l:
         return False
     f1, l1 = f[0], l[0]
@@ -448,7 +507,9 @@ async def find_person_email(domain: str, first: str, last: str,
     """
     if not first or not last:
         return None
-    emails = await emails_from_company_pages(domain, timeout)
+    # Wide cap: the generic 8-address cap could truncate THIS person's address
+    # off a busy /team page before the name filter below ever saw it.
+    emails = await emails_from_company_pages(domain, timeout, cap=64)
     domain = domain.lower()
     for e in emails:
         local, _, mail_domain = e.partition("@")
@@ -514,7 +575,7 @@ async def linkbio_email_for_person(text: str, first: str, last: str,
     return None
 
 
-async def _scrape_scrapling(domain: str, timeout: int) -> list[str]:
+async def _scrape_scrapling(domain: str, timeout: int, cap: int = 8) -> list[str]:
     try:
         from scrapling.fetchers import StealthyFetcher
         fetcher = StealthyFetcher()
@@ -532,29 +593,37 @@ async def _scrape_scrapling(domain: str, timeout: int) -> list[str]:
             found.extend(_emails_in(text))
         except Exception:
             pass
-        if len(found) >= 12:
+        if len(found) >= max(12, cap + 4):
             break
-    return _clean(found)[:8]
+    return _clean(found)[:cap]
 
 
-async def _scrape_httpx(domain: str, timeout: int) -> list[str]:
+async def _scrape_httpx(domain: str, timeout: int, cap: int = 8) -> list[str]:
     # Browser UA (not the bot UA) both dodges 403 walls and matches the UA
     # find_published_role_email uses, so the two share _cached_get entries for
     # the pages they scan in common (/careers, /contact).
+    #
+    # Pages fetch CONCURRENTLY (semaphore 4): the sequential walk cost up to
+    # len(_PAGES) × page-time inside the resolve budget — the single biggest
+    # per-domain latency in a hunt. 4-wide keeps the per-domain burst polite
+    # while cutting wall-clock ~4×; _cached_get still dedupes across callers.
     found: list[str] = []
+    sem = asyncio.Semaphore(4)
     try:
         async with httpx.AsyncClient(
             timeout=timeout, follow_redirects=True,
             headers={"User-Agent": _BROWSER_UA},
         ) as client:
-            for path in _PAGES:
-                text = await _cached_get(client, f"https://{domain}{path}", timeout)
-                if text:
-                    found.extend(_emails_in(text))
-                if len(found) >= 12:
-                    break
+            async def one(path: str) -> str:
+                async with sem:
+                    return await _cached_get(client, f"https://{domain}{path}", timeout)
+            texts = await asyncio.gather(*(one(p) for p in _PAGES),
+                                         return_exceptions=True)
+        for text in texts:
+            if isinstance(text, str) and text:
+                found.extend(_emails_in(text))
     except Exception:
         pass
-    return _clean(found)[:8]
+    return _clean(found)[:cap]
 
 

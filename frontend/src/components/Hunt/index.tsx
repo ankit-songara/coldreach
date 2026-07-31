@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useShallow } from 'zustand/react/shallow'
 import toast from 'react-hot-toast'
@@ -170,15 +170,29 @@ export default function Hunt() {
   // on every unrelated store write (e.g. a bulk-generate writing drafts while
   // this tab is kept mounted).
   const {
-    contacts, clearContacts, upsertContact, removeContact, resume,
+    contacts, clearContacts, upsertContact, removeContact, resume, activeTab,
     hunting, huntStage, huntResults, huntInfo, runHunt, cancelHunt, clearHunt, removeHuntResult,
   } = useStore(useShallow(s => ({
     contacts: s.contacts, clearContacts: s.clearContacts, upsertContact: s.upsertContact,
-    removeContact: s.removeContact, resume: s.resume,
+    removeContact: s.removeContact, resume: s.resume, activeTab: s.activeTab,
     hunting: s.hunting, huntStage: s.huntStage, huntResults: s.huntResults, huntInfo: s.huntInfo,
     runHunt: s.runHunt, cancelHunt: s.cancelHunt, clearHunt: s.clearHunt, removeHuntResult: s.removeHuntResult,
   })))
   const qc = useQueryClient()
+
+  // Rotate the suggestion chips each time the user RETURNS to this tab. The
+  // query has no other refetch trigger (keep-alive tab never remounts, focus
+  // refetch is off, nothing invalidates it), so without this one sample was
+  // pinned for the whole session. Guards: skip while a fetch is in flight
+  // (e.g. the initial mount) and when the data is seconds old.
+  useEffect(() => {
+    if (activeTab !== 'hunt') return
+    const state = qc.getQueryState(['hunt-suggestions'])
+    const freshMs = state?.dataUpdatedAt ? Date.now() - state.dataUpdatedAt : Infinity
+    if (state?.fetchStatus !== 'fetching' && freshMs > 15_000) {
+      qc.invalidateQueries({ queryKey: ['hunt-suggestions'] })
+    }
+  }, [activeTab, qc])
 
   // Live "who's hiring right now" companies for the suggestion chips. The
   // backend samples a fresh set from its cached pool on every request, so a

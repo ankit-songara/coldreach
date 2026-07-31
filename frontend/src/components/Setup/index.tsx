@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Eye, EyeOff, CheckCircle2, ExternalLink, ArrowRight, Save, Pencil, ChevronDown, ChevronRight, Mail } from 'lucide-react'
 import { useStore } from '../../store'
+import { useShallow } from 'zustand/react/shallow'
 import { resumeApi } from '../../api/resume'
 import { automationApi } from '../../api/automation'
 import { useAutomationConfig } from '../../hooks/useAutomationConfig'
@@ -25,7 +26,16 @@ const joinLinks = (l: { linkedin: string; github: string; portfolio: string }) =
   [l.linkedin, l.github, l.portfolio].map(s => s.trim()).filter(Boolean).join(' · ')
 
 export default function Setup() {
-  const { resume, setResume, gmailAddress, gmailAppPassword, setGmailCreds, setActiveTab } = useStore()
+  // Selective subscription (useShallow): a bare useStore() subscribed this
+  // kept-alive tab to EVERY store write — each hunt-stage tick and bulk-
+  // generate draft re-rendered the whole Setup form in the background.
+  const { resume, setResume, gmailAddress, gmailAppPassword, setGmailCreds, setActiveTab } = useStore(
+    useShallow(s => ({
+      resume: s.resume, setResume: s.setResume, gmailAddress: s.gmailAddress,
+      gmailAppPassword: s.gmailAppPassword, setGmailCreds: s.setGmailCreds,
+      setActiveTab: s.setActiveTab,
+    })),
+  )
   const [extracting, setExtracting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -119,14 +129,22 @@ export default function Setup() {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
     maxFiles: 1,
+    // Vercel's serverless request-body limit is 4.5MB — a larger upload dies
+    // at the platform edge with an opaque 413 AFTER a full upload wait, so
+    // reject it client-side with actionable copy instead. (The old "Max 15MB"
+    // promise was never deliverable in production.)
+    maxSize: 4 * 1024 * 1024,
     // Without this, dropping 2+ files (or a wrong file type) rejects
     // everything and silently fires nothing — onDrop's accepted-files array
     // is empty and the whole thing looks like the click did nothing at all.
     onDropRejected: (rejections) => {
+      const err = rejections[0]?.errors[0]
       if (rejections.length > 1) {
         toast.error('Drop just one file — pick a single PDF or DOCX résumé.')
+      } else if (err?.code === 'file-too-large') {
+        toast.error('Keep it under 4 MB — a text-based (non-scanned) PDF export is much smaller.')
       } else {
-        toast.error(rejections[0]?.errors[0]?.message || 'That file type isn\'t supported. Use PDF or DOCX.')
+        toast.error(err?.message || 'That file type isn\'t supported. Use PDF or DOCX.')
       }
     },
   })
@@ -226,24 +244,28 @@ export default function Setup() {
         in-app sending ("Send All" and per-contact Send) plus reply tracking.
       </p>
       <div className="space-y-1">
-        <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Gmail address</label>
+        <label htmlFor="gmail-address" className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Gmail address</label>
         <input
+          id="gmail-address"
           type="email"
           value={localAddress}
           onChange={e => setLocalAddress(e.target.value)}
           placeholder="you@gmail.com"
+          autoComplete="email"
           className="input text-sm w-full"
         />
       </div>
 
       <div className="space-y-1">
-        <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>App Password</label>
+        <label htmlFor="gmail-app-password" className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>App Password</label>
         <div className="relative">
           <input
+            id="gmail-app-password"
             type={showPassword ? 'text' : 'password'}
             value={localPassword}
             onChange={e => setLocalPassword(e.target.value)}
             placeholder="xxxx xxxx xxxx xxxx"
+            autoComplete="off"
             className="input text-sm w-full pr-10"
           />
           <button
@@ -355,10 +377,11 @@ export default function Setup() {
           <p className="text-sm font-medium">
             {extracting ? '⏳ Extracting...' : isDragActive ? 'Drop it!' : 'Drop PDF or DOCX — or click to browse'}
           </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Max 15 MB</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Max 4 MB · text-based PDF works best</p>
         </div>
 
         <textarea
+          aria-label="Résumé text"
           value={resume}
           onChange={e => setResume(e.target.value)}
           placeholder="Paste your resume text here, or upload a file above..."
@@ -424,18 +447,21 @@ export default function Setup() {
         ) : (
           <div className="card space-y-3">
             <div className="space-y-1">
-              <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Name</label>
+              <label htmlFor="sig-name" className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Name</label>
               <input
+                id="sig-name"
                 value={senderName}
                 onChange={e => setSenderName(e.target.value)}
                 placeholder="e.g. Ankit Songara"
+                autoComplete="name"
                 className="input text-sm w-full"
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1">
-                <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>LinkedIn</label>
+                <label htmlFor="sig-linkedin" className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>LinkedIn</label>
                 <input
+                  id="sig-linkedin"
                   value={links.linkedin}
                   onChange={e => setLinks(l => ({ ...l, linkedin: e.target.value }))}
                   placeholder="linkedin.com/in/you"
@@ -443,8 +469,9 @@ export default function Setup() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>GitHub</label>
+                <label htmlFor="sig-github" className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>GitHub</label>
                 <input
+                  id="sig-github"
                   value={links.github}
                   onChange={e => setLinks(l => ({ ...l, github: e.target.value }))}
                   placeholder="github.com/you"
@@ -452,8 +479,9 @@ export default function Setup() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Portfolio</label>
+                <label htmlFor="sig-portfolio" className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>Portfolio</label>
                 <input
+                  id="sig-portfolio"
                   value={links.portfolio}
                   onChange={e => setLinks(l => ({ ...l, portfolio: e.target.value }))}
                   placeholder="yoursite.dev"

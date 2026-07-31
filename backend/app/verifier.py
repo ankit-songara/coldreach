@@ -13,6 +13,7 @@ Verdict: "valid" | "risky" | "invalid". MX lookups are cached per-process.
 
 import re
 import logging
+import dns.name
 import dns.resolver
 import httpx
 
@@ -53,6 +54,12 @@ def _has_mx(domain: str) -> bool:
         # NOT cache it, or a single blip permanently whitelists the domain.
         log.warning(f"MX lookup timed out for {domain}")
         return True
+    except (dns.name.EmptyLabel, dns.name.LabelTooLong, dns.name.BadEscape,
+            dns.exception.SyntaxError) as e:
+        # Malformed domain (scraped junk like "foo..bar" or a 70-char label) —
+        # definitively unverifiable; failing open labelled these "valid".
+        log.info(f"MX lookup rejected malformed domain {domain!r}: {e}")
+        ok = False
     except Exception as e:
         log.warning(f"MX lookup error for {domain}: {e}")
         return True

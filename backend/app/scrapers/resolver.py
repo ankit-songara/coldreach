@@ -68,8 +68,12 @@ class ResolvedEmail:
 # ── Permutation table ─────────────────────────────────────────────────────────
 
 def _permutations(first: str, last: str, domain: str) -> list[tuple[str, str]]:
-    """Return (email, pattern_name) in globally most-common order."""
-    f, l  = first.lower().strip(), last.lower().strip()
+    """Return (email, pattern_name) in globally most-common order.
+    Accent-folded: 'José García' generates jose.garcia@… — mailboxes are
+    ASCII even when names aren't, so unfolded candidates could never match
+    or verify, and the lead fell through to the 'Contact' sentinel."""
+    from app.scrapers.web import _ascii_fold
+    f, l  = _ascii_fold(first), _ascii_fold(last)
     f1    = f[0] if f else ""
     l1    = l[0] if l else ""
     return [
@@ -135,7 +139,11 @@ def _infer_pattern(samples: list[tuple[str, str]]) -> Optional[str]:
 # ── DNS / MX ──────────────────────────────────────────────────────────────────
 
 async def mx_hosts(domain: str) -> list[str]:
-    """Return sorted MX hostnames, empty list on failure."""
+    """Return sorted MX hostnames. Empty list ONLY on a definitive negative
+    (NXDOMAIN / no MX records) — a transient resolver problem raises
+    TimeoutError instead, so callers don't mistake a DNS blip for "this
+    company has no mail" and wander into alternate-TLD guessing (which can
+    ground a REAL published address at the wrong company's lookalike domain)."""
     loop = asyncio.get_event_loop()
     try:
         records = await loop.run_in_executor(
@@ -143,6 +151,10 @@ async def mx_hosts(domain: str) -> list[str]:
             lambda: sorted(dns.resolver.resolve(domain, "MX"), key=lambda r: r.preference),
         )
         return [str(r.exchange).rstrip(".") for r in records]
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return []                       # definitive: domain/MX genuinely absent
+    except (dns.resolver.LifetimeTimeout, dns.resolver.NoNameservers, dns.exception.Timeout):
+        raise TimeoutError(f"DNS transient failure for {domain}")
     except Exception:
         return []
 
@@ -165,7 +177,14 @@ def _smtp_probe(email: str, mx_host: str, timeout: int = _SMTP_TIMEOUT) -> Optio
         return None
     try:
         with smtplib.SMTP(mx_host, 25, timeout=timeout) as smtp:
-            smtp.ehlo("verify.local")
+            # RFC 5321 sequence: RCPT is only valid after MAIL FROM — without
+            # the null-sender envelope every server answered 503 (bad sequence)
+            # and each probe read as "inconclusive", so verification and
+            # catch-all detection never produced a signal.
+            smtp.ehlo("verifier.example.com")
+            code_mail, _ = smtp.mail("")
+            if code_mail != 250:
+                return None       # sender rejected — policy, not a verdict on the mailbox
             code, _ = smtp.rcpt(email)
             return code in (250, 251)
     except smtplib.SMTPRecipientsRefused:
@@ -328,6 +347,7 @@ class ResolutionCache:
         self._mx:       dict[str, list[str]] = {}
         self._catchall: dict[str, bool]      = {}
         self._pattern:  dict[str, Optional[str]] = {}
+        self._seeded:   set[str] = set()   # DB-preloaded patterns — never re-persisted
         self._observed: dict[str, list[tuple[str, str]]] = defaultdict(list)
         # Keyless-GitHub budget: unauthenticated REST is 60 req/hr per IP, so
         # only a few domains per hunt may fall back to the org-repo commit scan.
@@ -359,18 +379,28 @@ class ResolutionCache:
         """Preload a pattern learned in a PREVIOUS hunt (persisted in the DB) so
         this domain skips observation/GitHub learning entirely."""
         if domain and pattern:
-            self._pattern[domain.lower()] = pattern
+            d = domain.lower()
+            self._pattern[d] = pattern
+            self._seeded.add(d)
 
     def learned_patterns(self) -> dict[str, str]:
-        """Every pattern this hunt actually resolved (seeded ones included) —
-        harvested by the hunt route to persist for future hunts."""
-        return {d: p for d, p in self._pattern.items() if p}
+        """Patterns this hunt actually DERIVED (DB-seeded ones excluded) —
+        harvested by the hunt route to persist for future hunts. Re-emitting
+        seeds inflated verified_count on every hunt, so the bounce-strike
+        counter could never catch up and distrust a wrong pattern."""
+        return {d: p for d, p in self._pattern.items() if p and d not in self._seeded}
 
     async def mx(self, domain: str) -> list[str]:
         if domain not in self._mx:
             async with self._lock(domain, "mx"):
                 if domain not in self._mx:
-                    self._mx[domain] = await mx_hosts(domain)
+                    try:
+                        self._mx[domain] = await mx_hosts(domain)
+                    except TimeoutError:
+                        # Transient DNS failure: report "no MX" for THIS call
+                        # but do NOT memoise it — the next lead at this domain
+                        # retries instead of inheriting a poisoned negative.
+                        return []
         return self._mx[domain]
 
     async def catch_all(self, domain: str, mx: list[str]) -> bool:

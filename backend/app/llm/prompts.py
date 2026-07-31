@@ -18,6 +18,9 @@ _NO_FABRICATION = """\
 DO NOT FABRICATE - this is the most important rule:
 - NEVER invent facts about the company: no made-up product names, funding rounds, metrics,
   tech stack, team size, or "I saw you shipped X" unless X appears in the context below.
+- NEVER invent facts about the candidate either: no projects, employers, titles,
+  technologies, or achievements that do not appear in the candidate background above.
+  The reader may ask about any claim in an interview - an invented one ends the process.
 - If you have no real detail about them, say something honest and direct instead.
 - A generic-but-true line beats an impressive-but-invented one. Recipients can tell instantly.
 - Never say a resume is attached unless the structure below explicitly tells you to."""

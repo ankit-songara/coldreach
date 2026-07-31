@@ -422,8 +422,12 @@ async def _resolve_domain_contact(raw: dict, cache: ResolutionCache) -> dict | N
             # a personal address (jane@gmail.com) must not pollute pattern memory.
             if bio_email.rsplit("@", 1)[-1] == domain:
                 cache.observe(bio_email, name)
+            # email_status deliberately NOT preset to "valid": the address is
+            # often OFF-domain (personal/vanity), so nothing upstream has
+            # MX-checked it — leaving it "unknown" routes it through the
+            # normal verify pass (MX + disposable screen) like any other find.
             return {**raw, "email": bio_email, "confidence": 75,
-                    "email_status": "valid", "_domain": None}
+                    "_domain": None}
         # A) Keyless grounding next: the person's REAL email published on the
         # company's own pages. No key, no SMTP — a printed address needs no
         # verification, so this is the one path that surfaces named people on a
@@ -766,8 +770,14 @@ async def hunt_suggestions(db: Session = Depends(get_db), user: User = Depends(g
     #    hours ago, with the actual role pulled from the lead's context.
     hot_entries: list[dict] = []
     try:
+        from datetime import datetime as _dt
+        from app.db.crud import _SCRAPE_CACHE_TTL
         seen_hot = {b["name"].lower() for b in brand_entries} | owned
         rows = (db.query(ScrapeCache)
+                  # Same freshness window the cache reader honors — rows are
+                  # lazily expired (never deleted), so without this filter a
+                  # quiet weekend served 3-day-old chips as "hot right now".
+                  .filter(ScrapeCache.updated_at >= _dt.utcnow() - _SCRAPE_CACHE_TTL)
                   .order_by(ScrapeCache.updated_at.desc()).limit(4).all())
         for row in rows:
             if len(hot_entries) >= _SUGGEST_HOT:

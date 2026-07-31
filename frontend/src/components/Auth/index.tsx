@@ -54,9 +54,13 @@ export default function Auth({ initialMode = 'login', onClose }: {
       if (e.key !== 'Tab') return
       const root = cardRef.current
       if (!root) return
+      // `summary` and `iframe` included: this modal renders "Forgot password?"
+      // as <details><summary> AFTER the submit button and the Google button as
+      // an iframe — omitting them made the trap's `last` wrong, so Tab skipped
+      // "Forgot password?" entirely for keyboard users.
       const focusables = Array.from(
         root.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button, [href], input, select, textarea, summary, iframe, [tabindex]:not([tabindex="-1"])'
         )
       ).filter(el => !el.hasAttribute('disabled'))
       if (focusables.length === 0) { e.preventDefault(); return }
