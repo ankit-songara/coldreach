@@ -58,7 +58,7 @@ function Sidebar({
               key={item.id}
               onClick={() => onSelect(item.id)}
               aria-current={active ? 'page' : undefined}
-              className="flex items-center gap-2.5 text-[13.5px] font-semibold transition-colors"
+              className="flex items-center gap-2.5 text-[13.5px] font-semibold transition active:scale-[0.98]"
               style={{
                 padding: '9px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
                 textAlign: 'left',
@@ -90,7 +90,7 @@ function Sidebar({
       {/* Theme */}
       <button
         onClick={() => setTheme(cycleTheme())}
-        className="flex items-center gap-2.5 text-[13px] font-medium"
+        className="flex items-center gap-2.5 text-[13px] font-medium transition active:scale-[0.98]"
         style={{
           padding: '8px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
           background: 'transparent', color: 'var(--text-muted)', textAlign: 'left',

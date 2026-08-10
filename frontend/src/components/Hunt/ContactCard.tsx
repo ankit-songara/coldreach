@@ -54,6 +54,17 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
   // contacts list — both must be updated or the change looks like it failed.
   const statusMutation = useMutation({
     mutationFn: (status: ContactStatus) => contactsApi.setStatus(c.id, status),
+    // Flip the pill the instant it's tapped (Apple §1: feedback on pointer-down,
+    // not after the server round-trip). Roll back in onError if the PATCH fails.
+    onMutate: (status): { prev: ContactStatus } => {
+      const prev = c.status
+      const optimistic = { ...c, status } as Contact
+      upsertContact(optimistic)
+      updateHuntResult(optimistic)
+      qc.setQueryData<Contact[]>(['contacts'], rows =>
+        rows?.map(x => (x.id === c.id ? { ...x, status } : x)))
+      return { prev }
+    },
     onSuccess: (updated) => {
       upsertContact(updated)
       updateHuntResult(updated)
@@ -67,7 +78,18 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
       qc.invalidateQueries({ queryKey: ['analytics'] })
       qc.invalidateQueries({ queryKey: ['replies'] })
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, _status, ctx) => {
+      // Revert the optimistic flip to the status captured before the tap.
+      const prev = (ctx as { prev: ContactStatus } | undefined)?.prev
+      if (prev !== undefined) {
+        const reverted = { ...c, status: prev } as Contact
+        upsertContact(reverted)
+        updateHuntResult(reverted)
+        qc.setQueryData<Contact[]>(['contacts'], rows =>
+          rows?.map(x => (x.id === c.id ? { ...x, status: prev } : x)))
+      }
+      toast.error(e.message)
+    },
   })
 
   const deleteMutation = useMutation({
@@ -231,7 +253,7 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
             onClick={() => statusMutation.mutate(key)}
             disabled={statusMutation.isPending}
             tabIndex={selectable ? -1 : undefined}
-            className="relative text-xs px-2 py-0.5 rounded-full font-bold font-mono transition-colors before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
+            className="relative text-xs px-2 py-0.5 rounded-full font-bold font-mono transition active:scale-95 before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
             style={{
               background: c.status === key ? meta.bg    : 'transparent',
               color:      c.status === key ? meta.color : 'var(--text-muted)',

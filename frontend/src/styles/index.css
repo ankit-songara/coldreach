@@ -298,6 +298,10 @@ body {
     box-shadow: var(--shadow-xs);
   }
   .btn-ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+  /* Press feedback belongs on every control, not just the primary CTA — a
+     button that doesn't respond on pointer-down reads as dead (Apple's
+     "Response is the foundation"). The .btn transition already lists transform. */
+  .btn-ghost:active:not(:disabled) { transform: scale(0.97); background: var(--surface-2); }
 
   .input {
     @apply w-full rounded-[10px] outline-none;

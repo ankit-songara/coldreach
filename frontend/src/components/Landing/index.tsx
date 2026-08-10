@@ -22,7 +22,7 @@ const STEPS = [
   {
     n: 2,
     title: 'Hunt live openings',
-    body: 'Type a role or company. We surface founders, hiring managers, and recruiters actively hiring — each with a verified email.',
+    body: 'Type a role or company. We surface founders, hiring managers, and recruiters actively hiring — each reachable at a real, published address, never a guessed one.',
   },
   {
     n: 3,
@@ -39,8 +39,8 @@ const STEPS = [
 const FEATURES = [
   {
     icon: '✓',
-    title: 'Verified before you send',
-    body: 'Every address is checked for deliverability first — protecting your sender reputation and your confidence.',
+    title: 'Real addresses, never guessed',
+    body: "Every email is one the company actually publishes — we never invent a careers@ that bounces. Leads we can't reach a real address for are dropped, not faked.",
   },
   {
     icon: '✍',
@@ -55,7 +55,7 @@ const FEATURES = [
   {
     icon: '☰',
     title: 'Pipeline built in',
-    body: 'Drag contacts from Emailed to Replied to Interview to Offer. Your whole search in one board — no spreadsheet.',
+    body: 'Move contacts from Emailed to Replied to Interview to Offer with one tap. Your whole search in one board — no spreadsheet.',
   },
   {
     icon: '◉',
@@ -253,7 +253,7 @@ export default function Landing({ onLogin, onSignup }: { onLogin: () => void; on
           </p>
           <p className="crl-about-p">
             It's built for genuine one-to-one outreach, not spam: daily caps, paced sending,
-            verified addresses only, and a hard guard against emailing the same person twice.
+            real published addresses only, and a hard guard against emailing the same person twice.
           </p>
         </div>
         <div className="crl-values">

@@ -470,7 +470,7 @@ export default function App() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               aria-current={active ? 'page' : undefined}
-              className="flex-1 flex flex-col items-center gap-1 relative"
+              className="flex-1 flex flex-col items-center gap-1 relative transition active:scale-90"
               style={{
                 padding: '10px 0 8px', background: 'none', border: 'none', cursor: 'pointer',
                 color: active ? 'var(--accent)' : 'var(--text-muted)',
