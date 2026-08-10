@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { useDismissAnimation } from '../../hooks/useDismissAnimation'
 
 /**
  * Minimal confirmation modal. Closes on backdrop click or Escape.
@@ -20,6 +21,9 @@ export default function ConfirmDialog({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  // Dismiss paths (Cancel / Escape / scrim) play a scale-out first; Confirm
+  // stays immediate so a committed action never feels laggy.
+  const { closing, dismiss } = useDismissAnimation(onCancel, 160)
 
   // Remember what was focused before the dialog opened, focus Cancel on
   // mount, and hand focus back when the dialog unmounts.
@@ -31,7 +35,7 @@ export default function ConfirmDialog({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onCancel(); return }
+      if (e.key === 'Escape') { dismiss(); return }
       if (e.key !== 'Tab') return
       // Trap Tab: cycle between the dialog's focusable elements.
       const root = dialogRef.current
@@ -54,7 +58,7 @@ export default function ConfirmDialog({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onCancel])
+  }, [dismiss])
 
   // Button labels are sub-18px text, so the -text variants carry the color;
   // the base hue only ever appears diluted through color-mix fills/borders.
@@ -69,8 +73,11 @@ export default function ConfirmDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.6)' }}
-      onClick={onCancel}
+      style={{
+        background: 'rgba(0,0,0,0.6)',
+        animation: `${closing ? 'cr-scrim-out' : 'cr-scrim-in'} .16s var(--ease-out) both`,
+      }}
+      onClick={dismiss}
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -78,7 +85,12 @@ export default function ConfirmDialog({
       <div
         ref={dialogRef}
         className="card w-full max-w-sm mx-4 space-y-4"
-        style={{ border: `1px solid ${accentBorder}` }}
+        style={{
+          border: `1px solid ${accentBorder}`,
+          animation: closing
+            ? 'cr-pop-out .16s var(--ease-out) both'
+            : 'cr-pop .18s var(--ease-spring) both',
+        }}
         onClick={e => e.stopPropagation()}
       >
         <h3 className="font-bold text-base">{title}</h3>
@@ -96,7 +108,7 @@ export default function ConfirmDialog({
           </button>
           <button
             ref={cancelRef}
-            onClick={onCancel}
+            onClick={dismiss}
             disabled={busy}
             className="btn"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}

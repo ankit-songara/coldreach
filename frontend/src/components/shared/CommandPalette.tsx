@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { useDismissAnimation } from '../../hooks/useDismissAnimation'
 
 export interface Command {
   id:    string
@@ -22,6 +23,9 @@ export default function CommandPalette({ open, onClose, commands }: {
   const panelRef = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLButtonElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
+  // Scale back down on Escape/scrim dismiss (Apple §7) — but a command RUN
+  // closes instantly (runAt below), so acting on a result feels immediate.
+  const { closing, dismiss } = useDismissAnimation(onClose, 160)
 
   const hits = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -55,7 +59,7 @@ export default function CommandPalette({ open, onClose, commands }: {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(); return }
       if (e.key !== 'Tab') return
       const root = panelRef.current
       if (!root) return
@@ -82,7 +86,7 @@ export default function CommandPalette({ open, onClose, commands }: {
       document.removeEventListener('keydown', onKey, true)
       document.body.style.overflow = prevOverflow
     }
-  }, [open, onClose])
+  }, [open, dismiss])
 
   if (!open) return null
 
@@ -97,8 +101,11 @@ export default function CommandPalette({ open, onClose, commands }: {
     <div
       role="dialog" aria-modal="true" aria-label="Command palette"
       className="fixed inset-0 z-[70] flex items-start justify-center px-4"
-      style={{ background: 'rgba(0,0,0,0.45)', paddingTop: 'clamp(60px, 16vh, 160px)' }}
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        background: 'rgba(0,0,0,0.45)', paddingTop: 'clamp(60px, 16vh, 160px)',
+        animation: `${closing ? 'cr-scrim-out' : 'cr-scrim-in'} .16s var(--ease-out) both`,
+      }}
+      onMouseDown={e => { if (e.target === e.currentTarget) dismiss() }}
     >
       <div
         ref={panelRef}
@@ -106,7 +113,9 @@ export default function CommandPalette({ open, onClose, commands }: {
         style={{
           maxWidth: 520, background: 'var(--surface-1)', borderRadius: 16,
           border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-lg)',
-          animation: 'cr-pop .18s var(--ease-spring) both',
+          animation: closing
+            ? 'cr-pop-out .16s var(--ease-out) both'
+            : 'cr-pop .18s var(--ease-spring) both',
         }}
       >
         <input
@@ -114,7 +123,7 @@ export default function CommandPalette({ open, onClose, commands }: {
           value={query}
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Escape') { e.preventDefault(); onClose() }
+            if (e.key === 'Escape') { e.preventDefault(); dismiss() }
             else if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(c + 1, hits.length - 1)) }
             else if (e.key === 'ArrowUp')   { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)) }
             else if (e.key === 'Enter')     { e.preventDefault(); runAt(cursor) }

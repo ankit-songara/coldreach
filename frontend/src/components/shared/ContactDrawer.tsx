@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useDismissAnimation } from '../../hooks/useDismissAnimation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { X, Copy, ExternalLink, Linkedin } from 'lucide-react'
@@ -113,6 +114,9 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
   const qc = useQueryClient()
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  // Play the slide-out before the parent unmounts (enters from the right →
+  // leaves to the right, Apple §7). All close triggers call dismiss().
+  const { closing, dismiss } = useDismissAnimation(onClose, 250)
   const [notes, setNotes] = useState(() => _noteDrafts.get(c.id) ?? (c.notes ?? ''))
   const [savingNote, setSavingNote] = useState(false)
 
@@ -152,7 +156,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
         if (dialog && panelRef.current && !dialog.contains(panelRef.current)
             && !panelRef.current.contains(dialog)) return
       }
-      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Escape') { dismiss(); return }
       if (e.key !== 'Tab') return
       const root = panelRef.current
       if (!root) return
@@ -174,7 +178,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [dismiss])
 
   // Optimistic status change — same pattern as Send: the pill flips
   // instantly, rolled back if the request fails. Hunt-result rows are
@@ -266,16 +270,21 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
           stylesheet is off-limits here so the drawer carries its own rules.
           prefers-reduced-motion is neutralised globally in index.css. */}
       <style>{`
-        @keyframes cr-drawer-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+        @keyframes cr-drawer-in  { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+        @keyframes cr-drawer-out { from { transform: none; opacity: 1; } to { transform: translateX(40px); opacity: 0; } }
         .cr-drawer { width: 380px; }
         @media (max-width: 480px) { .cr-drawer { width: 100%; } }
       `}</style>
 
-      {/* Scrim — click closes */}
+      {/* Scrim — click closes. Fades in/out in lockstep with the panel so the
+          dim and the material arrive (and leave) together (Apple §12/§13). */}
       <div
         className="fixed inset-0"
-        style={{ background: 'rgba(0, 0, 0, 0.4)', zIndex: 60 }}
-        onClick={onClose}
+        style={{
+          background: 'rgba(0, 0, 0, 0.4)', zIndex: 60,
+          animation: `${closing ? 'cr-scrim-out' : 'cr-scrim-in'} .25s var(--ease-out) both`,
+        }}
+        onClick={dismiss}
         aria-hidden
       />
 
@@ -291,7 +300,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
           borderLeft: '1px solid var(--border)',
           boxShadow: 'var(--shadow-lg)',
           padding: '22px 24px',
-          animation: 'cr-drawer-in .25s var(--ease-out) both',
+          animation: `${closing ? 'cr-drawer-out' : 'cr-drawer-in'} .25s var(--ease-out) both`,
         }}
       >
         {/* ── Header ── */}
@@ -315,7 +324,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
           </div>
           <button
             ref={closeRef}
-            onClick={onClose}
+            onClick={dismiss}
             aria-label="Close contact details"
             className="hit-target w-[30px] h-[30px] flex items-center justify-center rounded-[9px] flex-shrink-0"
             style={{
@@ -441,7 +450,7 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
                   key={s}
                   onClick={() => statusMutation.mutate(s)}
                   disabled={statusMutation.isPending}
-                  className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition-all hit-target"
+                  className="text-[11px] px-2 py-0.5 rounded-full font-semibold transition active:scale-95 hit-target"
                   style={{
                     background: active ? stMeta.bg : 'transparent',
                     // stMeta.color is a var() — alpha via color-mix, never string-suffix tricks

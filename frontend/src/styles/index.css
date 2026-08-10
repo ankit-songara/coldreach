@@ -197,6 +197,12 @@ body {
 
 /* Shared micro-motion */
 @keyframes cr-pop     { 0% { transform: scale(.96); opacity: 0; } 60% { transform: scale(1.02); } 100% { transform: scale(1); opacity: 1; } }
+/* Overlay open/close primitives — shared by the drawer, command palette and
+   confirm dialog so scrim + surface enter AND leave together (Apple §7/§12).
+   Surface-specific transforms (the drawer's horizontal slide) stay local. */
+@keyframes cr-pop-out  { from { transform: scale(1); opacity: 1; } to { transform: scale(.97); opacity: 0; } }
+@keyframes cr-scrim-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cr-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 
 /* Logo Kit V1 motion spec: 1.2s/dot ease-in-out infinite, .15s stagger —
    rest at .35, peak (opacity 1 + 8% lift) at 30%, settled by 60%. Animated
@@ -277,6 +283,12 @@ body {
                 box-shadow 130ms var(--ease-standard),
                 transform 130ms var(--ease-standard);
   }
+  /* Press feedback belongs on EVERY button, not just the primary CTA — a
+     control that doesn't respond on pointer-down reads as dead (Apple's
+     "Response is the foundation"). On the base .btn so bare .btn (e.g. the
+     confirm/cancel in ConfirmDialog) and both variants inherit it; variants
+     only add their own :active background below. */
+  .btn:active:not(:disabled) { transform: scale(0.97); }
 
   /* Primary — solid coral with lift */
   .btn-primary {
@@ -287,7 +299,7 @@ body {
     box-shadow: var(--shadow-sm);
   }
   .btn-primary:hover:not(:disabled) { background: var(--accent-hover); box-shadow: var(--shadow-md); }
-  .btn-primary:active:not(:disabled) { transform: scale(0.97); background: var(--accent-press); }
+  .btn-primary:active:not(:disabled) { background: var(--accent-press); }
 
   /* Ghost — white surface, hairline border */
   .btn-ghost {
@@ -298,10 +310,7 @@ body {
     box-shadow: var(--shadow-xs);
   }
   .btn-ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
-  /* Press feedback belongs on every control, not just the primary CTA — a
-     button that doesn't respond on pointer-down reads as dead (Apple's
-     "Response is the foundation"). The .btn transition already lists transform. */
-  .btn-ghost:active:not(:disabled) { transform: scale(0.97); background: var(--surface-2); }
+  .btn-ghost:active:not(:disabled) { background: var(--surface-2); }
 
   .input {
     @apply w-full rounded-[10px] outline-none;
