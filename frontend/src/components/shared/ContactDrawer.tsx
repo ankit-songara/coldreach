@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useDismissAnimation } from '../../hooks/useDismissAnimation'
+import { useSwipeDismiss } from '../../hooks/useSwipeDismiss'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { X, Copy, ExternalLink, Linkedin } from 'lucide-react'
@@ -113,10 +114,15 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
   )
   const qc = useQueryClient()
   const panelRef = useRef<HTMLDivElement>(null)
+  const scrimRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   // Play the slide-out before the parent unmounts (enters from the right →
   // leaves to the right, Apple §7). All close triggers call dismiss().
   const { closing, dismiss } = useDismissAnimation(onClose, 250)
+  // Touch swipe-to-dismiss: drag the panel right to throw it away, with
+  // velocity/momentum deciding dismiss-vs-settle. Flings straight to unmount
+  // (its own exit motion), so it uses onClose, not the keyframe dismiss().
+  useSwipeDismiss({ panel: panelRef, scrim: scrimRef, onDismiss: onClose })
   const [notes, setNotes] = useState(() => _noteDrafts.get(c.id) ?? (c.notes ?? ''))
   const [savingNote, setSavingNote] = useState(false)
 
@@ -277,8 +283,10 @@ function DrawerPanel({ contact: c, onClose }: { contact: Contact; onClose: () =>
       `}</style>
 
       {/* Scrim — click closes. Fades in/out in lockstep with the panel so the
-          dim and the material arrive (and leave) together (Apple §12/§13). */}
+          dim and the material arrive (and leave) together (Apple §12/§13).
+          During a swipe its opacity is driven imperatively (1 − dragX/width). */}
       <div
+        ref={scrimRef}
         className="fixed inset-0"
         style={{
           background: 'rgba(0, 0, 0, 0.4)', zIndex: 60,
