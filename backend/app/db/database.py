@@ -81,6 +81,7 @@ def create_tables() -> None:
     from app.db import models   # noqa: F401 — import registers models
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
+    _ensure_pg_columns()
     _fix_contact_email_index()
     _ensure_google_sub_index()
     _ensure_perf_indexes()
@@ -124,6 +125,7 @@ _NEW_COLUMNS = {
         ("user_id",         "INTEGER DEFAULT 1"),
         ("context",         "TEXT"),
         ("linkedin_url",    "VARCHAR(255)"),
+        ("send_claim_at",   "DATETIME"),
     ],
     "users":            [("token_version", "INTEGER DEFAULT 0"),
                          ("google_sub",    "VARCHAR(255)")],
@@ -131,6 +133,27 @@ _NEW_COLUMNS = {
     "resumes":          [("user_id", "INTEGER DEFAULT 1")],
     "app_config":       [("user_id", "INTEGER DEFAULT 1")],
 }
+
+
+# Columns added AFTER the prod Postgres table already existed. create_all()
+# never ALTERs an existing table, so these need an idempotent ADD COLUMN. SQLite
+# is handled by _ensure_columns above (it can't do ADD COLUMN IF NOT EXISTS);
+# Postgres supports IF NOT EXISTS directly. Works as a no-op on a fresh DB where
+# create_all() already built the column.
+_PG_NEW_COLUMNS = (
+    "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS send_claim_at TIMESTAMP",
+)
+
+
+def _ensure_pg_columns() -> None:
+    if settings.database_url.startswith("sqlite"):
+        return  # SQLite path is _ensure_columns()
+    try:
+        with engine.begin() as conn:
+            for ddl in _PG_NEW_COLUMNS:
+                conn.execute(text(ddl))
+    except Exception as e:
+        log.warning(f"Postgres column ensure skipped: {e}")
 
 
 def _ensure_columns() -> None:
