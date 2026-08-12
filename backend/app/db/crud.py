@@ -163,6 +163,18 @@ class ContactRepository:
                      synchronize_session=False))
         self.db.commit()
 
+    def mark_addresses_invalid(self, contact_ids: list[int]) -> None:
+        """Flag addresses Gmail rejected outright at send time (SMTPRecipients-
+        Refused) as invalid, so the send eligibility filter skips them next time
+        instead of re-attempting a dead address on every bulk send (each hard
+        rejection is a small sender-reputation ding)."""
+        if not contact_ids:
+            return
+        (self._scoped()
+             .filter(Contact.id.in_(contact_ids))
+             .update({Contact.email_status: "invalid"}, synchronize_session=False))
+        self.db.commit()
+
     def get_by_email(self, email: str) -> Contact | None:
         return self._scoped().filter(Contact.email == email).first()
 

@@ -178,6 +178,11 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
     # The pre-verified SMTP session, reused by the FIRST batch (see below).
     verified_smtp = None
 
+    # Addresses Gmail refuses outright at send time (SMTPRecipientsRefused) —
+    # a dead address, not a transient failure. Collected so they're marked
+    # invalid after the run and never re-attempted (see Finding 1).
+    permanent_failed_ids: set[int] = set()
+
     if not use_oauth:
         if not (gmail_address and gmail_app_password):
             raise HTTPException(400,
@@ -265,6 +270,10 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
                                           email=contact.email, status="sent"))
                 except Exception as e:
                     log.error(f"Failed {contact.email}: {e}")
+                    # A recipient Gmail rejects at send time is a dead address —
+                    # flag it so it's marked invalid and not retried forever.
+                    if isinstance(e, smtplib.SMTPRecipientsRefused):
+                        permanent_failed_ids.add(contact.id)
                     out.append(SendResult(contact_id=contact.id, name=contact.name,
                                           email=contact.email, status="failed",
                                           error=_friendly_send_error(e)))
@@ -332,6 +341,14 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
         log.info(f"Send: {len(queue) - len(claimed)} contacts already claimed by a concurrent request")
         queue = [(c, d) for c, d in queue if c.id in claimed]
     if not queue:
+        # Close the pre-verified SMTP session before bailing — nothing will
+        # consume it now, and leaving it open leaks an authenticated Gmail
+        # connection (App-Password path only; OAuth has no session).
+        if verified_smtp is not None:
+            try:
+                verified_smtp.quit()
+            except Exception:
+                pass
         raise HTTPException(409,
             "These emails are already being sent by another request — check the results in a moment.")
 
@@ -361,9 +378,12 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
 
         log.info(f"Batch {batch_idx+1}/{len(batches)} done — {len(results)} total so far")
 
-    # Failed sends give their claim back so a retry can reach them again.
+    # Failed sends give their claim back so a retry can reach them again — except
+    # addresses Gmail refused outright, which are marked invalid so the next bulk
+    # send skips them instead of re-attempting a dead address (reputation).
     failed_ids = [r.contact_id for r in results if r.status == "failed"]
     contact_repo.release_send_claim(failed_ids, claim_ts)
+    contact_repo.mark_addresses_invalid(list(permanent_failed_ids))
 
     sent   = sum(1 for r in results if r.status == "sent")
     failed = sum(1 for r in results if r.status == "failed")

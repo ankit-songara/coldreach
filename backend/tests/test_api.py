@@ -3303,6 +3303,71 @@ class TestSendIdempotencyClaim:
             db.close()
 
 
+class TestSendPermanentFailure:
+    """A Gmail recipient-refusal (dead address) is marked invalid so it's not
+    re-attempted on every bulk send (Finding 1)."""
+
+    def _seed_drafted(self, db_session, email):
+        from app.db.models import Contact, EmailDraft, User
+        user = db_session.query(User).first()
+        c = Contact(user_id=user.id, name="Dead Lead", email=email,
+                    designation="Software Engineer", company="Nope")
+        db_session.add(c); db_session.commit()
+        db_session.add(EmailDraft(user_id=user.id, contact_id=c.id,
+                                  subject="Hi", body="Hello there"))
+        db_session.commit()
+        return c.id
+
+    def test_recipient_refused_marks_invalid_and_stops_retrying(self, auth_client, db_session, monkeypatch):
+        import smtplib
+        from app.api import send as send_mod
+        cid = self._seed_drafted(db_session, "ghost@nope.com")
+        monkeypatch.setattr(send_mod.time, "sleep", lambda *_: None)
+
+        class _FakeSMTP:
+            def __init__(self, *a, **k): pass
+            def starttls(self): pass
+            def login(self, addr, pw): pass
+            def sendmail(self, frm, to, msg):
+                raise smtplib.SMTPRecipientsRefused({to: (550, b"No such user")})
+            def quit(self): pass
+        monkeypatch.setattr(send_mod.smtplib, "SMTP", _FakeSMTP)
+
+        r = auth_client.post("/api/send/bulk", json={
+            "gmail_address": "me@gmail.com", "gmail_app_password": "abcd efgh ijkl mnop",
+        })
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sent"] == 0 and data["failed"] == 1
+
+        # The dead address is flagged invalid...
+        contact = next(c for c in auth_client.get("/api/contacts").json() if c["id"] == cid)
+        assert contact["email_status"] == "invalid"
+
+        # ...so a second bulk send skips it entirely (no eligible queue).
+        r2 = auth_client.post("/api/send/bulk", json={
+            "gmail_address": "me@gmail.com", "gmail_app_password": "abcd efgh ijkl mnop",
+        })
+        assert r2.status_code == 400   # "No contacts with drafts found."
+
+    def test_mark_addresses_invalid_repo(self, auth_client, test_engine):
+        from sqlalchemy.orm import sessionmaker
+        from app.db.crud import ContactRepository
+        from app.db.models import User
+        r = auth_client.post("/api/contacts", json={
+            "name": "X", "email": "x@acme.com", "company": "Acme", "designation": "Eng"})
+        cid = r.json()["id"]
+        db = sessionmaker(bind=test_engine)()
+        try:
+            uid = db.query(User).filter(User.email == "tester@example.com").first().id
+            repo = ContactRepository(db, uid)
+            repo.mark_addresses_invalid([cid])
+            assert repo.get_by_ids([cid])[0].email_status == "invalid"
+            repo.mark_addresses_invalid([])   # no-op, no error
+        finally:
+            db.close()
+
+
 class TestFreshnessBucket:
     """Coarse recency rank from the transient _posted_at — fresh postings win
     scarce resolve/careers slots; unknown ties the middle; stale sinks."""
