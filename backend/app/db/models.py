@@ -53,11 +53,6 @@ class Contact(Base):
 
     # ── Tracking (populated by send + inbox sync) ────────────────────────────
     last_emailed_at: Mapped[datetime|None] = mapped_column(DateTime, nullable=True, index=True)
-    # Transient send-claim marker, separate from last_emailed_at so a claim never
-    # looks like a real send. Set atomically before a first-touch goes out;
-    # cleared on send (mark_emailed) or failure (release). A claim older than
-    # _CLAIM_TTL is treated as stranded (its request died mid-run) and reclaimed.
-    send_claim_at:   Mapped[datetime|None] = mapped_column(DateTime, nullable=True)
     replied_at:      Mapped[datetime|None] = mapped_column(DateTime, nullable=True)
     bounced:         Mapped[bool]          = mapped_column(Boolean, default=False)
     followups_sent:  Mapped[int]           = mapped_column(default=0)

@@ -8,7 +8,7 @@ so callers physically cannot read or write another user's rows.
 
 import re
 from datetime import datetime, timedelta
-from sqlalchemy import update as sa_update, or_ as sa_or
+from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
 from app.db.models import (
@@ -24,12 +24,6 @@ from app import security
 # (A manual "open in Gmail" send sets status="emailed" but not last_emailed_at,
 #  so we check status too, not just the timestamp.)
 ALREADY_CONTACTED_STATUSES = {"emailed", "followed_up", "replied", "interview", "offer", "rejected"}
-
-# A send-claim older than this belonged to a request that died mid-run (a
-# serverless kill skips the failure-release), so it's safe to reclaim. Well
-# beyond any real bulk-send duration (the serverless wall is ~60s, the client
-# times out at 65s), so an actively-in-flight claim is never stolen.
-_CLAIM_TTL = timedelta(minutes=5)
 
 
 def already_first_touched(contact: Contact) -> bool:
@@ -126,42 +120,30 @@ class ContactRepository:
 
     def mark_emailed(self, contact_ids: list[int], when: datetime) -> None:
         """Bulk 'these just went out' update — one UPDATE + one commit for the
-        whole batch. Records the real send (status + last_emailed_at) and clears
-        the transient send-claim marker, turning the claim into a confirmed send."""
+        whole batch instead of update()+commit()+refresh() per contact."""
         if not contact_ids:
             return
         (self._scoped()
              .filter(Contact.id.in_(contact_ids))
-             .update({Contact.status: "emailed", Contact.last_emailed_at: when,
-                      Contact.send_claim_at: None},
+             .update({Contact.status: "emailed", Contact.last_emailed_at: when},
                      synchronize_session=False))
         self.db.commit()
 
     def claim_for_send(self, contact_ids: list[int], when: datetime) -> set[int]:
         """Atomically claim contacts for a first-touch send. The WHERE re-checks
-        the not-yet-sent state INSIDE the UPDATE, so of two overlapping bulk-send
-        requests only one can claim each row — the other's claim matches nothing
-        and it skips those contacts instead of double-sending the same cold email.
-
-        The claim lives in its OWN column (send_claim_at), never touching status
-        or last_emailed_at, so a claimed-but-unsent contact never looks like a
-        real send. A claim older than _CLAIM_TTL means its request died mid-run
-        (serverless kill skips the release), so it's reclaimable — this recovers
-        contacts a crash would otherwise strand as permanently 'sending'.
-        Returns the ids actually claimed."""
+        the not-yet-touched state INSIDE the UPDATE, so of two overlapping
+        bulk-send requests only one can claim each row — the other request's
+        claim matches nothing and it skips those contacts instead of
+        double-sending the same cold email. Returns the ids actually claimed."""
         if not contact_ids:
             return set()
-        stale_cutoff = when - _CLAIM_TTL
         res = self.db.execute(
             sa_update(Contact)
             .where(Contact.user_id == self.user_id,
                    Contact.id.in_(contact_ids),
                    Contact.last_emailed_at.is_(None),
-                   Contact.status.notin_(ALREADY_CONTACTED_STATUSES),
-                   # Unclaimed, OR a stale (stranded) claim we may take over.
-                   sa_or(Contact.send_claim_at.is_(None),
-                         Contact.send_claim_at < stale_cutoff))
-            .values(send_claim_at=when)
+                   Contact.status.notin_(ALREADY_CONTACTED_STATUSES))
+            .values(status="emailed", last_emailed_at=when)
             .returning(Contact.id)
             .execution_options(synchronize_session=False))
         claimed = {row[0] for row in res}
@@ -169,16 +151,16 @@ class ContactRepository:
         return claimed
 
     def release_send_claim(self, contact_ids: list[int], claim_ts: datetime) -> None:
-        """Give back claims whose send FAILED, restoring eligibility. Guarded on
-        the claim timestamp so it can only undo THIS request's claim. Status and
-        last_emailed_at were never touched by the claim, so only the marker is
-        cleared."""
+        """Give back claims whose send FAILED, restoring first-touch
+        eligibility. Guarded on the claim timestamp so it can only undo THIS
+        request's claim, never a genuine send recorded by someone else."""
         if not contact_ids:
             return
         (self._scoped()
              .filter(Contact.id.in_(contact_ids),
-                     Contact.send_claim_at == claim_ts)
-             .update({Contact.send_claim_at: None}, synchronize_session=False))
+                     Contact.last_emailed_at == claim_ts)
+             .update({Contact.status: "new", Contact.last_emailed_at: None},
+                     synchronize_session=False))
         self.db.commit()
 
     def mark_addresses_invalid(self, contact_ids: list[int]) -> None:

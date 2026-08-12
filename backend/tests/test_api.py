@@ -3302,34 +3302,6 @@ class TestSendIdempotencyClaim:
         finally:
             db.close()
 
-    def test_claim_never_looks_like_a_send(self, auth_client, test_engine):
-        """The claim marker lives in its own column — a claimed-but-unsent
-        contact must NOT look emailed (that was the strand bug: a mid-run crash
-        left it permanently 'sent')."""
-        from datetime import datetime
-        db, repo, ids = self._repo_and_ids(auth_client, test_engine)
-        try:
-            repo.claim_for_send(ids, datetime(2026, 7, 31, 12, 0))
-            for c in repo.get_by_ids(ids):
-                assert c.status == "new" and c.last_emailed_at is None
-        finally:
-            db.close()
-
-    def test_stale_claim_is_reclaimed_but_fresh_one_is_not(self, auth_client, test_engine):
-        """A crashed run leaves contacts claimed but never sent. A fresh claim
-        can't be stolen (no double-send), but a claim older than _CLAIM_TTL is
-        reclaimed so the contact isn't stranded as permanently 'sending'."""
-        from datetime import datetime, timedelta
-        db, repo, ids = self._repo_and_ids(auth_client, test_engine)
-        try:
-            old = datetime(2026, 7, 31, 12, 0)
-            assert repo.claim_for_send(ids, old) == set(ids)                     # A claims
-            assert repo.claim_for_send(ids, old + timedelta(minutes=1)) == set()  # fresh: not stolen
-            later = old + timedelta(minutes=6)                                    # > _CLAIM_TTL
-            assert repo.claim_for_send(ids, later) == set(ids)                    # stale: reclaimed
-        finally:
-            db.close()
-
 
 class TestSendPermanentFailure:
     """A Gmail recipient-refusal (dead address) is marked invalid so it's not
