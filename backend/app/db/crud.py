@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from sqlalchemy import update as sa_update, or_ as sa_or
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session
 from app.db.models import (
     Contact, EmailDraft, Resume, ResumeFile, AppConfig, User, KnownCompany, EmailPattern,
     ReplyMessage, HuntCursor, CompanyTag, ScrapeCache,
@@ -91,16 +91,13 @@ class ContactRepository:
         return self.db.query(Contact).filter(Contact.user_id == self.user_id)
 
     def get_all(self) -> list[Contact]:
-        # context (up to 4KB of scraped posting text per row) is deferred: no
-        # get_all() consumer reads it — ContactOut doesn't serialize it, and
-        # send/inbox/analytics/hunt only touch identity/status columns — yet
-        # every list call was dragging ~KBs × N rows out of Supabase. Compose,
-        # the one context reader, fetches per-contact via get_by_id (eager).
-        # If a future caller DOES touch .context it still works (lazy loads,
-        # one query per row) — just move that caller off get_all() then.
+        # context loads in the ONE list query, NOT deferred. ContactOut now
+        # serializes it (the card's "Hiring: <role>" trust line), so deferring
+        # it turned every /contacts load into an N+1 — a lazy per-row SELECT for
+        # each contact — which timed out a large list. Eager keeps it a single
+        # query; the per-row text is small and the DB is co-located (sin1).
         return (
             self._scoped()
-            .options(defer(Contact.context))
             .order_by(Contact.created_at.desc())
             .all()
         )
