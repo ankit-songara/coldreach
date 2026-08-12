@@ -1,0 +1,7 @@
+# ColdReach — allow crawling of the public landing page.
+# The app itself (#hunt, #send, …) is behind login and hash-routed, so there
+# are no separate crawlable app URLs to disallow.
+User-agent: *
+Allow: /
+
+Sitemap: https://coldreach-niyp.vercel.app/sitemap.xml
