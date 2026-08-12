@@ -758,8 +758,9 @@ class TestKeylessNamedGrounding:
         from app.scrapers import web
 
         async def fake_pages(domain, timeout=8, cap=8):
-            return ["hello@acme.com", "jane.doe@acme.com", "press@acme.com"]
-        monkeypatch.setattr(web, "emails_from_company_pages", fake_pages)
+            return (["hello@acme.com", "jane.doe@acme.com", "press@acme.com"],
+                    "Our team: Jane Doe, CEO")
+        monkeypatch.setattr(web, "_company_pages", fake_pages)
 
         got = asyncio.run(web.find_person_email("acme.com", "Jane", "Doe"))
         assert got == "jane.doe@acme.com"
@@ -769,9 +770,28 @@ class TestKeylessNamedGrounding:
         from app.scrapers import web
 
         async def fake_pages(domain, timeout=8, cap=8):
-            return ["careers@acme.com", "info@acme.com"]   # no personal mailbox
-        monkeypatch.setattr(web, "emails_from_company_pages", fake_pages)
+            return (["careers@acme.com", "info@acme.com"], "")   # no personal mailbox
+        monkeypatch.setattr(web, "_company_pages", fake_pages)
 
+        assert asyncio.run(web.find_person_email("acme.com", "Jane", "Doe")) is None
+
+    def test_single_token_email_trusted_only_when_full_name_on_page(self, monkeypatch):
+        """A bare `jane@` is this person's address ONLY when the page also shows
+        her full name — otherwise it could be a different Jane (wrong-person
+        guard). Legit leads whose bio is on the page still match, so no lead is
+        lost."""
+        import asyncio
+        from app.scrapers import web
+
+        async def with_name(domain, timeout=8, cap=8):
+            return (["jane@acme.com"], "Team\nJane Doe — Engineering")
+        monkeypatch.setattr(web, "_company_pages", with_name)
+        assert asyncio.run(web.find_person_email("acme.com", "Jane", "Doe")) == "jane@acme.com"
+
+        async def without_name(domain, timeout=8, cap=8):
+            # jane@ is published, but "Doe" appears nowhere — likely a different Jane.
+            return (["jane@acme.com"], "Contact us at jane@acme.com for sales")
+        monkeypatch.setattr(web, "_company_pages", without_name)
         assert asyncio.run(web.find_person_email("acme.com", "Jane", "Doe")) is None
 
     @pytest.mark.parametrize("local, matches", [
@@ -1913,7 +1933,7 @@ class TestSharedPageFetchCache:
         # Scrapling (headless) is excluded from the Vercel build, so production
         # uses the httpx path — force that path here too (and keep the test fast).
         async def no_scrapling(domain, timeout, cap=8):
-            return []
+            return [], ""   # (emails, text) — no scrapling → httpx path
         monkeypatch.setattr(web_mod, "_scrape_scrapling", no_scrapling)
         real_client = httpx.AsyncClient
         def fake_async_client(*a, **kw):

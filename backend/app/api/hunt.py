@@ -1241,28 +1241,6 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
                     continue
                 with_email.append(r)
 
-    # ── Persist pattern memory for future hunts: SMTP-verified resolutions are
-    #    strong confirmations, everything else the cache learned is a weak
-    #    observation. Best-effort — never breaks a hunt. ─────────────────────────
-    # ONE batched upsert, not O(N) per-domain commits — on a broad hunt this loop
-    # sits in the tail between resolve and the 60s wall, so per-row round-trips to
-    # Supabase were a direct 504 contributor.
-    try:
-        pattern_items: list[tuple[str, str, bool]] = []
-        recorded: set[str] = set()
-        for r in with_email:
-            patt = r.get("_pattern")
-            if patt and r.get("email"):
-                dom = r["email"].rsplit("@", 1)[-1].lower()
-                pattern_items.append((dom, patt, bool(r.get("_pattern_verified"))))
-                recorded.add(dom)
-        for dom, patt in cache.learned_patterns().items():
-            if dom not in recorded:
-                pattern_items.append((dom, patt, False))
-        record_domain_patterns(db, pattern_items)
-    except Exception as e:
-        log.debug(f"Hunt: pattern persistence skipped: {e}")
-
     # ── Verify deliverability inline (syntax + MX + disposable/role heuristics).
     #    Drop invalid addresses entirely so they never reach the user or hurt the
     #    sending account's reputation; tag the rest so the UI can warn. A "risky"
@@ -1308,6 +1286,28 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
     with_email = verified
     if dropped_invalid:
         log.info(f"Hunt: dropped {dropped_invalid} undeliverable addresses")
+
+    # ── Persist pattern memory for future hunts: SMTP-verified resolutions are
+    #    strong confirmations, everything else the cache learned is a weak
+    #    observation. Runs AFTER verify so a pattern derived from an address the
+    #    verifier just rejected as invalid is never recorded. Best-effort — never
+    #    breaks a hunt. ONE batched upsert, not O(N) per-domain commits (per-row
+    #    round-trips to Supabase in this tail were a direct 504 contributor). ────
+    try:
+        pattern_items: list[tuple[str, str, bool]] = []
+        recorded: set[str] = set()
+        for r in with_email:
+            patt = r.get("_pattern")
+            if patt and r.get("email"):
+                dom = r["email"].rsplit("@", 1)[-1].lower()
+                pattern_items.append((dom, patt, bool(r.get("_pattern_verified"))))
+                recorded.add(dom)
+        for dom, patt in cache.learned_patterns().items():
+            if dom not in recorded:
+                pattern_items.append((dom, patt, False))
+        record_domain_patterns(db, pattern_items)
+    except Exception as e:
+        log.debug(f"Hunt: pattern persistence skipped: {e}")
 
     # ── Query relevance: when the user picked a target role, keep only leads
     #    that match it (plus gatekeepers), dropping off-target ICs. Ranked leads

@@ -458,12 +458,21 @@ async def emails_from_company_pages(domain: str, timeout: int = 8,
 
     SSRF guard: refuses private/loopback/reserved domains.
     """
-    if not await asyncio.to_thread(resolves_public, domain):
-        return []
+    return (await _company_pages(domain, timeout, cap))[0]
 
-    emails = await _scrape_scrapling(domain, timeout, cap)
+
+async def _company_pages(domain: str, timeout: int = 8,
+                         cap: int = 8) -> tuple[list[str], str]:
+    """Scrape once, return (emails, combined_visible_text). Scrapling first
+    (renders JS, bypasses Cloudflare); httpx fallback when it yields nothing or
+    isn't installed (the Vercel path). SSRF guard: private/reserved domains
+    return empty."""
+    if not await asyncio.to_thread(resolves_public, domain):
+        return [], ""
+
+    emails, text = await _scrape_scrapling(domain, timeout, cap)
     if emails:
-        return emails
+        return emails, text
     return await _scrape_httpx(domain, timeout, cap)
 
 
@@ -478,21 +487,35 @@ def _ascii_fold(s: str) -> str:
                    if not unicodedata.combining(ch))
 
 
-def _local_matches_person(local: str, first: str, last: str) -> bool:
-    """True if an email's local-part is a recognizable spelling of this person's
-    name — the standard corporate permutations. Used to confirm that a mailbox
-    scraped off a company page really belongs to the named lead (a real,
-    published address), not just any mailbox at the domain. Accent-folded on
-    both sides: 'José García' must match jose.garcia@…."""
+def _person_match_strength(local: str, first: str, last: str) -> int:
+    """How strongly an email local-part identifies this person:
+      2 = a both-token permutation (first.last, flast, first-last, …) — a
+          collision needs two people sharing BOTH names at one company, so it's
+          unambiguous and safe to trust on its own.
+      1 = a single-token mailbox (bare `first` or bare `last`) — real for many
+          small-company aliases, but `sarah@` could be a different Sarah, so the
+          caller must corroborate it (see find_person_email).
+      0 = no match.
+    Accent-folded both sides so 'José García' matches jose.garcia@…."""
     local = _ascii_fold(local)
     f, l = _ascii_fold(first), _ascii_fold(last)
     if not f or not l:
-        return False
+        return 0
     f1, l1 = f[0], l[0]
-    return local in {
+    both = {
         f"{f}.{l}", f"{f}{l}", f"{f1}{l}", f"{f1}.{l}", f"{f}{l1}",
-        f"{f}.{l1}", f"{f}-{l}", f"{f}_{l}", f"{l}.{f}", f"{l}{f}", f, l,
+        f"{f}.{l1}", f"{f}-{l}", f"{f}_{l}", f"{l}.{f}", f"{l}{f}",
     }
+    if local in both:
+        return 2
+    if local in {f, l}:
+        return 1
+    return 0
+
+
+def _local_matches_person(local: str, first: str, last: str) -> bool:
+    """Back-compat boolean: any recognized spelling (strength >= 1)."""
+    return _person_match_strength(local, first, last) >= 1
 
 
 async def find_person_email(domain: str, first: str, last: str,
@@ -504,17 +527,36 @@ async def find_person_email(domain: str, first: str, last: str,
     pattern-guess needs SMTP/HTTP verification the serverless host can't do, but
     an email printed on the company's own /team page needs no verification at
     all. Returns None if no name-matched mailbox is published.
+
+    A both-token match (first.last, flast, …) is trusted on its own. A bare
+    single-token mailbox (sarah@ / chen@) is trusted ONLY when the lead's FULL
+    name also appears on the scraped pages — otherwise it may belong to a
+    different person who happens to share that one name. Legit leads whose bio
+    is on the page still match (no lead lost); only the genuinely-ambiguous
+    same-name case is rejected.
     """
     if not first or not last:
         return None
     # Wide cap: the generic 8-address cap could truncate THIS person's address
     # off a busy /team page before the name filter below ever saw it.
-    emails = await emails_from_company_pages(domain, timeout, cap=64)
+    emails, page_text = await _company_pages(domain, timeout, cap=64)
     domain = domain.lower()
+    weak: str | None = None
     for e in emails:
         local, _, mail_domain = e.partition("@")
-        if mail_domain == domain and _local_matches_person(local, first, last):
-            return e
+        if mail_domain != domain:
+            continue
+        strength = _person_match_strength(local, first, last)
+        if strength >= 2:
+            return e                      # unambiguous both-token match
+        if strength == 1 and weak is None:
+            weak = e                      # hold — corroborate against the page below
+    if weak is None:
+        return None
+    folded = _ascii_fold(page_text)
+    f, l = _ascii_fold(first), _ascii_fold(last)
+    if f and l and f in folded and l in folded:
+        return weak                       # full name is on the page → it's them
     return None
 
 
@@ -575,14 +617,17 @@ async def linkbio_email_for_person(text: str, first: str, last: str,
     return None
 
 
-async def _scrape_scrapling(domain: str, timeout: int, cap: int = 8) -> list[str]:
+async def _scrape_scrapling(domain: str, timeout: int, cap: int = 8) -> tuple[list[str], str]:
+    """Returns (emails, combined_visible_text). The text is kept so callers can
+    confirm a lead's full name is actually on the page (see find_person_email)."""
     try:
         from scrapling.fetchers import StealthyFetcher
         fetcher = StealthyFetcher()
     except Exception:
-        return []
+        return [], ""
 
     found: list[str] = []
+    texts: list[str] = []
     for path in _PAGES:
         try:
             page = await asyncio.wait_for(
@@ -590,15 +635,16 @@ async def _scrape_scrapling(domain: str, timeout: int, cap: int = 8) -> list[str
                 timeout=timeout,
             )
             text = page.get_all_text(ignore_tags=("script", "style", "noscript"))
+            texts.append(text)
             found.extend(_emails_in(text))
         except Exception:
             pass
         if len(found) >= max(12, cap + 4):
             break
-    return _clean(found)[:cap]
+    return _clean(found)[:cap], "\n".join(texts)
 
 
-async def _scrape_httpx(domain: str, timeout: int, cap: int = 8) -> list[str]:
+async def _scrape_httpx(domain: str, timeout: int, cap: int = 8) -> tuple[list[str], str]:
     # Browser UA (not the bot UA) both dodges 403 walls and matches the UA
     # find_published_role_email uses, so the two share _cached_get entries for
     # the pages they scan in common (/careers, /contact).
@@ -607,7 +653,9 @@ async def _scrape_httpx(domain: str, timeout: int, cap: int = 8) -> list[str]:
     # len(_PAGES) × page-time inside the resolve budget — the single biggest
     # per-domain latency in a hunt. 4-wide keeps the per-domain burst polite
     # while cutting wall-clock ~4×; _cached_get still dedupes across callers.
+    # Returns (emails, combined_visible_text).
     found: list[str] = []
+    kept_texts: list[str] = []
     sem = asyncio.Semaphore(4)
     try:
         async with httpx.AsyncClient(
@@ -621,9 +669,10 @@ async def _scrape_httpx(domain: str, timeout: int, cap: int = 8) -> list[str]:
                                          return_exceptions=True)
         for text in texts:
             if isinstance(text, str) and text:
+                kept_texts.append(text)
                 found.extend(_emails_in(text))
     except Exception:
         pass
-    return _clean(found)[:cap]
+    return _clean(found)[:cap], "\n".join(kept_texts)
 
 
