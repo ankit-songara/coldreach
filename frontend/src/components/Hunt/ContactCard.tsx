@@ -137,7 +137,7 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
           onClick={e => { e.stopPropagation(); deleteMutation.mutate() }}
           title="Remove"
           aria-label="Remove contact"
-          className="relative w-5 h-5 flex items-center justify-center rounded before:absolute before:-inset-2.5 before:content-['']"
+          className="relative w-5 h-5 flex items-center justify-center rounded before:absolute before:-inset-3 before:content-['']"
           style={{ background: 'color-mix(in srgb, var(--danger) 8%, transparent)', color: 'var(--text-muted)' }}
         >
           <X size={10} />

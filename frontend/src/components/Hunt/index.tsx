@@ -398,7 +398,7 @@ export default function Hunt() {
             key={chip.query}
             onClick={() => { setQuery(chip.query); doHunt(chip.query) }}
             disabled={hunting}
-            className="relative text-xs px-3 py-1.5 rounded-full border font-mono transition-colors hover:border-accent before:absolute before:-inset-y-1.5 before:inset-x-0 before:content-['']"
+            className="tap-44 relative text-xs px-3 py-1.5 rounded-full border font-mono transition-colors hover:border-accent before:absolute before:-inset-y-1.5 before:inset-x-0 before:content-['']"
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', opacity: hunting ? 0.5 : 1 }}
           >
             {chip.label}
@@ -482,7 +482,7 @@ export default function Hunt() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className="relative text-xs px-3 py-1 rounded-full font-mono border transition-colors tnum before:absolute before:-inset-y-2 before:inset-x-0 before:content-['']"
+                  className="tap-44 relative text-xs px-3 py-1 rounded-full font-mono border transition-colors tnum before:absolute before:-inset-y-2 before:inset-x-0 before:content-['']"
                   style={{
                     borderColor: statusFilter === s ? 'var(--accent)'      : 'var(--border)',
                     color:       statusFilter === s ? 'var(--accent-text)' : 'var(--text-muted)',

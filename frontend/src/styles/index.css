@@ -335,3 +335,28 @@ body {
     padding: 3px 9px;
   }
 }
+
+/* ── Mobile ergonomics (≤768px, phones) ───────────────────────────────────────
+   Unlayered so these win over @layer components and, with !important, over the
+   inline font-sizes a few fields set. */
+@media (max-width: 768px) {
+  /* iOS Safari zooms the whole page in whenever a focused field is under 16px.
+     Every input here was 12–15px, so login/search/setup/notes all lurched on
+     tap. Force ≥16px on phones (desktop keeps its tighter sizes). */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* Comfortable 44px tap targets (Apple §10). Buttons grow to 44 tall; the
+     Hunt filter/suggestion chips already carry a ::before hit area — .tap-44
+     tops them up to a clean 44 and vertically centres the label. */
+  .btn { min-height: 44px; }
+  .tap-44 {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
