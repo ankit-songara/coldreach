@@ -1497,6 +1497,12 @@ async def hunt(req: HuntRequest, db: Session = Depends(get_db), user: User = Dep
             "status":       c.status,
             "confidence":   c.confidence,
             "email_status": c.email_status,
+            # Provenance + freshness for the card's trust line (why this is a
+            # real lead) and links — same fields the saved-contacts list carries.
+            "context":      c.context,
+            "source":       c.source,
+            "linkedin_url": c.linkedin_url,
+            "created_at":   c.created_at.isoformat() if c.created_at else None,
         } for c in saved],
         total=len(saved),
         found=found,

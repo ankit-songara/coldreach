@@ -57,8 +57,6 @@ class ContactUpdate(BaseModel):
 
 
 class ContactOut(BaseModel):
-    # `source` (which board/site produced the lead) is intentionally NOT
-    # exposed — it's pipeline detail, kept in the DB for internal analytics only.
     id:              int
     name:            str
     email:           str
@@ -66,6 +64,11 @@ class ContactOut(BaseModel):
     company:         str
     status:          str
     notes:           str | None
+    # Provenance for the card's trust line: `context` is the "why this is a
+    # real lead" note (e.g. "Acme is actively hiring for 'Backend Engineer'
+    # (via Greenhouse)"); `source` is which board/site produced the lead.
+    context:         str | None = None
+    source:          str = ""
     last_emailed_at: datetime | None = None
     replied_at:      datetime | None = None
     bounced:         bool = False

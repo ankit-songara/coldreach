@@ -2,11 +2,14 @@ import { memo } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { X, Check, Linkedin } from 'lucide-react'
+import { X, Check, Linkedin, Globe, Target } from 'lucide-react'
 import { contactsApi } from '../../api/contacts'
 import { useStore } from '../../store'
-import { STATUS_META, type Contact, type ContactStatus } from '../../types'
-import { contactDisplayName, isGenericName, displayDesignation } from '../../lib/display'
+import { STATUS_META, type Contact } from '../../types'
+import {
+  contactDisplayName, isGenericName, displayDesignation,
+  leadRole, leadSource, companyWebsite, timeAgo,
+} from '../../lib/display'
 
 // The API still sends email_status; the shared Contact type dropped it, so
 // it's typed locally and the chip simply doesn't render when it's absent.
@@ -25,10 +28,6 @@ export function getDesigColor(d: string): string {
   return 'var(--tier-default)'
 }
 
-// Hoisted so the 8 status buttons aren't rebuilt from scratch for every card on
-// every render — compounds hard at 245 cards during background hunt-stage ticks.
-const STATUS_ENTRIES = Object.entries(STATUS_META) as [ContactStatus, typeof STATUS_META[ContactStatus]][]
-
 interface Props {
   contact: Contact
   selectable?: boolean
@@ -44,53 +43,9 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
   // re-renders from a store DATA change — only when its own props change (paired
   // with React.memo below). Was `useStore()` with no selector, which subscribed
   // every card to the WHOLE store → all 245 re-rendered on any write.
-  const upsertContact   = useStore(s => s.upsertContact)
   const removeContact   = useStore(s => s.removeContact)
   const removeHuntResult = useStore(s => s.removeHuntResult)
-  const updateHuntResult = useStore(s => s.updateHuntResult)
   const qc = useQueryClient()
-
-  // Cards can render from the hunt-results list (fresh hunt) OR the saved
-  // contacts list — both must be updated or the change looks like it failed.
-  const statusMutation = useMutation({
-    mutationFn: (status: ContactStatus) => contactsApi.setStatus(c.id, status),
-    // Flip the pill the instant it's tapped (Apple §1: feedback on pointer-down,
-    // not after the server round-trip). Roll back in onError if the PATCH fails.
-    onMutate: (status): { prev: ContactStatus } => {
-      const prev = c.status
-      const optimistic = { ...c, status } as Contact
-      upsertContact(optimistic)
-      updateHuntResult(optimistic)
-      qc.setQueryData<Contact[]>(['contacts'], rows =>
-        rows?.map(x => (x.id === c.id ? { ...x, status } : x)))
-      return { prev }
-    },
-    onSuccess: (updated) => {
-      upsertContact(updated)
-      updateHuntResult(updated)
-      // Patch the shared query cache too (deleteMutation below already does).
-      // Without it the cached list still holds the OLD status, so the next
-      // refetch/mirror into the store silently reverted the change on screen.
-      qc.setQueryData<Contact[]>(['contacts'], rows =>
-        rows?.map(x => (x.id === updated.id ? updated : x)))
-      // Replies rows snapshot the contact's status — keep both derived views
-      // fresh (keep-alive tabs never refetch on their own).
-      qc.invalidateQueries({ queryKey: ['analytics'] })
-      qc.invalidateQueries({ queryKey: ['replies'] })
-    },
-    onError: (e: Error, _status, ctx) => {
-      // Revert the optimistic flip to the status captured before the tap.
-      const prev = (ctx as { prev: ContactStatus } | undefined)?.prev
-      if (prev !== undefined) {
-        const reverted = { ...c, status: prev } as Contact
-        upsertContact(reverted)
-        updateHuntResult(reverted)
-        qc.setQueryData<Contact[]>(['contacts'], rows =>
-          rows?.map(x => (x.id === c.id ? { ...x, status: prev } : x)))
-      }
-      toast.error(e.message)
-    },
-  })
 
   const deleteMutation = useMutation({
     mutationFn: () => contactsApi.delete(c.id),
@@ -108,6 +63,16 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
   const initials = displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const desigColor = getDesigColor(c.designation)
   const verified = (c as ContactMeta).email_status === 'valid'
+
+  // ── Trust line + links (surface what the hunt already extracted) ──────────
+  const role    = leadRole(c.context)         // the concrete open role, if any
+  const via     = leadSource(c.source)        // which board/site found them
+  const found   = timeAgo(c.created_at)       // freshness: "found 2d ago"
+  const website = companyWebsite(c.email)     // company site from the domain
+  // Reachability only when it's a genuinely positive signal — the many real
+  // direct-scraped emails carry confidence 0, so showing "0%" would undersell.
+  const reachable = (c.confidence ?? 0) >= 50 ? c.confidence : null
+  const status = STATUS_META[c.status]
 
   // The card body opens the detail drawer as a pointer convenience — clicks
   // that land on any nested control (status pills, delete ×) are ignored so
@@ -205,31 +170,30 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
         </div>
       </div>
 
-      {/* ── Company + email ── */}
-      <div className="text-xs mb-1" style={{ color: generic ? 'var(--text)' : 'var(--text-muted)', fontWeight: generic ? 600 : 400 }}>🏢 {c.company}</div>
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        <span className="text-xs font-mono truncate" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
-        {/* Only when the verifier actually confirmed the address — never decorative. */}
-        {verified && (
-          <span
-            className="badge flex-shrink-0"
-            style={{
-              background: 'color-mix(in srgb, var(--success) 12%, transparent)',
-              color: 'var(--success-text)',
-              fontSize: 10,
-            }}
+      {/* ── Company + outbound links ── */}
+      <div className="flex items-center gap-2 mb-1">
+        <span
+          className="text-xs truncate"
+          style={{ color: generic ? 'var(--text)' : 'var(--text-muted)', fontWeight: generic ? 600 : 400 }}
+        >🏢 {c.company}</span>
+        {website && (
+          <a
+            href={website}
+            target="_blank" rel="noopener noreferrer nofollow"
+            onClick={e => e.stopPropagation()}
+            aria-label={`Open ${c.company} website`} title="Company website"
+            className="hit-target inline-flex items-center flex-shrink-0"
+            style={{ color: 'var(--text-muted)' }}
           >
-            ✓ Verified email
-          </span>
+            <Globe size={13} />
+          </a>
         )}
         {c.linkedin_url && (
           <a
             href={c.linkedin_url}
-            target="_blank"
-            rel="noopener noreferrer nofollow"
+            target="_blank" rel="noopener noreferrer nofollow"
             onClick={e => e.stopPropagation()}
-            aria-label="Open LinkedIn profile"
-            title="LinkedIn profile"
+            aria-label="Open LinkedIn profile" title="LinkedIn profile"
             className="hit-target inline-flex items-center flex-shrink-0"
             style={{ color: 'var(--accent-text)' }}
           >
@@ -237,33 +201,54 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
           </a>
         )}
       </div>
-      {/* ── Status pills ── */}
-      <div className="flex flex-wrap gap-1">
-        {STATUS_ENTRIES.map(([key, meta]) => (
-          <button
-            key={key}
-            // In select mode the whole card is a selection target, so a tap
-            // landing on a pill must ONLY toggle selection — it used to also
-            // fire a silent status PATCH (e.g. marking someone "Offer") that
-            // polluted the funnel. pointer-events:none (NOT disabled): a
-            // disabled button swallows the click entirely, which turned the
-            // pill strip into a dead zone where selection taps did nothing;
-            // with pointer-events off the tap falls through to the card and
-            // toggles selection as expected.
-            onClick={() => statusMutation.mutate(key)}
-            disabled={statusMutation.isPending}
-            tabIndex={selectable ? -1 : undefined}
-            className="relative text-xs px-2 py-0.5 rounded-full font-bold font-mono transition active:scale-95 before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']"
-            style={{
-              background: c.status === key ? meta.bg    : 'transparent',
-              color:      c.status === key ? meta.color : 'var(--text-muted)',
-              border:     `1px solid ${c.status === key ? `color-mix(in srgb, ${meta.color} 31%, transparent)` : 'var(--border)'}`,
-              ...(selectable ? { pointerEvents: 'none' as const } : {}),
-            }}
-          >
-            {meta.label}
-          </button>
-        ))}
+
+      {/* ── Email + verification + reachability number ── */}
+      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+        <span className="text-xs font-mono truncate" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
+        {verified && (
+          <span
+            className="badge flex-shrink-0"
+            style={{ background: 'color-mix(in srgb, var(--success) 12%, transparent)', color: 'var(--success-text)', fontSize: 10 }}
+          >✓ verified</span>
+        )}
+        {reachable != null && (
+          <span
+            className="badge flex-shrink-0 tnum"
+            title="How likely this address reaches a real person"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-dim)', fontSize: 10 }}
+          >{reachable}% reachable</span>
+        )}
+      </div>
+
+      {/* ── Trust line: why this is a real lead + how fresh ── */}
+      {(role || via || found) && (
+        <div
+          className="text-[11px] mb-2.5 flex items-center gap-1 flex-wrap"
+          style={{ color: 'var(--text-dim)' }}
+        >
+          {role && (
+            <span className="inline-flex items-center gap-1 min-w-0">
+              <Target size={11} className="flex-shrink-0" />
+              <span className="truncate">Hiring: <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{role}</span></span>
+            </span>
+          )}
+          {via && <span className="flex-shrink-0">{role ? '· ' : ''}via {via}</span>}
+          {found && <span className="tnum flex-shrink-0">{(role || via) ? '· ' : ''}found {found}</span>}
+        </div>
+      )}
+
+      {/* ── Current pipeline status (change it in the detail drawer) ── */}
+      <div className="flex items-center gap-1.5">
+        <span
+          className="badge"
+          title="Pipeline status — open the card to change it"
+          style={{
+            background: status.bg, color: status.color, fontSize: 11, fontWeight: 700,
+            border: `1px solid color-mix(in srgb, ${status.color} 31%, transparent)`,
+          }}
+        >
+          <span aria-hidden style={{ marginRight: 5 }}>●</span>{status.label}
+        </span>
       </div>
     </div>
   )

@@ -23,6 +23,14 @@ export interface Contact {
   bounced?:         boolean
   followups_sent?:  number
   linkedin_url?:    string | null
+  // Provenance for the card trust line. `context` = why this is a real lead
+  // ("Acme is actively hiring for 'Backend Engineer' (via Greenhouse)");
+  // `source` = which board/site found them. `confidence`/`email_status` come
+  // through on API responses too (typed optional so components can read them).
+  context?:         string | null
+  source?:          string
+  confidence?:      number
+  email_status?:    string
   created_at:       string
   updated_at:       string
 }
