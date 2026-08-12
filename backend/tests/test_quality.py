@@ -15,7 +15,8 @@ from app.llm.generator import (
 from app.llm.parsing import parse_subject_body
 from app.llm.prompts import TEMPLATES, get_designation_key
 from app.llm.quality import (
-    count_banned, scrub_fabrications, scrub_ungrounded_numbers, strip_filler,
+    count_banned, count_ai_tells, score_draft,
+    scrub_fabrications, scrub_ungrounded_numbers, strip_filler,
 )
 from app.scrapers.base import person_name_from_email
 from app.scrapers.directory import role_match
@@ -304,6 +305,44 @@ class TestCountBanned:
 
     def test_ambiguous_tech_words_not_false_tripped(self):
         assert count_banned("event-driven robustness and a skilled team") == 0
+
+
+class TestCountAiTells:
+    """Structural AI tells (rule-of-three, negative parallelism, -ing tail):
+    banned in the prompt but the 8B model still emits them, so they're scored
+    down here. A draft with all three used to ship at score 77."""
+
+    @pytest.mark.parametrize("text", [
+        "systems that are fast, reliable, and scalable",   # rule of three (oxford)
+        "a pipeline fast, reliable and scalable",          # rule of three (no oxford)
+        "It's not just about speed, it's about correctness",  # negative parallelism
+        "not only fast but also correct",                  # not-only-but
+        "the pipeline, improving reliability and reducing costs",  # -ing tail
+        "the design, showcasing how it scales",            # -ing tail
+    ])
+    def test_tells_detected(self, text):
+        assert count_ai_tells(text) >= 1
+
+    @pytest.mark.parametrize("text", [
+        "I built it in Go, Postgres, and Kafka",   # capitalised tech list, NOT a triple
+        "worked with AWS, Redis, and Kafka",       # proper-noun enumeration
+        "shipped the service, using Go and gRPC",  # concrete -ing tail, left alone
+        "I cut fraud false-positives 23% at Razorpay.",
+        "a fast and reliable pipeline",            # only two adjectives
+    ])
+    def test_no_false_positive_on_real_lists(self, text):
+        assert count_ai_tells(text) == 0
+
+    def test_tell_laden_draft_drops_below_bar(self):
+        # The exact draft that used to score 77 (ship) with three tells intact.
+        draft = ("Ledgerflow's real-time reconciliation is exactly what I built at Razorpay: "
+                 "a settlement pipeline that's fast, accurate, and auditable, cutting recon "
+                 "time from 40 min to 6 min. It's not just about speed, it's about correctness: "
+                 "my idempotency layer had zero double-charges in 18 months. Worth a quick chat?")
+        assert count_ai_tells(draft) >= 2
+        score = score_draft(draft, "reconciliation at ledgerflow",
+                            context="Ledgerflow reconciliation Go", company="Ledgerflow")
+        assert score < 70, f"tell-laden draft should regenerate, scored {score}"
 
 
 class TestScrubUngroundedNumbers:

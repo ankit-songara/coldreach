@@ -40,7 +40,7 @@ from app.llm.quality import (
 
     scrub_fabrications, scrub_ungrounded_numbers, ends_with_question,
 
-    strip_filler, score_draft, count_banned, _COVER_LETTER_PHRASES,
+    strip_filler, score_draft, count_banned, count_ai_tells, _COVER_LETTER_PHRASES,
 
 )
 
@@ -676,7 +676,7 @@ class EmailGenerator:
 
                 has_ask = bool(_FORMAL_ASK_RE.search(clean))
 
-                n_cliche = count_banned(clean) + sum(
+                n_cliche = count_banned(clean) + count_ai_tells(clean) + sum(
                     clean.lower().count(p) for p in _COVER_LETTER_PHRASES
                 )
 

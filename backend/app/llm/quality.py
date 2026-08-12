@@ -283,6 +283,51 @@ def count_banned(text: str) -> int:
     return len(_BANNED_RE.findall(text or ""))
 
 
+# ── Structural AI tells: banned in the prompt, still emitted by small models ───
+# The prompt calls the rule of three "the single most recognizable machine-
+# writing pattern" and bans negative parallelisms and -ing tails — but nothing
+# verified it, so when the 8B model ignores the instruction the tell shipped
+# (a draft with all three scored 77, above the bar). Detected here and docked
+# so the draft drops below the bar and regenerates. Scored, never auto-stripped:
+# rewriting a triple or a "not just X, but Y" would risk changing the meaning.
+
+# Rule of three: three lowercase single-word items joined by and/or ("fast,
+# reliable, and scalable"). Lowercase-only on purpose — a capitalised tech
+# enumeration ("Go, Postgres, and Kafka") is a real list, not a rhetorical
+# triple, and must NOT be flagged (per the humanizer guidance on false
+# positives).
+_RULE_OF_THREE_RE = re.compile(r"\b[a-z]{3,},\s+[a-z]{3,},?\s+(?:and|or)\s+[a-z]{3,}\b")
+
+# Negative parallelism: "it's not just X, it's Y" / "not only ... but ...".
+_NEG_PARALLEL_RE = re.compile(
+    r"\b(?:it'?s\s+|it\s+is\s+)?not\s+(?:just|only|merely)\b[^.?!]{0,60}?"
+    r"\b(?:but|it'?s|it\s+is|rather)\b",
+    re.I,
+)
+
+# Superficial -ing tail: an abstract present-participle clause tacked on after
+# a comma to fake depth ("..., showcasing how", "..., improving reliability and
+# reducing costs"). Only the abstract/result verbs the prompt names — concrete
+# tails ("..., using Go and Kafka") are left alone.
+_ING_TAIL_RE = re.compile(
+    r",\s+(?:highlighting|underscoring|emphasi[sz]ing|ensuring|reflecting|"
+    r"symboli[sz]ing|showcasing|contributing|fostering|demonstrating|"
+    r"reinforcing|solidifying|cementing|positioning|enabling|empowering|"
+    r"streamlining|leveraging|improving|reducing|increasing|boosting|enhancing)\b",
+    re.I,
+)
+
+_AI_TELL_RES = (_RULE_OF_THREE_RE, _NEG_PARALLEL_RE, _ING_TAIL_RE)
+
+
+def count_ai_tells(text: str) -> int:
+    """Rule-of-three, negative parallelism, and -ing-tail padding — structural
+    AI tells the prompt bans but a small model still emits. Each hit docks the
+    reply score so a tell-carrying draft regenerates instead of shipping."""
+    t = text or ""
+    return sum(len(rx.findall(t)) for rx in _AI_TELL_RES)
+
+
 def score_draft(body: str, subject: str = "", *,
                 word_range: tuple[int, int] = (60, 120),
                 context: str = "", company: str = "") -> int:
@@ -307,7 +352,8 @@ def score_draft(body: str, subject: str = "", *,
         score -= min(30, 2 * (lo - n_words))
 
     score -= 12 * sum(low.count(p) for p in _COVER_LETTER_PHRASES)
-    score -= 10 * count_banned(b)   # unambiguous AI-tell vocabulary
+    score -= 10 * count_banned(b)     # unambiguous AI-tell vocabulary
+    score -= 12 * count_ai_tells(b)   # rule-of-three / not-just-X-but-Y / -ing tail
 
     # Opener: about THEM (company name / their tech) good, about "I/my" bad.
     first_line = next((ln for ln in b.splitlines() if ln.strip()), "")
