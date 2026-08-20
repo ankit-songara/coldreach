@@ -3458,6 +3458,79 @@ class TestPersonEmailWordBoundary:
         assert got == "mark.bell@acme.com"
 
 
+class TestModelFallback:
+    """A decommissioned Groq model (404 model_not_found) must self-heal to the
+    next candidate instead of failing every draft — the outage on 2026-08 where
+    llama-3.1-8b-instant was retired."""
+
+    def test_candidate_chain_puts_configured_first_then_fallbacks(self):
+        from app.llm.factory import groq_model_candidates
+        c = groq_model_candidates("llama-3.1-8b-instant")
+        assert c[0] == "llama-3.1-8b-instant"
+        assert "llama-3.3-70b-versatile" in c
+        # no dupes, configured never repeated
+        assert len(c) == len(set(c))
+
+    def test_is_model_gone_detects_404(self):
+        from app.llm.generator import EmailGenerator
+        g = EmailGenerator
+        assert g._is_model_gone(Exception(
+            "Error code: 404 - {'error': {'code': 'model_not_found', "
+            "'message': 'The model `x` does not exist or you do not have access'}}"))
+        assert not g._is_model_gone(Exception("rate limit exceeded"))
+        assert not g._is_model_gone(TimeoutError())
+
+    def test_advance_model_walks_then_exhausts(self, monkeypatch):
+        from app.llm.generator import EmailGenerator
+        monkeypatch.setattr("app.llm.generator.create_llm", lambda p, m: object())
+        g = EmailGenerator()
+        g._provider = "groq"
+        g._candidates = ["a", "b", "c"]
+        g._model = "a"
+        assert g._advance_model() is True and g._model == "b"
+        assert g._advance_model() is True and g._model == "c"
+        assert g._advance_model() is False          # exhausted
+        assert g._model == "c"
+
+    def test_ainvoke_recovers_on_dead_model(self, monkeypatch):
+        import asyncio
+        from app.llm.generator import EmailGenerator
+        monkeypatch.setattr("app.llm.generator.create_llm", lambda p, m: object())
+        g = EmailGenerator()
+        g._provider = "groq"
+        g._candidates = ["dead", "live"]
+        g._model = "dead"
+
+        class FakeChain:
+            def __init__(self, model): self.model = model
+            async def ainvoke(self, variables):
+                if self.model == "dead":
+                    raise Exception("Error code: 404 - {'error': "
+                                    "{'code': 'model_not_found', 'message': 'does not exist'}}")
+                return "SUBJECT: Hi\n\nBODY: real draft"
+
+        monkeypatch.setattr(g, "_get_chain", lambda key: FakeChain(g._model))
+        out = asyncio.run(g._ainvoke("direct", {}))
+        assert out.startswith("SUBJECT")            # recovered, not raised
+        assert g._model == "live"                   # switched off the dead model
+
+    def test_ainvoke_reraises_non_model_errors(self, monkeypatch):
+        import asyncio
+        from app.llm.generator import EmailGenerator
+        monkeypatch.setattr("app.llm.generator.create_llm", lambda p, m: object())
+        g = EmailGenerator()
+        g._provider = "groq"; g._candidates = ["a", "b"]; g._model = "a"
+
+        class RateLimited:
+            async def ainvoke(self, variables):
+                raise RuntimeError("429 rate limit")
+        monkeypatch.setattr(g, "_get_chain", lambda key: RateLimited())
+        import pytest as _pytest
+        with _pytest.raises(RuntimeError):
+            asyncio.run(g._ainvoke("direct", {}))
+        assert g._model == "a"                      # did NOT walk the chain
+
+
 class TestFreshnessBucket:
     """Coarse recency rank from the transient _posted_at — fresh postings win
     scarce resolve/careers slots; unknown ties the middle; stale sinks."""

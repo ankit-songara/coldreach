@@ -118,6 +118,27 @@ def create_llm(provider: str, model: str) -> BaseChatModel:
             )
 
 
+# Current Groq production chat models, most-capable first. Used as a FALLBACK
+# CHAIN when the configured model has been decommissioned — Groq retires models
+# periodically (llama-3.1-8b-instant was removed 2026-08, 404ing every compose).
+# The generator walks this list on a model_not_found error and caches whichever
+# one works, so a future retirement self-heals instead of downing generation.
+_GROQ_FALLBACKS = [
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-20b",
+    "gemma2-9b-it",
+]
+
+
+def groq_model_candidates(configured: str) -> list[str]:
+    """Configured model first, then the known-good fallbacks (deduped)."""
+    out: list[str] = [configured] if configured else []
+    for m in _GROQ_FALLBACKS:
+        if m not in out:
+            out.append(m)
+    return out
+
+
 def _default_model(provider: str) -> str:
     defaults = {
         "mock":       "mock",

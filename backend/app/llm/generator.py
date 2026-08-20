@@ -30,7 +30,7 @@ from langchain_core.language_models import BaseChatModel
 
 
 
-from app.llm.factory import detect_provider, create_llm
+from app.llm.factory import detect_provider, create_llm, groq_model_candidates
 
 from app.llm.prompts import TEMPLATES, WORD_RANGES, FORMAL_KEYS, get_designation_key
 
@@ -528,6 +528,12 @@ class EmailGenerator:
 
         self._init_lock = asyncio.Lock()
 
+        self._provider = ""
+
+        self._model = ""
+
+        self._candidates: list[str] = []
+
 
 
     async def _ensure_llm(self) -> None:
@@ -540,9 +546,90 @@ class EmailGenerator:
 
                     provider, model = await detect_provider()
 
-                    self._llm = create_llm(provider, model)
+                    self._provider = provider
 
-                    log.info(f"EmailGenerator using {provider}/{model}")
+                    # Groq retires models; build a fallback chain so a dead
+                    # configured model (env LLM_MODEL) self-heals to a live one.
+
+                    self._candidates = (
+
+                        groq_model_candidates(model) if provider == "groq" else [model]
+
+                    )
+
+                    self._model = self._candidates[0]
+
+                    self._llm = create_llm(provider, self._model)
+
+                    log.info(f"EmailGenerator using {provider}/{self._model}")
+
+
+
+    def _advance_model(self) -> bool:
+
+        """Switch to the next candidate model after a model_not_found error.
+
+        Rebuilds the LLM + clears the cached chains (they bind the old model).
+
+        Returns False when the fallback chain is exhausted."""
+
+        try:
+
+            i = self._candidates.index(self._model)
+
+        except ValueError:
+
+            i = 0
+
+        if i + 1 >= len(self._candidates):
+
+            return False
+
+        self._model = self._candidates[i + 1]
+
+        self._llm = create_llm(self._provider, self._model)
+
+        self._chains = {}
+
+        log.warning(f"LLM model fell back to {self._provider}/{self._model}")
+
+        return True
+
+
+
+    @staticmethod
+
+    def _is_model_gone(e: Exception) -> bool:
+
+        s = str(e).lower()
+
+        return "model_not_found" in s or "does not exist" in s
+
+
+
+    async def _ainvoke(self, key: str, variables: dict) -> str:
+
+        """chain.ainvoke with automatic model fallback: on a decommissioned
+
+        model (404 model_not_found) switch to the next candidate and retry, so
+
+        generation recovers instead of failing every draft."""
+
+        while True:
+
+            chain = self._get_chain(key)
+
+            try:
+
+                return await chain.ainvoke(variables)
+
+            except Exception as e:
+
+                if self._is_model_gone(e) and self._advance_model():
+
+                    continue
+
+                raise
 
 
 
@@ -584,7 +671,7 @@ class EmailGenerator:
 
     async def _invoke_checked(
 
-        self, chain, variables: dict, *, contact_name: str, sender_name: str,
+        self, key: str, variables: dict, *, contact_name: str, sender_name: str,
 
         sender_links: str = "", company: str = "", context: str = "",
 
@@ -635,7 +722,7 @@ class EmailGenerator:
         for attempt in (1, 2):
 
             try:
-                raw = await chain.ainvoke(variables)
+                raw = await self._ainvoke(key, variables)
             except Exception:
                 # Provider hiccup / rate limit on the retry: ship the best draft
                 # we already have rather than 500 a compose that half-succeeded.
@@ -778,8 +865,6 @@ class EmailGenerator:
 
         formal = key in FORMAL_KEYS
 
-        chain = self._get_chain(key)
-
 
 
         if company_context.strip():
@@ -887,7 +972,7 @@ class EmailGenerator:
 
         subject, body = await self._invoke_checked(
 
-            chain,
+            key,
 
             {
 
@@ -964,8 +1049,6 @@ class EmailGenerator:
 
         await self._ensure_llm()
 
-        chain = self._get_chain("followup")
-
 
 
         # Parse the original BEFORE truncating, so the subject survives intact.
@@ -994,7 +1077,7 @@ class EmailGenerator:
 
         subject, body = await self._invoke_checked(
 
-            chain,
+            "followup",
 
             {
 
