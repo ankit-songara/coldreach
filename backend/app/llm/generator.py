@@ -22,6 +22,8 @@ import logging
 
 import re
 
+import time
+
 from langchain_core.prompts import ChatPromptTemplate
 
 from langchain_core.output_parsers import StrOutputParser
@@ -667,6 +669,13 @@ class EmailGenerator:
 
     _QUALITY_BAR = 70
 
+    # The quality loop can regenerate a below-bar draft ONCE. On a slow model
+    # (llama-3.3-70b ≈ 28-31s/pass) two passes overshoot Vercel's 60s wall →
+    # 502. If attempt 1 already took longer than this, keep it instead of
+    # risking the wall: a below-bar-but-real draft beats a timeout. Fast models
+    # (attempt 1 well under this) still get the second pass.
+    _REGEN_TIME_BUDGET_SECONDS = 20
+
 
 
     async def _invoke_checked(
@@ -718,6 +727,8 @@ class EmailGenerator:
         """
 
         candidates: list[tuple[int, str, str]] = []   # (score, subject, clean_body)
+
+        _loop_start = time.monotonic()
 
         for attempt in (1, 2):
 
@@ -794,6 +805,25 @@ class EmailGenerator:
                 candidates.append((quality, subject, clean))
 
             if attempt == 1 and (not candidates or below_bar):
+
+                # Time budget: skip the improvement retry when attempt 1 was
+                # slow AND we already have a usable (if below-bar) draft — a
+                # second slow pass would blow the 60s wall and 502. Always retry
+                # when attempt 1 produced NO usable draft (empty/malformed).
+
+                elapsed = time.monotonic() - _loop_start
+
+                if candidates and elapsed > self._REGEN_TIME_BUDGET_SECONDS:
+
+                    log.info(
+
+                        f"LLM draft below bar but attempt 1 took {elapsed:.0f}s — "
+
+                        f"keeping it to stay under the wall (no regen)"
+
+                    )
+
+                    break
 
                 log.info(
 

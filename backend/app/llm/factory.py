@@ -123,15 +123,16 @@ def create_llm(provider: str, model: str) -> BaseChatModel:
 # 404ing every compose). The generator walks this list on a model_not_found
 # error and caches whichever one works, so a retirement self-heals.
 #
-# Ordered FAST-first, not most-capable-first: compose runs a two-pass quality
-# loop under a 60s serverless wall, so a slow model (llama-3.3-70b takes
-# ~28-31s/draft → 2 passes overshoot the wall → 502) is worse than a quick,
-# good-enough one. gpt-oss-20b / gemma2-9b are the ~8B-instant-class speed the
-# old model had; the 70b stays only as a last-resort quality backstop.
+# llama-3.3-70b-versatile is FIRST because it's the only replacement verified
+# live on this account (the others are unverified backstops — a live probe
+# showed gpt-oss-20b throwing a non-404 error here, and no valid local key
+# exists to query Groq's /models). It's slow (~28-31s/draft), so the compose
+# quality loop is time-budgeted (see _invoke_checked) to run a single pass on a
+# slow model and stay under the 60s serverless wall.
 _GROQ_FALLBACKS = [
+    "llama-3.3-70b-versatile",
     "openai/gpt-oss-20b",
     "gemma2-9b-it",
-    "llama-3.3-70b-versatile",
 ]
 
 
