@@ -181,7 +181,11 @@ function ContactCard({ contact: c, selectable, selected, onToggleSelect, onOpenD
             href={website}
             target="_blank" rel="noopener noreferrer nofollow"
             onClick={e => e.stopPropagation()}
-            aria-label={`Open ${c.company} website`} title="Company website"
+            // Label by the DESTINATION domain, not c.company: the URL is
+            // derived from the email domain, which can be an agency/parent
+            // (jane@talent-partners.com) different from the company shown —
+            // announcing "Open Acme website" for talent-partners.com misleads.
+            aria-label={`Open ${website.replace(/^https?:\/\//, '')}`} title={website.replace(/^https?:\/\//, '')}
             className="hit-target inline-flex items-center flex-shrink-0"
             style={{ color: 'var(--text-muted)' }}
           >

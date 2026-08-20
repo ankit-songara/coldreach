@@ -14,6 +14,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * Reduced motion: the global CSS zeroes animation duration, so we also skip the
  * timer wait — no dead delay before the unmount.
  */
+// IMPORTANT: this hook latches `closing` true on dismiss and never resets it,
+// so it is only safe for CONDITIONALLY-mounted overlays (a fresh instance per
+// open). A persistently-mounted overlay that toggles an `open` prop would
+// reopen still latched — mount it conditionally instead (App mounts
+// CommandPalette as `{open && <CommandPalette .../>}`).
 export function useDismissAnimation(
   onClose: () => void,
   durationMs = 200,

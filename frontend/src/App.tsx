@@ -253,7 +253,15 @@ export default function App() {
         window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash)
     }
     if (gerror || !code || !state) {
-      toast('Gmail connection cancelled — nothing was changed', { icon: '↩️' })
+      // Only `access_denied` is a real user cancel. Other error codes
+      // (admin-blocked app, bad scope, misconfig) are genuine FAILURES — the
+      // soft "cancelled, nothing changed" copy made users retry the same
+      // broken flow forever. Surface those as an actionable error instead.
+      if (gerror && gerror !== 'access_denied') {
+        toast.error(`Google connection failed (${gerror}) — please try again`)
+      } else {
+        toast('Gmail connection cancelled — nothing was changed', { icon: '↩️' })
+      }
       cleanUrl()
       return
     }
@@ -381,7 +389,10 @@ export default function App() {
         email={userEmail}
         onLogout={logout}
       />
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
+      {/* Conditionally mounted so each open is a fresh instance — see the note
+          in useDismissAnimation (a persistently-mounted palette reopened stuck
+          in its exit animation, scroll-locked and unclosable). */}
+      {paletteOpen && <CommandPalette open onClose={() => setPaletteOpen(false)} commands={commands} />}
 
       {/* ── Slim header — phones only (desktop gets the sidebar) ─────────────── */}
       <header

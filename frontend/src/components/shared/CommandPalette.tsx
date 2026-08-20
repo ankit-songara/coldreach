@@ -25,6 +25,12 @@ export default function CommandPalette({ open, onClose, commands }: {
   const openerRef = useRef<HTMLElement | null>(null)
   // Scale back down on Escape/scrim dismiss (Apple §7) — but a command RUN
   // closes instantly (runAt below), so acting on a result feels immediate.
+  // App mounts this CONDITIONALLY ({paletteOpen && <CommandPalette/>}) so every
+  // open is a fresh instance — that's what keeps useDismissAnimation's one-shot
+  // closing latch correct (a persistently-mounted palette reopened stuck in its
+  // exit state). The exit animation still plays: dismiss() flips `closing`,
+  // renders the exit keyframe, and only AFTER the timer calls onClose (which
+  // unmounts), so the reverse animation runs before the component goes away.
   const { closing, dismiss } = useDismissAnimation(onClose, 160)
 
   const hits = useMemo(() => {
@@ -32,18 +38,15 @@ export default function CommandPalette({ open, onClose, commands }: {
     return q ? commands.filter(c => c.label.toLowerCase().includes(q)) : commands
   }, [query, commands])
 
-  // Reset + focus on every open; return focus to the opener on close.
+  // Conditionally mounted, so this runs once per open: capture the opener,
+  // focus the input, and hand focus back on unmount (the close path).
   useEffect(() => {
-    if (open) {
-      openerRef.current = document.activeElement as HTMLElement | null
-      setQuery('')
-      setCursor(0)
-      // after the overlay paints
-      requestAnimationFrame(() => inputRef.current?.focus())
-    } else {
-      openerRef.current?.focus?.()
-    }
-  }, [open])
+    openerRef.current = document.activeElement as HTMLElement | null
+    setQuery('')
+    setCursor(0)
+    requestAnimationFrame(() => inputRef.current?.focus())
+    return () => openerRef.current?.focus?.()
+  }, [])
 
   useEffect(() => { setCursor(0) }, [query])
 

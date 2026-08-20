@@ -555,7 +555,14 @@ async def find_person_email(domain: str, first: str, last: str,
         return None
     folded = _ascii_fold(page_text)
     f, l = _ascii_fold(first), _ascii_fold(last)
-    if f and l and f in folded and l in folded:
+    # WHOLE-WORD corroboration, not substring: a bare `in` test let 'mark'
+    # match inside 'marketing' and 'bell' inside 'labelled', so a random
+    # sarah@/mark@ mailbox got grounded as the wrong person. Require both name
+    # tokens to appear as whole words on the page before trusting the weak
+    # single-token match.
+    def _word_on_page(tok: str) -> bool:
+        return bool(tok) and re.search(rf"\b{re.escape(tok)}\b", folded) is not None
+    if f and l and _word_on_page(f) and _word_on_page(l):
         return weak                       # full name is on the page → it's them
     return None
 

@@ -47,6 +47,16 @@ RECONNECT_MSG = ("Your Gmail connection expired — reconnect it in Setup "
 _SERVERLESS = bool(os.environ.get("VERCEL"))
 
 
+def _is_permanent_refusal(e: Exception) -> bool:
+    """True only when Gmail PERMANENTLY (5xx) rejected the recipient — a dead
+    address safe to mark invalid. SMTPRecipientsRefused also fires for transient
+    4xx (421 rate-limit, 450 greylist, 452 mailbox-full): those must stay
+    ordinary retryable failures, never 'invalid forever'."""
+    if not isinstance(e, smtplib.SMTPRecipientsRefused) or not e.recipients:
+        return False
+    return all(code >= 500 for code, _ in e.recipients.values())
+
+
 def _friendly_send_error(e: Exception) -> str:
     """Map a per-message SMTP failure to text safe to show in the Send tab.
 
@@ -270,9 +280,12 @@ def bulk_send(req: BulkSendRequest, db: Session = Depends(get_db), user: User = 
                                           email=contact.email, status="sent"))
                 except Exception as e:
                     log.error(f"Failed {contact.email}: {e}")
-                    # A recipient Gmail rejects at send time is a dead address —
-                    # flag it so it's marked invalid and not retried forever.
-                    if isinstance(e, smtplib.SMTPRecipientsRefused):
+                    # Mark invalid ONLY on a PERMANENT (5xx) recipient rejection.
+                    # SMTPRecipientsRefused also fires for transient 4xx (421
+                    # rate-limit, 450 greylist, 452 mailbox-full) — treating
+                    # those as "invalid forever" silently dropped a real,
+                    # deliverable lead that a later retry would have reached.
+                    if _is_permanent_refusal(e):
                         permanent_failed_ids.add(contact.id)
                     out.append(SendResult(contact_id=contact.id, name=contact.name,
                                           email=contact.email, status="failed",

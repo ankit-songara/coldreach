@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 
 /**
  * Touch swipe-to-dismiss for the right-side drawer (Apple "Designing Fluid
@@ -22,6 +22,16 @@ export function useSwipeDismiss({
   scrim: RefObject<HTMLElement | null>
   onDismiss: () => void
 }) {
+  // onDismiss is a fresh inline arrow from the parent every render, so keying
+  // the gesture effect on it tore down and rebuilt the pointer listeners on
+  // ANY parent re-render — including MID-FLING (a background contacts refetch
+  // is enough), which cancelled the fling's unmount timeout and left the panel
+  // flung off-screen but still mounted (body scroll stuck locked). Hold it in a
+  // ref and depend only on the stable panel/scrim refs, so the listeners and
+  // any in-flight settle/fling are set up once and never interrupted.
+  const onDismissRef = useRef(onDismiss)
+  onDismissRef.current = onDismiss
+
   useEffect(() => {
     const el = panel.current
     if (!el) return
@@ -116,18 +126,22 @@ export function useSwipeDismiss({
     }
 
     const flingOut = (velocity: number) => {
-      if (reduce) { onDismiss(); return }
+      if (reduce) { onDismissRef.current(); return }
       const remaining = Math.max(1, width - curX)
       // Velocity handoff (§5), approximated: faster flick → shorter travel time.
       const durS = Math.min(0.4, Math.max(0.12, remaining / Math.max(700, Math.abs(velocity))))
       el.style.transition = `transform ${durS}s var(--ease-out)`
       el.style.transform = `translateX(${width}px)`
       if (scrim.current) { scrim.current.style.transition = `opacity ${durS}s var(--ease-out)`; scrim.current.style.opacity = '0' }
-      afterTransition(durS * 1000, onDismiss)
+      afterTransition(durS * 1000, () => onDismissRef.current())
     }
 
     const onDown = (e: PointerEvent) => {
       if (e.pointerType !== 'touch') return
+      // Ignore a second finger while a gesture is live — it would hijack
+      // pointerId and clear `dragging`, stranding the first finger's release
+      // (its onUp is then filtered out and the panel never settles/dismisses).
+      if (tracking || dragging) return
       // Record only — don't disturb the entrance keyframe. A pure tap must
       // leave the drawer's open animation and any button clicks untouched.
       width = el.getBoundingClientRect().width || width
@@ -195,5 +209,5 @@ export function useSwipeDismiss({
       el.removeEventListener('pointercancel', onUp)
       cancelPending?.()
     }
-  }, [panel, scrim, onDismiss])
+  }, [panel, scrim])
 }

@@ -41,7 +41,11 @@ const _FREEMAIL = new Set([
 // → "Backend Engineer (Payments)". Null when the note names no specific role
 // (careers-inbox leads carry no context) — we never dump the raw note on a card.
 export function leadRole(context: string | null | undefined): string | null {
-  const m = (context || '').match(/hiring for ['"]([^'"]{3,80})['"]/i)
+  // Backend always wraps the title in SINGLE quotes ("... hiring for 'X'"), so
+  // match the single-quote delimiter and allow apostrophes inside the title —
+  // the old [^'"] class stopped at the first apostrophe, truncating
+  // "Women's Health Engineer" to "Women". Lazy up to the closing '<space|paren|EOL>.
+  const m = (context || '').match(/hiring for '(.{3,80}?)'(?=\s|\)|$)/i)
   return m ? m[1].trim() : null
 }
 

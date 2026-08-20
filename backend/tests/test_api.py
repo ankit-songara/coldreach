@@ -3396,6 +3396,68 @@ class TestSendPermanentFailure:
             db.close()
 
 
+class TestPermanentRefusal:
+    """Only a 5xx recipient rejection marks an address invalid; transient 4xx
+    (rate-limit/greylist/mailbox-full) stays a retryable failure."""
+
+    def _refused(self, code):
+        import smtplib
+        return smtplib.SMTPRecipientsRefused({"x@acme.com": (code, b"nope")})
+
+    def test_5xx_is_permanent(self):
+        from app.api.send import _is_permanent_refusal
+        assert _is_permanent_refusal(self._refused(550)) is True
+        assert _is_permanent_refusal(self._refused(553)) is True
+
+    def test_4xx_is_transient(self):
+        from app.api.send import _is_permanent_refusal
+        for code in (421, 450, 451, 452):
+            assert _is_permanent_refusal(self._refused(code)) is False
+
+    def test_mixed_codes_not_permanent(self):
+        import smtplib
+        from app.api.send import _is_permanent_refusal
+        e = smtplib.SMTPRecipientsRefused({"a@x.com": (550, b""), "b@x.com": (450, b"")})
+        assert _is_permanent_refusal(e) is False   # any transient → keep retryable
+
+    def test_other_exceptions_not_permanent(self):
+        import smtplib
+        from app.api.send import _is_permanent_refusal
+        assert _is_permanent_refusal(smtplib.SMTPServerDisconnected("boom")) is False
+        assert _is_permanent_refusal(TimeoutError()) is False
+
+
+class TestPersonEmailWordBoundary:
+    """The weak single-token corroboration must match name tokens as WHOLE
+    words — 'mark' must not be grounded via 'marketing' on the page."""
+
+    def _run(self, monkeypatch, emails, page_text, first, last):
+        import asyncio
+        from app.scrapers import web
+        async def fake_pages(domain, timeout, cap=8):
+            return emails, page_text
+        monkeypatch.setattr(web, "_company_pages", fake_pages)
+        return asyncio.run(web.find_person_email("acme.com", first, last))
+
+    def test_substring_does_not_corroborate(self, monkeypatch):
+        # bare 'mark@' + page that only says 'marketing'/'labelled' → reject
+        got = self._run(monkeypatch, ["mark@acme.com"],
+                        "Our marketing team ships clearly labelled releases.",
+                        "Mark", "Bell")
+        assert got is None
+
+    def test_full_name_on_page_corroborates(self, monkeypatch):
+        got = self._run(monkeypatch, ["mark@acme.com"],
+                        "Mark Bell leads platform engineering at Acme.",
+                        "Mark", "Bell")
+        assert got == "mark@acme.com"
+
+    def test_both_token_match_trusted_without_page(self, monkeypatch):
+        # first.last mailbox is unambiguous — grounded even with an empty page
+        got = self._run(monkeypatch, ["mark.bell@acme.com"], "", "Mark", "Bell")
+        assert got == "mark.bell@acme.com"
+
+
 class TestFreshnessBucket:
     """Coarse recency rank from the transient _posted_at — fresh postings win
     scarce resolve/careers slots; unknown ties the middle; stale sinks."""
