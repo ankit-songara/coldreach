@@ -118,15 +118,20 @@ def create_llm(provider: str, model: str) -> BaseChatModel:
             )
 
 
-# Current Groq production chat models, most-capable first. Used as a FALLBACK
-# CHAIN when the configured model has been decommissioned — Groq retires models
-# periodically (llama-3.1-8b-instant was removed 2026-08, 404ing every compose).
-# The generator walks this list on a model_not_found error and caches whichever
-# one works, so a future retirement self-heals instead of downing generation.
+# Fallback chain for when the configured Groq model is decommissioned (Groq
+# retires models periodically — llama-3.1-8b-instant was removed 2026-08,
+# 404ing every compose). The generator walks this list on a model_not_found
+# error and caches whichever one works, so a retirement self-heals.
+#
+# Ordered FAST-first, not most-capable-first: compose runs a two-pass quality
+# loop under a 60s serverless wall, so a slow model (llama-3.3-70b takes
+# ~28-31s/draft → 2 passes overshoot the wall → 502) is worse than a quick,
+# good-enough one. gpt-oss-20b / gemma2-9b are the ~8B-instant-class speed the
+# old model had; the 70b stays only as a last-resort quality backstop.
 _GROQ_FALLBACKS = [
-    "llama-3.3-70b-versatile",
     "openai/gpt-oss-20b",
     "gemma2-9b-it",
+    "llama-3.3-70b-versatile",
 ]
 
 
