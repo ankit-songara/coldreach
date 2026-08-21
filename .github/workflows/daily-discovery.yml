@@ -1,0 +1,41 @@
+name: Daily company discovery
+
+# Harvest fresh "who's hiring right now" company->ATS mappings into the shared
+# directory once a day, UNCAPPED — the work the 60s serverless wall can't do
+# inside a hunt (see backend/app/jobs/discover_companies.py). Runs on GitHub's
+# runners, not Vercel, so there's no request timeout. Cron is best-effort and
+# may drift a few minutes; a public-repo schedule also pauses after 60 days of
+# no repo activity (any push resets it).
+#
+# REQUIRED SECRET: DATABASE_URL — the SAME Supabase Postgres URL the backend
+# uses (repo Settings -> Secrets and variables -> Actions -> New secret). The
+# job refuses to run against anything else, so a missing secret fails loudly.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"     # 06:00 UTC daily
+  workflow_dispatch: {}      # manual "Run now" from the Actions tab
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Discover hot hiring companies
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m app.jobs.discover_companies

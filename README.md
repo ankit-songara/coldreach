@@ -289,6 +289,7 @@ frontend/src/          # api clients · components (Today/Hunt/Compose/Send/Setu
 
 - [x] Gmail OAuth one-click connect (alongside App Password)
 - [x] "Sign in with Google"
+- [x] Daily background discovery — a GitHub Actions cron harvests fresh "who's hiring" companies into the shared directory (no serverless timeout)
 - [ ] Chrome extension — find the hiring manager straight from a LinkedIn/job post
 - [ ] A/B email variants — test subjects/openers, learn what converts
 - [ ] Cross-user benchmarks — "emails like yours reply at X%; top performers do Y"

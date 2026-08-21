@@ -46,7 +46,8 @@ make dev-backend / make dev-frontend / make test
 
 - **Scrapers** (`scrapers/`): each implements `BaseScraper` (or `BaseATSScraper`); `api/hunt.py::_build_scrapers()` composes ~21 of them and runs them with `asyncio.gather`, then dedupes. See `docs/ARCHITECTURE.md`.
 - **LLM** (`llm/`): `factory.py` picks the provider once and caches it; `generator.py` runs a two-pass quality loop with a time budget (skips the regen pass if the first draft ate the wall), and a **candidate-chain fallback** when a Groq model is decommissioned (`_GROQ_FALLBACKS`, `_RETIRED_MODELS`). Rate-limit (429) errors are **not** retried — retrying into a throttled window makes it worse; they propagate as an honest 429.
-- **DB** (`db/`): repository pattern (`ContactRepository`, etc.) — routes never touch SQLAlchemy directly. `migrations.py` runs lightweight idempotent DDL on startup.
+- **DB** (`db/`): repository pattern (`ContactRepository`, etc.) — routes never touch SQLAlchemy directly. `migrations.py` runs lightweight idempotent DDL on startup. New *tables* are created by `create_all` on both SQLite and Postgres (no manual DDL); only new *columns* on existing tables need a hand-written idempotent `ADD COLUMN`.
+- **Background jobs** (`app/jobs/`): long, uncapped work the 60s wall forbids, run by **GitHub Actions cron** (`.github/workflows/`), not Vercel. `discover_companies.py` harvests hot hiring companies from the HN "Who is Hiring" thread daily into `KnownCompany` (`source="discovered"`), so every hunt draws from a fresher directory. Needs the `DATABASE_URL` Actions secret (same Postgres URL as Vercel); it refuses to run against the local SQLite default. Run locally: `python -m app.jobs.discover_companies`.
 - **Frontend**: Zustand store + TanStack Query. Tabs are kept-alive (never remount) and `refetchOnWindowFocus:false`, so **any query without explicit invalidation will show stale data** — invalidate/patch the cache after mutations.
 
 ## Gotchas that have bitten us

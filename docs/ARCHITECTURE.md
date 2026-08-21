@@ -94,6 +94,26 @@ Email/password (PBKDF2-HMAC-SHA256) plus optional "Sign in with Google" (ID-toke
 
 SQLAlchemy over SQLite (local default) or Postgres (Supabase, hosted). On serverless, connections use **NullPool** — each request is a fresh TLS connection, so the code minimizes round trips and avoids N+1s. `db/migrations.py` applies lightweight, idempotent DDL on startup; irreversible changes to shared prod data require explicit human sign-off.
 
+## Background jobs (outside the request path)
+
+Serverless request handlers die at the 60s wall, and there's no always-on worker,
+so several tables note "no cron on serverless" and expire lazily at read time.
+Work that genuinely needs to run long, uncapped, and unattended lives in
+`app/jobs/` and is triggered by **GitHub Actions cron** — not Vercel:
+
+- **`discover_companies.py`** (daily) harvests the HN "Who is Hiring" thread's
+  verified apply-links into the shared `KnownCompany` directory
+  (`source="discovered"`), so every user's next hunt draws from a fresher pool of
+  companies hiring right now. Inside a hunt this only trickles in (capped at 25 to
+  fit the request budget); the cron runs it uncapped. It reuses the exact
+  persistence path (`add_known_company`, idempotent on `(ats, slug)`), needs no
+  new schema, and refuses to run against anything but the real Postgres DB. The
+  `_SOURCES` list is the extension point for more discovery sources.
+
+The workflow (`.github/workflows/daily-discovery.yml`) needs one secret,
+`DATABASE_URL` — the same Postgres URL Vercel uses. This is the same pattern as
+the existing `keep-warm.yml` cron that pings `/api/health` to dodge cold starts.
+
 ## Safety boundaries
 
 - **No invented emails.** Resolve/verify surfaces unresolved leads rather than guessing an address to persist or send.
