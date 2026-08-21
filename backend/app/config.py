@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # actually read — operators followed it and still got the error.
     llm_api_key: str    = Field("", validation_alias=AliasChoices("LLM_API_KEY", "GROQ_API_KEY"))
     llm_temperature: float = 0.7
+    # Cap output tokens: a cold email (subject + ≤120-word body) is ~250 tokens,
+    # so 768 is ample headroom while bounding worst-case generation time AND the
+    # per-request token spend that counts against Groq's free-tier tokens/minute
+    # limit — the ceiling that was 429-ing rapid "Generate all" bursts.
+    llm_max_tokens: int = 768
 
     # Provider-specific defaults
     ollama_base_url: str       = "http://localhost:11434"

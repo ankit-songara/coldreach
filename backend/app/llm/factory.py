@@ -88,6 +88,7 @@ def create_llm(provider: str, model: str) -> BaseChatModel:
                 model=model,
                 api_key=settings.llm_api_key,
                 temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
             )
         case "openai":
             from langchain_openai import ChatOpenAI

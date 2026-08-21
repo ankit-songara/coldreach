@@ -3514,21 +3514,76 @@ class TestModelFallback:
         assert out.startswith("SUBJECT")            # recovered, not raised
         assert g._model == "live"                   # switched off the dead model
 
-    def test_ainvoke_reraises_non_model_errors(self, monkeypatch):
+    def test_ainvoke_reraises_unknown_errors(self, monkeypatch):
         import asyncio
         from app.llm.generator import EmailGenerator
         monkeypatch.setattr("app.llm.generator.create_llm", lambda p, m: object())
         g = EmailGenerator()
         g._provider = "groq"; g._candidates = ["a", "b"]; g._model = "a"
 
-        class RateLimited:
+        class Boom:
             async def ainvoke(self, variables):
-                raise RuntimeError("429 rate limit")
-        monkeypatch.setattr(g, "_get_chain", lambda key: RateLimited())
+                raise RuntimeError("connection reset")   # not model-gone, not 429
+        monkeypatch.setattr(g, "_get_chain", lambda key: Boom())
         import pytest as _pytest
         with _pytest.raises(RuntimeError):
             asyncio.run(g._ainvoke("direct", {}))
         assert g._model == "a"                      # did NOT walk the chain
+
+
+class TestRateLimitBackoff:
+    """Groq free-tier 429s during a burst should back off + retry, not fail the
+    draft — the residual failures after the model-retirement fix."""
+
+    def test_detects_rate_limit(self):
+        from app.llm.generator import EmailGenerator as G
+        assert G._is_rate_limited(Exception("Error code: 429 - rate_limit_exceeded"))
+        assert G._is_rate_limited(Exception("Rate limit reached for model"))
+        assert not G._is_rate_limited(Exception("model_not_found"))
+
+    def test_retry_after_parses_and_caps(self):
+        from app.llm.generator import EmailGenerator as G
+        assert G._retry_after(Exception("Please try again in 2.5s.")) == 2.5
+        assert G._retry_after(Exception("try again in 999s")) == 8.0     # capped
+        assert G._retry_after(Exception("no hint here")) == 4.0          # default
+
+    def test_ainvoke_recovers_after_429(self, monkeypatch):
+        import asyncio
+        from app.llm import generator as genmod
+        from app.llm.generator import EmailGenerator
+        monkeypatch.setattr(genmod, "create_llm", lambda p, m: object())
+        async def _no_sleep(_): return None
+        monkeypatch.setattr(genmod.asyncio, "sleep", _no_sleep)   # don't actually wait
+        g = EmailGenerator()
+        g._provider = "groq"; g._candidates = ["m"]; g._model = "m"
+        calls = {"n": 0}
+
+        class Flaky:
+            async def ainvoke(self, variables):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise Exception("Error code: 429 - rate limit; try again in 1s")
+                return "SUBJECT: Hi\n\nBODY: draft"
+        monkeypatch.setattr(g, "_get_chain", lambda key: Flaky())
+        out = asyncio.run(g._ainvoke("direct", {}))
+        assert out.startswith("SUBJECT") and calls["n"] == 2   # backed off once, then succeeded
+
+    def test_ainvoke_gives_up_after_repeated_429(self, monkeypatch):
+        import asyncio, pytest as _pytest
+        from app.llm import generator as genmod
+        from app.llm.generator import EmailGenerator
+        monkeypatch.setattr(genmod, "create_llm", lambda p, m: object())
+        async def _no_sleep(_): return None
+        monkeypatch.setattr(genmod.asyncio, "sleep", _no_sleep)
+        g = EmailGenerator()
+        g._provider = "groq"; g._candidates = ["m"]; g._model = "m"
+
+        class AlwaysLimited:
+            async def ainvoke(self, variables):
+                raise Exception("429 rate limit")
+        monkeypatch.setattr(g, "_get_chain", lambda key: AlwaysLimited())
+        with _pytest.raises(Exception):
+            asyncio.run(g._ainvoke("direct", {}))   # bounded retries, then raise
 
 
 class TestFreshnessBucket:
