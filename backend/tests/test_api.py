@@ -3463,13 +3463,29 @@ class TestModelFallback:
     next candidate instead of failing every draft — the outage on 2026-08 where
     llama-3.1-8b-instant was retired."""
 
-    def test_candidate_chain_puts_configured_first_then_fallbacks(self):
+    def test_retired_configured_model_is_skipped(self):
         from app.llm.factory import groq_model_candidates
+        # The env still pins the retired 8b-instant — it must be dropped so no
+        # call wastes a 404 on it; the fast production model leads instead.
         c = groq_model_candidates("llama-3.1-8b-instant")
-        assert c[0] == "llama-3.1-8b-instant"
-        assert "llama-3.3-70b-versatile" in c
-        # no dupes, configured never repeated
-        assert len(c) == len(set(c))
+        assert "llama-3.1-8b-instant" not in c
+        assert c[0] == "openai/gpt-oss-20b"
+        assert "llama-3.3-70b-versatile" in c            # backstop still present
+        assert len(c) == len(set(c))                     # no dupes
+
+    def test_live_configured_model_leads(self):
+        from app.llm.factory import groq_model_candidates
+        c = groq_model_candidates("openai/gpt-oss-120b")   # a non-retired choice
+        assert c[0] == "openai/gpt-oss-120b"
+        assert "openai/gpt-oss-20b" in c and "llama-3.3-70b-versatile" in c
+
+    def test_model_gone_ignores_rate_limits(self):
+        from app.llm.generator import EmailGenerator as G
+        # A 429 is NOT model-gone — it must propagate, not walk the chain.
+        assert not G._is_model_gone(Exception("Error code: 429 - rate_limit_exceeded"))
+        assert G._is_model_gone(Exception("model_not_found"))
+        assert G._is_model_gone(Exception("The model `x` does not exist"))
+        assert G._is_model_gone(Exception("model has been decommissioned"))
 
     def test_is_model_gone_detects_404(self):
         from app.llm.generator import EmailGenerator

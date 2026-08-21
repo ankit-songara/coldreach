@@ -603,9 +603,28 @@ class EmailGenerator:
 
     def _is_model_gone(e: Exception) -> bool:
 
+        """True when the error means THIS model can't be used (retired / no
+        access / unsupported) → walk to the next candidate. A rate limit (429)
+        is explicitly NOT model-gone: advancing would just hit another throttled
+        model; it must propagate as a 429 instead."""
+
         s = str(e).lower()
 
-        return "model_not_found" in s or "does not exist" in s
+        if "429" in s or "rate limit" in s or "rate_limit" in s or "too many requests" in s:
+
+            return False
+
+        return (
+
+            "model_not_found" in s or "does not exist" in s
+
+            or "decommissioned" in s or "deprecated" in s
+
+            or ("model" in s and ("not found" in s or "not available" in s
+
+                                  or "does not have access" in s or "unsupported" in s))
+
+        )
 
 
 

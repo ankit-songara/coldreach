@@ -85,7 +85,9 @@ class Settings(BaseSettings):
     # 70B writes noticeably better cold emails than 8B (follows the "no invented
     # facts" rules, stronger hooks). Still on Groq's free tier — just slower per
     # request, which the sequential compose flow absorbs fine.
-    groq_default_model: str    = "llama-3.3-70b-versatile"
+    # Fast production model (~1000 tok/s) — fits the serverless wall and the
+    # free-tier rate limits far better than the 70b. See factory._GROQ_FALLBACKS.
+    groq_default_model: str    = "openai/gpt-oss-20b"
 
     # ── Optional enrichment ──────────────────────────────────────────────────
     hunter_api_key: str = ""    # hunter.io — domain email search
