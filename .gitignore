@@ -41,3 +41,10 @@ dist/
 *.pid
 *.db-wal
 *.db-shm
+
+# Local tooling (e.g. a portable ffmpeg build) — not project source
+.tools/
+
+# /brag skill output (generated launch video + composition project)
+# Trailing * catches the date-stamped variants (brag-output-YYYY-MM-DD-…/)
+brag-output*/
