@@ -327,17 +327,9 @@ class DraftRepository:
     def _scoped(self):
         return self.db.query(EmailDraft).filter(EmailDraft.user_id == self.user_id)
 
-    def get_for_contact(self, contact_id: int) -> list[EmailDraft]:
-        return (
-            self._scoped()
-            .filter(EmailDraft.contact_id == contact_id)
-            .order_by(EmailDraft.created_at.desc())
-            .all()
-        )
-
     def first_touch_for_contacts(self, contact_ids: list[int]) -> dict[int, EmailDraft]:
         """Newest first-touch (non-followup) draft per contact, in ONE query.
-        Bulk send used to run get_for_contact() per contact — a Supabase round
+        Bulk send used to fetch drafts one contact at a time — a Supabase round
         trip each, before any mail moved. Newest-first ordering means the first
         row seen per contact is the one to keep."""
         if not contact_ids:

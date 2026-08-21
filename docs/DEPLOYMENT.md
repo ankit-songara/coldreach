@@ -142,6 +142,6 @@ No code changes needed — SQLAlchemy handles both.
 - [ ] `CORS_ORIGINS` set to your frontend domain only
 - [ ] `DATABASE_URL` points to PostgreSQL (not SQLite)
 - [ ] `LLM_PROVIDER` set explicitly (not `auto`)
-- [ ] `SECRET_KEY` set if you add auth later
-- [ ] `GITHUB_TOKEN` set for higher rate limits
+- [ ] `SECRET_KEY` set (a Fernet key — required; the app refuses to boot without it in prod)
+- [ ] `GITHUB_TOKEN` set for higher rate limits (optional)
 - [ ] HTTPS enabled (Railway/Render/Fly handle this automatically)

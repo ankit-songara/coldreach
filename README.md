@@ -6,7 +6,7 @@
 
 **Job applications vanish into ATS black holes. The people who actually decide — founders, eng leads, recruiters — are one good email away.** ColdReach finds them, writes emails worth replying to, sends from your own Gmail, and tracks every lead from *sent → reply → interview → offer*.
 
-Open-source · self-hosted · your Gmail, your LLM, your data — nothing leaves your machine.
+Open-source · self-hosted · your Gmail, your LLM, your data.
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](https://fastapi.tiangolo.com)
@@ -19,7 +19,7 @@ Open-source · self-hosted · your Gmail, your LLM, your data — nothing leaves
 
 ## The whole job search, as one funnel
 
-ColdReach turns "apply and pray" into a measurable pipeline. Every contact moves through stages, and the dashboard shows where you convert and where you leak:
+ColdReach turns "apply and pray" into a measurable pipeline. Every contact moves through stages, and the dashboard shows where you convert and where you leak *(numbers below are illustrative)*:
 
 ```
  Hunted     ████████████████████  142
@@ -34,13 +34,13 @@ ColdReach turns "apply and pray" into a measurable pipeline. Every contact moves
 It also tells you **what's working** — reply rate by source — so you stop blasting low-yield channels and double down where you actually get answers:
 
 ```
- GitHub       ██████████████████  27%   8/30 sent     ← your best source
- HackerNews   ███████████         19%   5/26 sent
+ HackerNews   ██████████████████  27%   8/30 sent     ← your best source
+ YC Startups  ███████████         19%   5/26 sent
  ATS boards   ████                 9%   3/32 sent
  Job boards   ██                   5%   1/19 sent
 ```
 
-> **Who it's for:** early-career engineers reaching out to startups (esp. remote/US roles). That's where cold email actually lands — your sources are tuned for it.
+> **Who it's for:** early-career engineers reaching out to startups (esp. remote/US roles). That's where cold email actually lands — the sources are tuned for it.
 
 ---
 
@@ -67,16 +67,16 @@ _(Screenshots live in `docs/screenshots/` — drop your own PNGs there.)_
 ```
   Résumé ─┐
           ▼
-   ┌─────────────┐   ┌──────────────┐   ┌──────────────┐   ┌────────────┐   ┌──────────────┐
-   │  1. HUNT    │──▶│  2. RESOLVE  │──▶│  3. COMPOSE  │──▶│  4. SEND   │──▶│  5. TRACK    │
-   │  10 sources │   │  + VERIFY    │   │   your LLM   │   │ your Gmail │   │  IMAP replies │
-   └─────────────┘   └──────────────┘   └──────────────┘   └────────────┘   └──────────────┘
+   ┌─────────────┐   ┌──────────────┐   ┌──────────────┐   ┌────────────┐   ┌───────────────┐
+   │  1. HUNT    │──▶│  2. RESOLVE  │──▶│  3. COMPOSE  │──▶│  4. SEND   │──▶│  5. TRACK     │
+   │ 20+ sources │   │  + VERIFY    │   │   your LLM   │   │ your Gmail │   │  IMAP replies │
+   └─────────────┘   └──────────────┘   └──────────────┘   └────────────┘   └───────────────┘
    who's hiring      real email +        designation-aware   paced, capped,   auto-detect
    right now         confidence score    personalised email  reputation-safe  replies/bounces
 ```
 
-1. **Hunt** — scrapes 17 live sources (below) for people at companies hiring *right now*.
-2. **Resolve & verify** — turns a name + company into a real address via pattern-learning + SMTP probing, scores confidence 0–100, and flags invalid/risky emails *before* you send (syntax + MX + Hunter.io if configured).
+1. **Hunt** — scrapes 20+ live sources (below) for people and companies hiring *right now*.
+2. **Resolve & verify** — turns a name + company into a real address via pattern-learning + SMTP probing, scores confidence 0–100, and flags invalid/risky emails *before* you send (syntax + MX + Hunter.io if configured). It **never invents an address it can't stand behind** — unresolved leads are surfaced, not faked.
 3. **Compose** — generates a designation-aware cold email (founder vs. eng-lead vs. recruiter) grounded in your résumé and genuine context captured at hunt time — never fabricated facts.
 4. **Send** — bulk-sends through your own Gmail SMTP with human-like jitter, a daily cap, and a duplicate-send guard; or schedules sends for later.
 5. **Track & automate** — syncs your Gmail over IMAP to detect replies and bounces, auto-cancels follow-ups when someone replies, and queues timed nudges for everyone who didn't.
@@ -85,18 +85,17 @@ You record outcomes (replied → interview → offer) in one tap, and the dashbo
 
 ---
 
-## Where it finds people (17 sources, ~170 company boards)
+## Where it finds people (20+ sources)
 
-| Source | What it pulls | Cost |
-|--------|---------------|------|
-| **HackerNews** "Who is Hiring" | The current monthly thread — real posts with contact emails | Free |
-| **HackerNews job posts** | "Acme (YC W24) Is Hiring" front-page stories — funded startups | Free |
-| **GitHub** | Commit-author emails + profiles from orgs actively shipping in your stack | Free |
-| **Greenhouse / Lever / Ashby** | Live job postings → company + recruiter leads | Free |
-| **SmartRecruiters / Recruitee / Workable / Breezy** | More ATS boards (live-verified company slugs) | Free |
-| **RemoteOK / Remotive / Arbeitnow** | Remote-job aggregators — proof a company is hiring | Free |
-| **Jobicy / Himalayas / The Muse / WeWorkRemotely** | More remote-job boards | Free |
-| **Hunter.io** *(optional)* | Verified emails + deliverability scores by domain | Free tier |
+All sources are **keyless and free** — public APIs and endpoints only, no ToS-risky scraping.
+
+| Group | Sources | What it pulls |
+|-------|---------|---------------|
+| **ATS boards** | Greenhouse · Lever · Ashby · SmartRecruiters · Recruitee · Workable · Breezy · Teamtailor · Workday | Live job postings → company + hiring-team leads |
+| **Remote job boards** | RemoteOK · Remotive · Arbeitnow · Jobicy · Himalayas · The Muse · WeWorkRemotely · WorkingNomads | Proof a company is hiring right now |
+| **Keyword search** | Workable search · SmartRecruiters search | Role-aware search across ATS postings |
+| **Community / curated** | HackerNews "Who is Hiring" · YC startup pool | Real posts with contact emails; funded startups |
+| **Enrichment** *(optional)* | Hunter.io | Verified emails + deliverability scores by domain (free tier) |
 
 Searching is **role-aware** (`"golang hiring"`, `"react engineer remote"`) or **company-aware** (`"Stripe"`). Every discovered address runs through the verifier before it reaches you.
 
@@ -104,40 +103,39 @@ Searching is **role-aware** (`"golang hiring"`, `"react engineer remote"`) or **
 
 ## Quick start
 
-### Option A — Docker (recommended)
+### Option A — Groq (fastest to a first email, free)
 
-```bash
-git clone https://github.com/ankit-songara/coldreach && cd coldreach
-cp .env.example .env                 # all defaults work locally
-docker compose up -d
-docker exec coldreach-ollama ollama pull llama3.1   # one-time local LLM (~5 GB)
-```
-
-Open **http://localhost:5173** → done.
-
-### Option B — Local dev
-
-**Prereqs:** Python 3.11+, Node 18+, and either [Ollama](https://ollama.com) or a free [Groq](https://console.groq.com) key.
+Grab a free key at [console.groq.com](https://console.groq.com), then:
 
 ```bash
 git clone https://github.com/ankit-songara/coldreach && cd coldreach
 cp .env.example .env
+# in .env:  LLM_PROVIDER=groq   LLM_API_KEY=gsk_...
 
 # backend
-cd backend
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python -m playwright install chromium
+cd backend && python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt && python -m playwright install chromium
 
-# frontend
-cd ../frontend && npm install
+# frontend (new terminal)
+cd frontend && npm install
 
-# run (two terminals, from repo root)
+# run (from repo root, two terminals)
 make dev-backend     # → http://localhost:8000
 make dev-frontend    # → http://localhost:5173
 ```
 
-> First run: create an account, paste/upload your résumé, add your Gmail **App Password** (Setup tab), then Hunt. Full walkthrough in [SETUP.md](SETUP.md).
+### Option B — Docker + local Ollama (fully offline, no cloud LLM)
+
+```bash
+git clone https://github.com/ankit-songara/coldreach && cd coldreach
+cp .env.example .env                                  # defaults work locally
+docker compose up -d
+docker exec coldreach-ollama ollama pull llama3.1     # one-time local LLM (~5 GB)
+```
+
+Open **http://localhost:5173** → done.
+
+> First run: create an account, paste/upload your résumé, add your Gmail **App Password** (Setup tab), then Hunt. Full walkthrough + troubleshooting in [SETUP.md](SETUP.md).
 
 ---
 
@@ -155,11 +153,13 @@ LLM_PROVIDER=auto (default)
 Force any provider with env vars — no code changes:
 
 ```bash
-LLM_PROVIDER=groq        LLM_API_KEY=gsk_...
+LLM_PROVIDER=groq        LLM_API_KEY=gsk_...     # default model: openai/gpt-oss-20b
 LLM_PROVIDER=openai      LLM_API_KEY=sk-...      LLM_MODEL=gpt-4o-mini
 LLM_PROVIDER=openrouter  LLM_API_KEY=sk-or-...   LLM_MODEL=mistralai/mistral-7b-instruct
 LLM_PROVIDER=anthropic   LLM_API_KEY=sk-ant-...
 ```
+
+On Groq, the default is `openai/gpt-oss-20b` — fast enough (~1000 tok/s) to fit a serverless request wall and gentle on free-tier rate limits. If a Groq model is ever retired, the app automatically falls back through a candidate chain (see [`llm/factory.py`](backend/app/llm/factory.py)).
 
 > A zero-config `mock` provider exists for demos/CI — used **only** when you set `LLM_PROVIDER=mock`. It returns an obvious placeholder that must not be sent; `auto` never silently falls back to it.
 
@@ -167,12 +167,12 @@ LLM_PROVIDER=anthropic   LLM_API_KEY=sk-ant-...
 
 ## Privacy & safety (it's self-hosted for a reason)
 
-- **Your Gmail, your account.** Sends go through *your* Gmail via an App Password — no third-party sending service ever sees your contacts.
+- **Your Gmail, your account.** Sends go through *your* Gmail via an App Password (or one-click OAuth) — no third-party sending service ever sees your contacts.
 - **Credentials encrypted at rest.** App Passwords are Fernet-encrypted before touching the database and are **never** persisted to the browser.
-- **Multi-user, fully scoped.** Email/password accounts with revocable sessions; every row is scoped to its owner.
+- **Multi-user, fully scoped.** Email/password (and optional Google) accounts with revocable sessions; every row is scoped to its owner.
 - **Reputation-safe sending.** Jittered pacing, a configurable daily cap, invalid-address skipping, and a guard that can't send a first-touch twice.
 - **SSRF-guarded.** Server-side scraping and SMTP probing refuse to connect to private/internal addresses.
-- **Nothing phones home.** No telemetry. Your résumé, contacts, and emails stay on your machine.
+- **Nothing phones home.** No telemetry.
 
 ---
 
@@ -183,15 +183,21 @@ LLM_PROVIDER=anthropic   LLM_API_KEY=sk-ant-...
 | Backend | Python 3.12 + FastAPI | Async, auto OpenAPI docs |
 | Frontend | Vite + React 18 + TypeScript | Tailwind, Zustand, TanStack Query |
 | LLM | LangChain (any provider) | Swap via one env var |
-| Database | SQLite → PostgreSQL | Zero-setup default, swap for prod |
-| Email | Gmail SMTP (send) + IMAP (reply detection) | Your account, App Password |
-| Scraping | httpx + public APIs (+ Playwright) | Public endpoints only — no ToS-risky scraping |
+| Database | SQLite → PostgreSQL | Zero-setup default; Postgres for shared/prod |
+| Email | Gmail SMTP (send) + IMAP (reply detection) | Your account, App Password or OAuth |
+| Scraping | httpx + public APIs (+ Playwright) | Public endpoints only |
+
+**Hosted MVP:** the maintained instance runs on Vercel serverless (backend + frontend as two projects) with a Supabase Postgres database and Groq for the LLM — a fully free/no-card stack. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
 ## Extending it
 
-**Add a generic source** — implement one method and register it:
+**Add an ATS** — subclass `BaseATSScraper` in [`scrapers/ats.py`](backend/app/scrapers/ats.py), implement `_fetch(slug)`, add company slugs to [`scrapers/directory.py`](backend/app/scrapers/directory.py).
+
+**Add a job board** — subclass `_JsonBoard` in [`scrapers/jobboards.py`](backend/app/scrapers/jobboards.py) and implement `_listings(client)`.
+
+**Add any other source** — subclass `BaseScraper`, then register it in `_build_scrapers()` in [`api/hunt.py`](backend/app/api/hunt.py):
 
 ```python
 # backend/app/scrapers/mysource.py
@@ -206,23 +212,19 @@ class MySourceScraper(BaseScraper):
 ```python
 # backend/app/api/hunt.py — add to _build_scrapers()
 scrapers = [
-    HackerNewsScraper(), HNJobsScraper(), GitHubScraper(),
     GreenhouseScraper(), LeverScraper(), AshbyScraper(),
-    SmartRecruitersScraper(), RecruiteeScraper(),
-    WorkableScraper(), BreezyScraper(),
-    RemoteOKScraper(), RemotiveScraper(), ArbeitnowScraper(),
+    # …existing sources…
+    HackerNewsScraper(),
+    YCStartupsScraper(),
     MySourceScraper(),   # ← here
 ]
 ```
-
-**Add an ATS** — subclass `BaseATSScraper` and implement `_fetch(slug)`, then add company rows to `scrapers/directory.py`.
-**Add a job board** — subclass `_JsonBoard` in `scrapers/jobboards.py` and implement `_listings(client)`.
 
 ---
 
 ## API reference
 
-Interactive Swagger UI at **http://localhost:8000/docs**. All routes except `/api/health`, `/api/auth/register`, and `/api/auth/login` require `Authorization: Bearer <token>`.
+Interactive Swagger UI at **http://localhost:8000/docs**. Everything is mounted under `/api`. All routes except `/api/health`, `/api/auth/register`, and `/api/auth/login` require `Authorization: Bearer <token>`.
 
 <details>
 <summary><b>Endpoints</b></summary>
@@ -230,19 +232,18 @@ Interactive Swagger UI at **http://localhost:8000/docs**. All routes except `/ap
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | /api/health | Status + active LLM provider |
-| POST | /api/auth/register · /login · /logout | Accounts + revocable sessions |
+| POST | /api/auth/register · /login · /google · /logout | Accounts (email/password + Google) + revocable sessions |
 | GET | /api/auth/me | Current user |
-| POST | /api/hunt | Run all scrapers for a query |
-| POST | /api/verify | Verify emails (syntax / MX / Hunter) |
-| GET·POST·PATCH·DELETE | /api/contacts | Contact CRUD + status |
-| POST | /api/resume/extract · /save | Extract/save résumé text (PDF/DOCX) |
-| GET | /api/resume/latest | Most recent résumé |
-| POST | /api/compose · /followup | Generate email / follow-up |
-| PUT | /api/compose/draft/{id} | Edit a draft |
-| POST | /api/send/bulk · /schedule · /test | Send now / queue / test creds |
-| POST | /api/inbox/sync | Scan Gmail for replies & bounces |
-| POST·GET | /api/config · /config/gmail · /config/automation | Server-side automation config |
-| POST·GET·DELETE | /api/followups · /schedule · /{id} | Queue / list / cancel follow-ups |
+| GET · POST | /api/hunt · /hunt/suggestions | Run all scrapers / dynamic query suggestions |
+| GET·POST·PATCH·DELETE | /api/contacts · /contacts/{id} | Contact CRUD, status, LinkedIn attach |
+| POST·GET | /api/resume/extract · /save · /latest | Extract/save/fetch résumé text (PDF/DOCX) |
+| POST·PUT·GET | /api/compose · /followup · /draft/{id} · /drafts/all | Generate email / follow-up / edit / list drafts |
+| POST | /api/send/bulk | Bulk send now (paced, capped, dedup-guarded) |
+| POST·GET | /api/inbox/sync · /replies | Scan Gmail for replies & bounces / list replies |
+| GET·POST·DELETE | /api/config · /config/gmail · /config/gmail/oauth/* | Profile + Gmail creds (App Password or OAuth) |
+| GET·POST·DELETE | /api/companies | Saved target companies |
+| GET | /api/analytics/summary | Funnel + source analytics |
+| POST·DELETE | /api/demo/seed | Seed / clear demo data |
 
 </details>
 
@@ -252,42 +253,54 @@ Interactive Swagger UI at **http://localhost:8000/docs**. All routes except `/ap
 
 ```
 backend/app/
-├── main.py            # FastAPI app + lifespan + /api/health
-├── config.py          # env settings        timeutil.py  netguard.py (SSRF)
+├── main.py            # FastAPI app + lifespan + /api/health + router mounts
+├── config.py          # env settings (pydantic-settings)
+├── deps.py            # FastAPI dependencies (auth, db session)
 ├── security.py        # Fernet encryption + PBKDF2 + session tokens
+├── netguard.py        # SSRF guard for outbound scraping/SMTP
+├── timeutil.py        # timezone-aware helpers
 ├── mailer.py          # Gmail SMTP send (single + reusable session)
-├── scheduler.py       # background follow-up delivery (paced)
 ├── verifier.py        # syntax + MX + Hunter deliverability checks
-├── api/               # hunt · compose · contacts · resume · send · inbox · automation · verify · auth
+├── gmail_oauth.py     # one-click "Connect Gmail" OAuth flow
+├── api/               # auth · hunt · compose · contacts · resume · send ·
+│                      #   inbox · config · companies · analytics · demo
+├── schemas/           # Pydantic request/response models (contact, email)
 ├── scrapers/
-│   ├── base.py        # BaseScraper ABC          directory.py  (company→ATS map)
-│   ├── hn.py github.py                            # free people sources
-│   ├── ats.py         # Greenhouse/Lever/Ashby/SmartRecruiters/Recruitee
-│   ├── jobboards.py   # RemoteOK/Remotive/Arbeitnow
+│   ├── base.py        # BaseScraper / BaseATSScraper ABCs
+│   ├── ats.py         # Greenhouse/Lever/Ashby/SmartRecruiters/Recruitee/Workable/Breezy/Teamtailor
+│   ├── workday.py     # Workday tenant scraper
+│   ├── jobboards.py   # RemoteOK/Remotive/Arbeitnow/Jobicy/Himalayas/TheMuse/WWR/WorkingNomads + searches
+│   ├── hackernews.py  # HN "Who is Hiring" thread
+│   ├── yc.py          # YC startup pool (fills leftover funnel slots)
+│   ├── directory.py   # company → ATS-slug map
 │   ├── resolver.py    # email pattern-learning + SMTP probe + confidence
-│   ├── web.py         # company-page email harvest    enricher.py (Hunter)
-├── llm/               # factory (auto-detect) · generator · prompts · parsing
-└── db/                # database · models · crud (repository pattern)
+│   ├── web.py         # company-page email harvest
+│   └── enricher.py    # Hunter.io (optional)
+├── llm/               # factory (auto-detect) · generator · prompts · parsing · quality · relevance
+└── db/                # database · models · crud (repository pattern) · migrations
 
-frontend/src/          # api clients · components (Today/Setup/Hunt/Compose/Send) · store · types
+frontend/src/          # api clients · components (Today/Hunt/Compose/Send/Setup/Replies/Analytics/Landing)
+                       #   · hooks · store (Zustand) · lib · types
 ```
 
 ---
 
 ## Roadmap
 
-- [ ] **One-click hosted "lite"** + Gmail OAuth (remove the App-Password / self-host friction)
-- [ ] **Chrome extension** — find the hiring manager straight from a LinkedIn/job post
-- [ ] **A/B email variants** — test subjects/openers, learn what converts
-- [ ] **Cross-user benchmarks** — "emails like yours reply at X%; top performers do Y"
+- [x] Gmail OAuth one-click connect (alongside App Password)
+- [x] "Sign in with Google"
+- [ ] Chrome extension — find the hiring manager straight from a LinkedIn/job post
+- [ ] A/B email variants — test subjects/openers, learn what converts
+- [ ] Cross-user benchmarks — "emails like yours reply at X%; top performers do Y"
 
 ---
 
 ## Docs
 
 - [SETUP.md](SETUP.md) — full local / Docker setup + troubleshooting
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the pieces fit together
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Railway / Render / Fly.io + Postgres
+- [AGENTS.md](AGENTS.md) — orientation for AI coding agents (architecture, conventions, invariants)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — domains, patterns, and how the pieces fit
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Vercel + Supabase (hosted MVP) and Docker hosts
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — contributing guide
 
 ---

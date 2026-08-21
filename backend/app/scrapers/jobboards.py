@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.scrapers.base import BaseScraper, person_name_from_email
-from app.scrapers.directory import looks_like_company, role_match, company_matches, _norm
+from app.scrapers.directory import looks_like_company, role_match, company_matches
 # Shared upstream-date normalizer (ats.py has no imports from this module, so
 # no cycle). Used by SmartRecruitersSearch to stamp _posted_at on its leads.
 from app.scrapers.ats import _posted_iso as _sr_posted

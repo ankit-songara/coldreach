@@ -15,7 +15,6 @@ import re
 import logging
 import dns.name
 import dns.resolver
-import httpx
 
 from app.scrapers.base import ROLE_LOCALS
 

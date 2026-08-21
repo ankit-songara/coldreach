@@ -33,7 +33,7 @@ import smtplib
 import socket
 import string
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import dns.resolver
