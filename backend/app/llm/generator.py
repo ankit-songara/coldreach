@@ -609,41 +609,14 @@ class EmailGenerator:
 
 
 
-    @staticmethod
-
-    def _is_rate_limited(e: Exception) -> bool:
-
-        s = str(e).lower()
-
-        return "429" in s or "rate limit" in s or "rate_limit" in s or "too many requests" in s
-
-
-
-    @staticmethod
-
-    def _retry_after(e: Exception, default: float = 4.0) -> float:
-
-        """Seconds to wait before retrying a rate-limited call. Prefer Groq's
-        own 'try again in Ns' hint; cap so a retry can't push past the wall."""
-
-        m = _re.search(r"try again in ([0-9.]+)s", str(e).lower())
-
-        wait = float(m.group(1)) if m else default
-
-        return max(1.0, min(wait, 8.0))
-
-
-
     async def _ainvoke(self, key: str, variables: dict) -> str:
 
-        """chain.ainvoke with two recovery paths, so a free-tier hiccup doesn't
-        fail the draft:
-          - model_not_found (404): the configured model was retired → switch to
-            the next candidate and retry.
-          - rate limit (429): Groq's free tier throttles bursts → brief backoff
-            and retry (bounded, so it can't blow the 60s wall)."""
-
-        rl_retries = 0
+        """chain.ainvoke with model fallback on a decommissioned model
+        (404 model_not_found → next candidate, cached). Rate limits (429) are
+        deliberately NOT retried here: retrying into a throttled free-tier
+        window just amplifies the storm (each 429'd call would fire 3× the
+        requests). They propagate so compose returns a clear 429 and the
+        client paces itself instead of hammering."""
 
         while True:
 
@@ -656,18 +629,6 @@ class EmailGenerator:
             except Exception as e:
 
                 if self._is_model_gone(e) and self._advance_model():
-
-                    continue
-
-                if self._is_rate_limited(e) and rl_retries < 2:
-
-                    rl_retries += 1
-
-                    delay = self._retry_after(e)
-
-                    log.warning(f"Groq rate-limited — backing off {delay:.1f}s (retry {rl_retries}/2)")
-
-                    await asyncio.sleep(delay)
 
                     continue
 

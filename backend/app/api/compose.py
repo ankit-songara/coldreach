@@ -20,11 +20,17 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/compose", tags=["compose"])
 
 
+def _is_rate_limit(e: Exception) -> bool:
+    s = str(e).lower()
+    return "429" in s or "rate limit" in s or "rate_limit" in s or "too many requests" in s
+
+
 def _friendly_llm_error(e: Exception) -> str:
     """Map raw provider exceptions to a message safe to show an end user."""
     s = str(e).lower()
-    if "429" in s or "rate limit" in s or "rate_limit" in s:
-        return "The email writer is busy right now (rate limit). Wait a few seconds and try again."
+    if _is_rate_limit(e):
+        return ("The email writer is rate-limited right now (free-tier cap). "
+                "Wait a minute, then generate again — or generate a few at a time.")
     if "no llm provider" in s or "api key" in s or "authentication" in s or "401" in s:
         return "Email generation isn't set up on this server yet. Contact the administrator."
     if "timeout" in s or "timed out" in s or "connect" in s:
@@ -72,7 +78,9 @@ async def compose(req: ComposeRequest, db: Session = Depends(get_db), user: User
         # Full details go to the server log only — raw provider errors (rate
         # limits, model names, stack fragments) mean nothing to the end user.
         log.error(f"LLM generation failed for contact {contact.id}: {e}")
-        raise HTTPException(502, _friendly_llm_error(e))
+        # 429 for a rate limit (client should back off, not treat it as a
+        # hard failure); 502 for genuine provider errors.
+        raise HTTPException(429 if _is_rate_limit(e) else 502, _friendly_llm_error(e))
 
     # Parse SUBJECT / BODY
     subject, body = parse_subject_body(email_text)
@@ -104,7 +112,9 @@ async def followup(req: FollowUpRequest, db: Session = Depends(get_db), user: Us
         )
     except Exception as e:
         log.error(f"Follow-up generation failed for contact {contact.id}: {e}")
-        raise HTTPException(502, _friendly_llm_error(e))
+        # 429 for a rate limit (client should back off, not treat it as a
+        # hard failure); 502 for genuine provider errors.
+        raise HTTPException(429 if _is_rate_limit(e) else 502, _friendly_llm_error(e))
 
     subject, body = parse_subject_body(email_text)
 

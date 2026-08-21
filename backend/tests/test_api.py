@@ -3531,59 +3531,38 @@ class TestModelFallback:
         assert g._model == "a"                      # did NOT walk the chain
 
 
-class TestRateLimitBackoff:
-    """Groq free-tier 429s during a burst should back off + retry, not fail the
-    draft — the residual failures after the model-retirement fix."""
+class TestRateLimitHandling:
+    """Free-tier 429s must NOT be retried at the backend (retrying into a
+    throttled window amplifies the storm) — they propagate as a clean 429 the
+    client can pace itself against."""
 
-    def test_detects_rate_limit(self):
-        from app.llm.generator import EmailGenerator as G
-        assert G._is_rate_limited(Exception("Error code: 429 - rate_limit_exceeded"))
-        assert G._is_rate_limited(Exception("Rate limit reached for model"))
-        assert not G._is_rate_limited(Exception("model_not_found"))
+    def test_compose_detects_rate_limit(self):
+        from app.api.compose import _is_rate_limit
+        assert _is_rate_limit(Exception("Error code: 429 - rate_limit_exceeded"))
+        assert _is_rate_limit(Exception("Rate limit reached for model"))
+        assert _is_rate_limit(Exception("Too Many Requests"))
+        assert not _is_rate_limit(Exception("model_not_found"))
+        assert not _is_rate_limit(Exception("connection reset"))
 
-    def test_retry_after_parses_and_caps(self):
-        from app.llm.generator import EmailGenerator as G
-        assert G._retry_after(Exception("Please try again in 2.5s.")) == 2.5
-        assert G._retry_after(Exception("try again in 999s")) == 8.0     # capped
-        assert G._retry_after(Exception("no hint here")) == 4.0          # default
-
-    def test_ainvoke_recovers_after_429(self, monkeypatch):
-        import asyncio
-        from app.llm import generator as genmod
-        from app.llm.generator import EmailGenerator
-        monkeypatch.setattr(genmod, "create_llm", lambda p, m: object())
-        async def _no_sleep(_): return None
-        monkeypatch.setattr(genmod.asyncio, "sleep", _no_sleep)   # don't actually wait
-        g = EmailGenerator()
-        g._provider = "groq"; g._candidates = ["m"]; g._model = "m"
-        calls = {"n": 0}
-
-        class Flaky:
-            async def ainvoke(self, variables):
-                calls["n"] += 1
-                if calls["n"] == 1:
-                    raise Exception("Error code: 429 - rate limit; try again in 1s")
-                return "SUBJECT: Hi\n\nBODY: draft"
-        monkeypatch.setattr(g, "_get_chain", lambda key: Flaky())
-        out = asyncio.run(g._ainvoke("direct", {}))
-        assert out.startswith("SUBJECT") and calls["n"] == 2   # backed off once, then succeeded
-
-    def test_ainvoke_gives_up_after_repeated_429(self, monkeypatch):
+    def test_ainvoke_does_not_retry_a_429(self, monkeypatch):
+        # A 429 must hit the model exactly ONCE and propagate — no backoff loop
+        # that would triple the request count against an already-throttled tier.
         import asyncio, pytest as _pytest
         from app.llm import generator as genmod
         from app.llm.generator import EmailGenerator
         monkeypatch.setattr(genmod, "create_llm", lambda p, m: object())
-        async def _no_sleep(_): return None
-        monkeypatch.setattr(genmod.asyncio, "sleep", _no_sleep)
         g = EmailGenerator()
         g._provider = "groq"; g._candidates = ["m"]; g._model = "m"
+        calls = {"n": 0}
 
-        class AlwaysLimited:
+        class Limited:
             async def ainvoke(self, variables):
-                raise Exception("429 rate limit")
-        monkeypatch.setattr(g, "_get_chain", lambda key: AlwaysLimited())
+                calls["n"] += 1
+                raise Exception("Error code: 429 - rate limit; try again in 1s")
+        monkeypatch.setattr(g, "_get_chain", lambda key: Limited())
         with _pytest.raises(Exception):
-            asyncio.run(g._ainvoke("direct", {}))   # bounded retries, then raise
+            asyncio.run(g._ainvoke("direct", {}))
+        assert calls["n"] == 1                       # exactly one call, no amplification
 
 
 class TestFreshnessBucket:
